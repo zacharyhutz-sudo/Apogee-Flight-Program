@@ -15,6 +15,7 @@ import {
   Move,
   Radar,
   Rocket,
+  Wrench,
   X,
 } from "lucide-react";
 import { EarthScene, type Tile } from "../game/scenes/EarthScene";
@@ -69,9 +70,11 @@ function freeTile(p: Program, k: Kind): Tile {
 export function LaunchSite({
   mission: m,
   onFlight,
+  onWorkshop,
 }: {
   mission: ReturnType<typeof useMission>;
   onFlight: () => void;
+  onWorkshop: () => void;
 }) {
   const p = m.mission.program,
     flight = m.mission.flight;
@@ -337,6 +340,14 @@ export function LaunchSite({
           <button disabled={buttonsDisabled} onClick={() => showPanel("build")}>
             <Building2 />
             Build
+          </button>
+          <button
+            aria-label="Rocket Workshop"
+            disabled={buttonsDisabled}
+            onClick={onWorkshop}
+          >
+            <Wrench />
+            VAB
           </button>
           <button
             className="primary"

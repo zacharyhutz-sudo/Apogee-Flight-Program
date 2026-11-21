@@ -4,6 +4,7 @@ import {
   payLaunch,
   place,
   prepare,
+  prepareBlueprintFlight,
   quote,
   settle,
   tickEconomy,
@@ -11,6 +12,7 @@ import {
   type Kind,
   type Sortie,
 } from "../program/program";
+import type { RocketBlueprint } from "../program/workshop";
 import { useEffect, useRef, useState } from "react";
 import {
   STEP,
@@ -104,7 +106,7 @@ export function useMission() {
     }
     const costNote = q
       ? `Ignition · −${q.hardwareCost.toLocaleString("en-US")} C · −${q.propellantCost.toLocaleString("en-US")} Prop`
-      : "Free simulation ignition (0 cost · 0 payout).";
+      : `${vessel.current.vehicleName || "Vehicle"} ignition.`;
     change((s) => {
       s.status = "flying";
       paused.current = false;
@@ -128,6 +130,57 @@ export function useMission() {
         paused.current = false;
       }, "Free simulation ignition (0 cost · 0 payout).");
     }
+  }
+
+  function openWorkshop() {
+    if (!ready.current) return;
+    if (vessel.current.status === "flying") paused.current = true;
+    rate.current = 1;
+    change(() => {
+      mission.current.view = "workshop";
+    });
+  }
+
+  function selectBlueprint(id: string) {
+    if (!ready.current) return;
+    const p = mission.current.program;
+    if (!p.blueprints.some((b) => b.id === id)) return;
+    p.activeBlueprintId = id;
+    save();
+    refresh();
+  }
+
+  function saveBlueprint(bp: RocketBlueprint, selectNew = false) {
+    if (!ready.current) return;
+    const p = mission.current.program;
+    const idx = p.blueprints.findIndex((b) => b.id === bp.id);
+    if (idx >= 0) p.blueprints[idx] = bp;
+    else if (p.blueprints.length < 16) p.blueprints.push(bp);
+    if (selectNew || idx < 0) p.activeBlueprintId = bp.id;
+    save();
+    refresh();
+  }
+
+  function launchBlueprint(id: string, mode: "practice" | "real"): string {
+    if (!ready.current) return "Save is still loading.";
+    const data = mission.current;
+    const res = prepareBlueprintFlight(data.program, id, mode);
+    if (res.error || !res.flight) return res.error || "Unable to stage vehicle.";
+    data.flight = res.flight;
+    data.log = [
+      {
+        t: 0,
+        text:
+          mode === "real"
+            ? `${res.flight.vehicleName} rolled to pad (−${res.hardwareCost} C · −${res.propellantCost} Prop).`
+            : `${res.flight.vehicleName} staged for free simulation.`,
+      },
+    ];
+    data.view = "flight";
+    install(data);
+    setNotice("");
+    save();
+    return "";
   }
 
   function separate() {
@@ -393,6 +446,10 @@ export function useMission() {
     change,
     launch,
     launchFreeSim,
+    openWorkshop,
+    selectBlueprint,
+    saveBlueprint,
+    launchBlueprint,
     separate,
     newSortie,
     editSite,

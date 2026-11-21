@@ -198,7 +198,7 @@ test("v1 and v2 saves migrate deterministically to v3 with all starter facilitie
   };
   delete rawV1.flight.cargo;
   const m1 = validate(rawV1);
-  assert.equal(m1.version, 3);
+  assert.equal(m1.version, 4);
   assert.equal(m1.program.simTimeSec, f1.t);
   assert.equal(m1.program.propellant, 900);
   assert.equal(m1.program.sortie, "practice");
@@ -230,7 +230,7 @@ test("v1 and v2 saves migrate deterministically to v3 with all starter facilitie
     },
   };
   const m2 = validate(rawV2);
-  assert.equal(m2.version, 3);
+  assert.equal(m2.version, 4);
   assert.equal(m2.program.credits, 420);
   assert.equal(m2.program.research, 14);
   assert.equal(m2.program.simTimeSec, 3600);

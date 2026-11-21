@@ -1,5 +1,6 @@
 import { Dialog } from "./Dialog";
 import { LaunchSite } from "./LaunchSite";
+import { Workshop } from "./Workshop";
 import { CONTRACTS, level, quote } from "../program/program";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -26,13 +27,14 @@ import {
   RotateCcw,
   Rocket,
   TriangleAlert,
+  Wrench,
   X,
 } from "lucide-react";
 import { FlightScene } from "../game/scenes/FlightScene";
 import { OrbitalMap } from "../game/orbital/OrbitalMap";
 import {
   AIR,
-  STAGES,
+  stagesOf,
   thrustToWeight,
   canWarp,
   clamp,
@@ -72,7 +74,10 @@ export default function App() {
     flying = s.status === "flying",
     ended = !pad && !flying,
     booster = s.stage === 0;
-  const fuelPct = (100 * s.fuel[s.stage]) / STAGES[s.stage].fuel;
+  const st = stagesOf(s);
+  const stageMaxFuel = st[s.stage].fuel;
+  const fuelPct =
+    stageMaxFuel > 0 ? (100 * s.fuel[s.stage]) / stageMaxFuel : 0;
   const twr = thrustToWeight(s);
   const lowThrust = pad && twr <= 1;
   const sortie = m.mission.program.sortie;
@@ -82,7 +87,9 @@ export default function App() {
 
   function flightStatus() {
     if (pad)
-      return isRealContract ? CONTRACTS[sortie].name : "Free Simulation";
+      return isRealContract
+        ? CONTRACTS[sortie].name
+        : s.vehicleName || "Free Simulation";
     if (m.paused) return "Paused";
     if (s.status === "lost") return "Vehicle lost";
     if (s.status === "landed") return "Landed";
@@ -148,6 +155,7 @@ export default function App() {
       if (
         dialog ||
         m.mission.view === "site" ||
+        m.mission.view === "workshop" ||
         !m.loaded ||
         e.altKey ||
         e.ctrlKey ||
@@ -256,7 +264,15 @@ export default function App() {
   );
 
   if (m.mission.view === "site")
-    return <LaunchSite mission={m} onFlight={() => toggleView(false)} />;
+    return (
+      <LaunchSite
+        mission={m}
+        onFlight={() => toggleView(false)}
+        onWorkshop={m.openWorkshop}
+      />
+    );
+  if (m.mission.view === "workshop")
+    return <Workshop mission={m} onSite={m.visitSite} />;
 
   return (
     <>
@@ -530,6 +546,15 @@ export default function App() {
                 >
                   <Landmark size={19} />
                   Earth launch site
+                </button>
+                <button
+                  onClick={() => {
+                    D("");
+                    m.openWorkshop();
+                  }}
+                >
+                  <Wrench size={19} />
+                  Rocket Workshop
                 </button>
                 {[
                   [Flag, "Flight plan", "plan"],

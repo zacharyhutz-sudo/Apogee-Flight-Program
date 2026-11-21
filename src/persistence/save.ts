@@ -13,7 +13,15 @@ import {
   type Kind,
   type Program,
 } from "../program/program.ts";
-import { R, STAGES, clamp, initial, radius, type Flight } from "../sim/flight.ts";
+import { starterBlueprints } from "../program/workshop.ts";
+import {
+  R,
+  clamp,
+  initial,
+  radius,
+  stagesOf,
+  type Flight,
+} from "../sim/flight.ts";
 
 export interface Entry {
   t: number;
@@ -21,16 +29,16 @@ export interface Entry {
 }
 
 export interface Snapshot {
-  version: 3;
+  version: 4;
   program: Program;
   revision: number;
-  view: "flight" | "map" | "site";
+  view: "flight" | "map" | "site" | "workshop";
   flight: Flight;
   log: Entry[];
 }
 
 export const fresh = (): Snapshot => ({
-  version: 3,
+  version: 4,
   program: startProgram(),
   revision: 0,
   view: "site",
@@ -52,7 +60,6 @@ function findFreePlot(p: Program, kind: Kind): { x: number; y: number } {
   return { x: def.x, y: def.y };
 }
 
-/** Deterministic v2 -> v3 migration preserving progress and backfilling Lv 1 Earth facilities & starter Propellant. */
 function migrateV2Program(rawProg: unknown, f: Flight): Program | null {
   if (!record(rawProg)) return null;
   const base = startProgram();
@@ -110,7 +117,6 @@ function migrateV2Program(rawProg: unknown, f: Flight): Program | null {
     seen.add(mapped);
   }
 
-  // Backfill any missing starter Lv 1 Earth facilities cleanly.
   for (const kind of STARTER_KINDS) {
     if (!seen.has(kind)) {
       const pos = findFreePlot(base, kind);
@@ -159,7 +165,6 @@ function migrateV2Program(rawProg: unknown, f: Flight): Program | null {
     }
     f.cargo = CONTRACTS[oldSortie].cargo;
   } else {
-    // Polar or practice v2 flights migrate safely into free simulation
     base.sortie = "practice";
     base.paid = false;
     base.rewarded = false;
@@ -178,11 +183,15 @@ export function validate(raw: unknown): Snapshot {
   };
   if (
     !record(raw) ||
-    (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) ||
+    ![1, 2, 3, 4].includes(Number(raw.version)) ||
     !num(raw.revision, 0, Number.MAX_SAFE_INTEGER) ||
     !Number.isSafeInteger(raw.revision) ||
     !(
-      raw.version === 1 ? ["flight", "map"] : ["flight", "map", "site"]
+      raw.version === 1
+        ? ["flight", "map"]
+        : raw.version === 4
+          ? ["flight", "map", "site", "workshop"]
+          : ["flight", "map", "site"]
     ).includes(String(raw.view)) ||
     !Array.isArray(raw.log) ||
     raw.log.length > 64 ||
@@ -193,6 +202,7 @@ export function validate(raw: unknown): Snapshot {
   const f = structuredClone(raw.flight) as unknown as Flight;
   if (raw.version === 1) f.cargo = 0;
 
+  const st = stagesOf(f);
   if (
     ![0, 1].includes(f.stage) ||
     !["manual", "guide", "prograde", "retrograde"].includes(f.mode) ||
@@ -207,7 +217,7 @@ export function validate(raw: unknown): Snapshot {
     radius(f) < R - 0.01 ||
     !Array.isArray(f.fuel) ||
     f.fuel.length !== 2 ||
-    !f.fuel.every((v, i) => num(v, 0, STAGES[i].fuel)) ||
+    !f.fuel.every((v, i) => num(v, 0, st[i].fuel)) ||
     (f.stage === 1 && f.fuel[0] !== 0)
   )
     return invalid();
@@ -220,7 +230,7 @@ export function validate(raw: unknown): Snapshot {
       f.y !== 0 ||
       f.vx !== 0 ||
       f.vy !== 0 ||
-      f.fuel.some((v, i) => v !== STAGES[i].fuel) ||
+      f.fuel.some((v, i) => v !== st[i].fuel) ||
       f.orbitEarned)
   )
     return invalid();
@@ -247,8 +257,17 @@ export function validate(raw: unknown): Snapshot {
       program.buildingLevels = syncBuildingLevels(
         program.buildings as Building[],
       );
-      if (typeof program.elapsed !== "number" && typeof program.simTimeSec === "number") {
+      if (
+        typeof program.elapsed !== "number" &&
+        typeof program.simTimeSec === "number"
+      ) {
         program.elapsed = program.simTimeSec;
+      }
+      // Deterministic v3 -> v4 migration: backfill starter blueprints cleanly
+      if (raw.version === 3 || !Array.isArray(program.blueprints)) {
+        const defaults = starterBlueprints();
+        program.blueprints = defaults;
+        program.activeBlueprintId = defaults[0].id;
       }
     }
   }
@@ -256,7 +275,7 @@ export function validate(raw: unknown): Snapshot {
   if (!validProgram(program, f)) return invalid();
 
   return {
-    version: 3,
+    version: 4,
     program,
     flight: f,
     view: raw.view as Snapshot["view"],
@@ -294,7 +313,6 @@ export async function writeSave(data: Snapshot) {
   });
 }
 
-// A synchronous lifecycle checkpoint covers a mobile browser suspending an IDB transaction.
 export function checkpoint(data: Snapshot) {
   localStorage.setItem(key(), JSON.stringify(data));
 }

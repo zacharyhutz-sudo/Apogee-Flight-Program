@@ -57,19 +57,20 @@
   justify-content: center;
   gap: 3px;
   padding: 6px 10px;
-  background: #13222de8;
-  border: 1px solid #9db7bc4f;
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   min-width: 0;
-  box-shadow: 0 3px 12px #07111a55;
+  box-shadow: var(--shadow-panel);
 }
 .res-row {
   display: flex;
   align-items: center;
   gap: 4px;
   white-space: nowrap;
-  font: 600 13px var(--mono);
-  color: #f4f7f5;
+  font: 600 13px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
 }
 .res-row svg {
   width: 14px;
@@ -80,19 +81,19 @@
   color: var(--amber);
 }
 .res-pill.propellant svg {
-  color: #7ee3dc;
+  color: var(--teal);
 }
 .res-pill.research svg {
-  color: #c2b2ff;
+  color: var(--violet);
 }
 .res-row small {
-  font: 500 10px var(--mono);
-  color: #9cb2b7;
+  font: 500 10px var(--font-mono);
+  color: var(--ink-muted);
 }
 .res-rate {
-  font: 500 9px var(--mono);
+  font: 500 9px var(--font-mono);
   font-style: normal;
-  color: #8ee0c8;
+  color: var(--teal);
   margin-left: 2px;
 }
 .res-track {
@@ -111,7 +112,7 @@
   background: var(--amber);
 }
 .res-pill.propellant .res-track i {
-  background: #67d6cf;
+  background: var(--teal);
 }
 
 .site-dock,
@@ -125,37 +126,37 @@
   bottom: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   width: max-content;
   max-width: 100%;
   padding: 5px;
-  background: #12212ce8;
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: 0 6px 24px #060e1666;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
 }
 .site-dock button {
   font-weight: 700;
-  font-size: 15px;
-  padding: 0 16px;
+  font-size: 14px;
+  padding: 0 13px;
   background: transparent;
   border: 0;
   min-height: 48px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 .site-dock button.primary,
 .inspect-actions .primary {
   background: var(--amber);
-  color: #231e18;
+  color: #211b14;
 }
 .inspector {
   bottom: 68px;
   width: min(100%, 360px);
-  background: #13232ef5;
-  border: 1px solid #6c858888;
-  border-radius: 16px;
+  background: var(--surface-solid);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   padding: 12px 14px;
-  box-shadow: 0 8px 32px #050d1588;
+  box-shadow: var(--shadow-panel);
 }
 .inspector header,
 .inspect-title,
@@ -177,11 +178,11 @@
   margin: 0;
 }
 .lv-badge {
-  font: 600 10px var(--mono);
+  font: 600 10px var(--font-mono);
   padding: 2px 7px;
   border-radius: 99px;
-  background: #233845;
-  color: var(--mint);
+  background: var(--surface-raised);
+  color: var(--teal);
   white-space: nowrap;
 }
 .inspector header button {
@@ -190,22 +191,22 @@
 }
 .inspect-stat {
   font-size: 14px;
-  color: #e6efec;
+  color: var(--ink);
   margin: 6px 0 4px;
 }
 .inspect-next {
-  font: 500 11px var(--mono);
-  color: #9cb5b8;
+  font: 500 11px var(--font-mono);
+  color: var(--ink-muted);
   margin: 0 0 10px;
 }
 .prereq-tag {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font: 500 11px var(--mono);
+  font: 500 11px var(--font-mono);
   color: var(--amber);
-  background: #ffbd821a;
-  border: 1px solid #ffbd8244;
+  background: #f3a9531a;
+  border: 1px solid #f3a95344;
   border-radius: 8px;
   padding: 4px 8px;
   margin-bottom: 10px;
@@ -220,9 +221,9 @@
 }
 .contract,
 .facilities-list button {
-  background: #1a2a34;
-  border: 1px solid #40535c;
-  border-radius: 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   padding: 10px 12px;
 }
 .contract-locked {
@@ -243,15 +244,15 @@
   font-size: 13px;
 }
 .tier-chip {
-  font: 600 10px var(--mono);
+  font: 600 10px var(--font-mono);
   padding: 2px 7px;
   border-radius: 99px;
-  background: #243946;
-  color: #c2d4d8;
+  background: var(--surface-solid);
+  color: var(--ink-muted);
   white-space: nowrap;
 }
 .tier-chip.tier-0 {
-  color: var(--mint);
+  color: var(--teal);
   background: #1b3a34;
 }
 .tier-chip.tier-2 {
@@ -261,8 +262,9 @@
 .cost-strip {
   flex-wrap: wrap;
   gap: 10px;
-  font: 500 11px var(--mono);
-  color: #cbd9dc;
+  font: 500 11px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
   margin-bottom: 8px;
 }
 .cost-strip span {
@@ -271,20 +273,21 @@
   gap: 4px;
 }
 .payout-chip {
-  font: 600 12px var(--mono);
-  color: var(--mint);
+  font: 600 12px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--teal);
 }
 .lock-note {
   display: block;
   margin-top: 5px;
-  font: 500 11px var(--mono);
+  font: 500 11px var(--font-mono);
   color: var(--amber);
 }
 .contract > small {
   display: block;
   margin-top: 4px;
-  font: 500 10px var(--mono);
-  color: #9bb1b6;
+  font: 500 10px var(--font-mono);
+  color: var(--ink-muted);
 }
 .practice-btn {
   width: 100%;
@@ -303,16 +306,16 @@
 }
 .facilities-list small {
   display: block;
-  font: 500 10px var(--mono);
-  color: #a9bfc2;
+  font: 500 10px var(--font-mono);
+  color: var(--ink-muted);
 }
 .facilities-list b {
-  font: 600 11px var(--mono);
+  font: 600 11px var(--font-mono);
   color: var(--amber);
   white-space: nowrap;
 }
 .facilities-list b.locked-badge {
-  color: #93a8af;
+  color: var(--ink-muted);
 }
 .site-toast {
   top: calc(var(--t) + 56px);
@@ -321,10 +324,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--glass);
-  border: 1px solid var(--line);
+  background: var(--surface-solid);
+  border: 1px solid var(--line-strong);
   padding: 4px 5px 4px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   font-size: 13px;
   z-index: 2;
 }
@@ -351,9 +354,12 @@
     font-size: 9px;
   }
   .site-dock button {
-    font-size: 14px;
-    gap: 5px;
-    padding: 0 12px;
+    font-size: 13px;
+    gap: 4px;
+    padding: 0 9px;
+  }
+  .site-dock button svg {
+    width: 16px;
   }
   .inspector {
     bottom: 64px;

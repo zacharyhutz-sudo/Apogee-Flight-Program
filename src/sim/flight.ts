@@ -4,7 +4,17 @@ export const MU = 3.986004418e14;
 export const G0 = 9.80665;
 export const AIR = 100000;
 export const STEP = 1 / 20;
-export const STAGES = [
+
+export interface StageSpec {
+  name: string;
+  dry: number;
+  fuel: number;
+  thrust: number;
+  isp: number;
+  area: number;
+}
+
+export const STAGES: readonly [StageSpec, StageSpec] = [
   {
     name: "Booster",
     dry: 16000,
@@ -22,9 +32,12 @@ export const STAGES = [
     area: 10,
   },
 ] as const;
-const payload = 2400;
+
+const DEFAULT_PAYLOAD = 2400;
+
 export type Mode = "manual" | "guide" | "prograde" | "retrograde";
 export type Status = "pad" | "flying" | "landed" | "lost";
+
 export interface Flight {
   x: number;
   y: number;
@@ -40,9 +53,27 @@ export interface Flight {
   status: Status;
   orbitEarned: boolean;
   maxAlt: number;
+  /** Optional custom stage specs constructed from a Rocket Workshop blueprint. */
+  customStages?: [StageSpec, StageSpec];
+  customPayload?: number;
+  vehicleName?: string;
 }
-export function initial(): Flight {
-  return {
+
+export function stagesOf(s: Flight): readonly [StageSpec, StageSpec] {
+  return s.customStages ?? STAGES;
+}
+
+export function payloadOf(s: Flight): number {
+  return s.customPayload !== undefined ? s.customPayload : DEFAULT_PAYLOAD;
+}
+
+export function initial(
+  customStages?: [StageSpec, StageSpec],
+  customPayload?: number,
+  vehicleName?: string,
+): Flight {
+  const st = customStages ?? STAGES;
+  const f: Flight = {
     x: R,
     y: 0,
     vx: 0,
@@ -50,7 +81,7 @@ export function initial(): Flight {
     t: 0,
     cargo: 0,
     stage: 0,
-    fuel: [STAGES[0].fuel, STAGES[1].fuel],
+    fuel: [st[0].fuel, st[1].fuel],
     throttle: 1,
     pitch: 0,
     mode: "guide",
@@ -58,39 +89,49 @@ export function initial(): Flight {
     orbitEarned: false,
     maxAlt: 0,
   };
+  if (customStages) f.customStages = customStages;
+  if (customPayload !== undefined) f.customPayload = customPayload;
+  if (vehicleName) f.vehicleName = vehicleName;
+  return f;
 }
+
 export const clamp = (v: number, min: number, max: number) =>
   Math.min(max, Math.max(min, v));
 export const radius = (s: Flight) => Math.hypot(s.x, s.y);
 export const speed = (s: Flight) => Math.hypot(s.vx, s.vy);
+
 export function mass(s: Flight) {
+  const st = stagesOf(s);
   return (
-    payload +
+    payloadOf(s) +
     s.cargo +
-    STAGES[1].dry +
+    st[1].dry +
     s.fuel[1] +
-    (s.stage === 0 ? STAGES[0].dry + s.fuel[0] : 0)
+    (s.stage === 0 ? st[0].dry + s.fuel[0] : 0)
   );
 }
+
 export function thrustToWeight(s: Flight) {
-  const thrust = s.fuel[s.stage] > 0 ? STAGES[s.stage].thrust * s.throttle : 0;
+  const st = stagesOf(s);
+  const thrust = s.fuel[s.stage] > 0 ? st[s.stage].thrust * s.throttle : 0;
   return thrust / ((mass(s) * MU) / radius(s) ** 2);
 }
+
 export function deltaV(s: Flight) {
+  const st = stagesOf(s);
+  const pay = payloadOf(s);
+  const upperDry = pay + s.cargo + st[1].dry;
   const upper =
-    STAGES[1].isp *
-    G0 *
-    Math.log(
-      (payload + s.cargo + STAGES[1].dry + s.fuel[1]) /
-        (payload + s.cargo + STAGES[1].dry),
-    );
-  return (
-    upper +
-    (s.stage === 0
-      ? STAGES[0].isp * G0 * Math.log(mass(s) / (mass(s) - s.fuel[0]))
-      : 0)
-  );
+    st[1].fuel > 0 && st[1].thrust > 0 && upperDry > 0
+      ? st[1].isp * G0 * Math.log((upperDry + s.fuel[1]) / upperDry)
+      : 0;
+  const lower =
+    s.stage === 0 && s.fuel[0] > 0 && st[0].thrust > 0
+      ? st[0].isp * G0 * Math.log(mass(s) / (mass(s) - s.fuel[0]))
+      : 0;
+  return upper + lower;
 }
+
 export function orbit(s: Flight) {
   const r = radius(s),
     v = speed(s),
@@ -111,25 +152,37 @@ export function orbit(s: Flight) {
     ap: a > 0 ? a * (1 + e) - R : Infinity,
   };
 }
+
 export function stable(s: Flight) {
   const o = orbit(s);
   return o.pe >= AIR && o.ap <= 2000000;
 }
+
 export function stage(s: Flight) {
   if (s.status !== "flying" || s.stage !== 0) return false;
   s.stage = 1;
   s.fuel[0] = 0;
   return true;
 }
+
 export function density(alt: number) {
   return alt >= AIR ? 0 : 1.225 * Math.exp(-Math.max(0, alt) / 8500);
 }
+
 export function burning(s: Flight) {
-  return s.status === "flying" && s.throttle > 0 && s.fuel[s.stage] > 0;
+  const st = stagesOf(s);
+  return (
+    s.status === "flying" &&
+    s.throttle > 0 &&
+    s.fuel[s.stage] > 0 &&
+    st[s.stage].thrust > 0
+  );
 }
+
 export function canWarp(s: Flight) {
   return s.status === "flying" && !burning(s) && radius(s) > R + AIR + 1000;
 }
+
 export function alignToVelocity(s: Flight) {
   if ((s.mode !== "prograde" && s.mode !== "retrograde") || speed(s) <= 0.1)
     return;
@@ -140,8 +193,10 @@ export function alignToVelocity(s: Flight) {
     (s.mode === "retrograde" ? 180 : 0);
   s.pitch = angle > 180 ? angle - 360 : angle;
 }
+
 export function step(s: Flight, dt = STEP) {
   if (s.status !== "flying") return;
+  const st = stagesOf(s);
   const r = radius(s),
     alt = r - R,
     v = speed(s),
@@ -149,8 +204,13 @@ export function step(s: Flight, dt = STEP) {
     ny = s.y / r;
   const vr = nx * s.vx + ny * s.vy,
     vt = nx * s.vy - ny * s.vx;
-  const engine = STAGES[s.stage];
-  if (s.mode === "guide" && s.throttle > 0 && s.fuel[s.stage] > 0) {
+  const engine = st[s.stage];
+  if (
+    s.mode === "guide" &&
+    s.throttle > 0 &&
+    s.fuel[s.stage] > 0 &&
+    engine.thrust > 0
+  ) {
     const targetClimb = clamp((154000 - alt) / 55, -130, 540);
     const acc = (engine.thrust * s.throttle) / mass(s);
     const radial = (targetClimb - vr) / 14 + MU / (r * r) - (vt * vt) / r;
@@ -161,12 +221,16 @@ export function step(s: Flight, dt = STEP) {
       s.mode = "prograde";
     }
   } else alignToVelocity(s);
-  const used = Math.min(
-    s.fuel[s.stage],
-    (engine.thrust * s.throttle * dt) / (engine.isp * G0),
-  );
+  const used =
+    engine.thrust > 0
+      ? Math.min(
+          s.fuel[s.stage],
+          (engine.thrust * s.throttle * dt) / (engine.isp * G0),
+        )
+      : 0;
   const midMass = mass(s) - used / 2;
-  const thrustAcc = (used * engine.isp * G0) / (dt * midMass);
+  const thrustAcc =
+    used > 0 ? (used * engine.isp * G0) / (dt * midMass) : 0;
   const theta = (s.pitch * Math.PI) / 180,
     grav = MU / (r * r);
   const drag = (0.5 * density(alt) * 0.32 * engine.area * v) / midMass;

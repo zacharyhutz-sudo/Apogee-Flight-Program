@@ -7,6 +7,14 @@ import {
   clamp,
   type Flight,
 } from "../sim/flight.ts";
+import {
+  PARTS,
+  analyzeBlueprint,
+  buildVehicleInstance,
+  starterBlueprints,
+  type FacilityLimits,
+  type RocketBlueprint,
+} from "./workshop.ts";
 
 export const MAX_LEVEL = 4;
 
@@ -21,7 +29,6 @@ export interface FacilityDef {
   tier: 1 | 2;
   role: string;
   defaultPos: { x: number; y: number };
-  /** Cost indexed by target level: [Lv1 build, Lv2, Lv3, Lv4]. */
   costs: readonly [Cost, Cost, Cost, Cost];
 }
 
@@ -278,6 +285,9 @@ export interface EconomyState {
   inclination: 0 | 90;
   leoPassStartSec: number | null;
   warpAlert: string;
+  /** v0.4 Rocket Workshop versioned blueprints (separate from active flight vehicle). */
+  blueprints: RocketBlueprint[];
+  activeBlueprintId: string;
 }
 
 export type Program = EconomyState;
@@ -288,8 +298,9 @@ const REFINERY_RATE_BY_LEVEL = [0, 120, 280, 650, 1500] as const;
 const TANK_CAP_BY_LEVEL = [0, 1000, 2800, 7500, 18000] as const;
 const CREDIT_CAP_BY_LEVEL = [0, 5000, 15000, 45000, 150000] as const;
 const ACTIVE_CONTRACTS_BY_LEVEL = [0, 1, 2, 3, 4] as const;
-const VAB_PARTS_BY_LEVEL = [0, 12, 24, 40, 64] as const;
-const VAB_STAGES_BY_LEVEL = [0, 2, 3, 4, 5] as const;
+// Before VAB is built (Lv 0), field pad supports up to 8 starter parts / 2 stages.
+const VAB_PARTS_BY_LEVEL = [8, 12, 24, 40, 64] as const;
+const VAB_STAGES_BY_LEVEL = [2, 2, 3, 4, 5] as const;
 const VAB_DISCOUNT_BY_LEVEL = [0, 0, 0.05, 0.1, 0.15] as const;
 
 export const SIZE = 8;
@@ -316,6 +327,7 @@ export const startProgram = (): Program => {
     y: FACILITIES[kind].defaultPos.y,
     level: 1,
   }));
+  const blueprints = starterBlueprints();
   return {
     credits: 600,
     propellant: 900,
@@ -334,6 +346,8 @@ export const startProgram = (): Program => {
     inclination: 0,
     leoPassStartSec: null,
     warpAlert: "",
+    blueprints,
+    activeBlueprintId: blueprints[0].id,
   };
 };
 
@@ -394,6 +408,21 @@ export const vabCaps = (n: number) => {
     discount: VAB_DISCOUNT_BY_LEVEL[lv],
   };
 };
+
+export function getFacilityLimits(p: Program): FacilityLimits {
+  const pad = padCaps(level(p, "pad"));
+  const vab = vabCaps(level(p, "vab"));
+  const caps = getStorageCaps(p);
+  return {
+    maxMassTonnes: pad.tonnes,
+    maxHeightMeters: pad.height,
+    maxParts: vab.parts,
+    maxStages: vab.stages,
+    hardwareDiscount: vab.discount,
+    maxPropellantCap: caps.propellant,
+    labLevel: level(p, "lab"),
+  };
+}
 
 export const trackingInfo = (n: number) => {
   const lv = clamp(Math.floor(n), 0, MAX_LEVEL);
@@ -463,7 +492,6 @@ function safeFinite(v: number, fallback = 0): number {
   return Number.isFinite(v) ? v : fallback;
 }
 
-/** Pure helper: returns hard storage caps for Credits, Propellant, and active contracts. */
 export function getStorageCaps(state: Program) {
   const officeLv = clamp(level(state, "office"), 1, MAX_LEVEL);
   const tanksLv = clamp(level(state, "tanks"), 1, MAX_LEVEL);
@@ -474,13 +502,11 @@ export function getStorageCaps(state: Program) {
   };
 }
 
-/** Pure helper: returns hourly Earth Propellant production rate (units per sim-hour). */
 export function getPropellantRatePerHour(state: Program): number {
   const refLv = clamp(level(state, "refinery"), 0, MAX_LEVEL);
   return REFINERY_RATE_BY_LEVEL[refLv];
 }
 
-/** Pure helper: advances unified simulation clock and trickles capped Propellant only. */
 export function advanceEconomyClock(state: Program, dtSimSec: number): Program {
   const dt = Number.isFinite(dtSimSec) && dtSimSec > 0 ? dtSimSec : 0;
   const caps = getStorageCaps(state);
@@ -504,7 +530,6 @@ export function advanceEconomyClock(state: Program, dtSimSec: number): Program {
   };
 }
 
-/** In-place wrapper for the RAF loop in useMission. */
 export function tickEconomy(p: Program, dtSimSec: number) {
   const next = advanceEconomyClock(p, dtSimSec);
   p.credits = next.credits;
@@ -514,7 +539,6 @@ export function tickEconomy(p: Program, dtSimSec: number) {
   p.elapsed = next.elapsed;
 }
 
-/** Pure helper: checks Mission Control gating, level cap, and Credit + Research affordability. */
 export function canAffordUpgrade(state: Program, buildingId: Kind) {
   const current = level(state, buildingId);
   const targetLevel = current + 1;
@@ -589,11 +613,13 @@ export function contractVehicle(p: Program, job: Job): VehicleSpec {
   };
 }
 
-/** Pure helper: enforces Launchpad mass/height caps, Cryo Tank cap, Credits, and Propellant. */
 export function canLaunchVehicle(state: Program, vehicleSpec: VehicleSpec) {
   const padCap = padCaps(level(state, "pad"));
   const caps = getStorageCaps(state);
-  const hardwareCost = Math.max(0, Math.round(safeFinite(vehicleSpec.hardwareCost, 0)));
+  const hardwareCost = Math.max(
+    0,
+    Math.round(safeFinite(vehicleSpec.hardwareCost, 0)),
+  );
   const propellantCost = Math.max(
     0,
     Math.round(safeFinite(vehicleSpec.propellantCost, 0)),
@@ -689,7 +715,6 @@ export function launchIssue(p: Program, job: Sortie): string {
   return check.ok ? "" : check.reason;
 }
 
-/** Pure helper: applies contract reward + first-time milestone bonus, strictly clamped to caps. */
 export function applyContractReward(state: Program, contractId: Job) {
   const caps = getStorageCaps(state);
   const q = quote(state, contractId);
@@ -745,7 +770,6 @@ export function place(p: Program, k: Kind, x: number, y: number): string {
 export function upgrade(p: Program, k: Kind): string {
   const b = p.buildings.find((b) => b.kind === k);
   if (!b) {
-    // Allow direct build on default open slot if not yet built
     const def = FACILITIES[k].defaultPos;
     if (!placement(p, k, def.x, def.y)) return place(p, k, def.x, def.y);
     for (let y = 1; y < SIZE; y++)
@@ -780,6 +804,71 @@ export function prepare(p: Program, job: Sortie): Flight {
   const flight = initial();
   flight.cargo = job === "practice" ? 0 : CONTRACTS[job].cargo;
   return flight;
+}
+
+/** Constructs a concrete VehicleInstance from a saved blueprint and stages it on the pad. */
+export function prepareBlueprintFlight(
+  p: Program,
+  blueprintId: string,
+  mode: "practice" | "real",
+): { flight: Flight | null; error: string; hardwareCost: number; propellantCost: number } {
+  const bp = p.blueprints.find((b) => b.id === blueprintId);
+  if (!bp) {
+    return { flight: null, error: "Blueprint not found.", hardwareCost: 0, propellantCost: 0 };
+  }
+  const limits = getFacilityLimits(p);
+  const analysis = analyzeBlueprint(bp, limits);
+  if (!analysis.canSimulate) {
+    return {
+      flight: null,
+      error: analysis.warnings[0]?.message ?? "Vehicle failed pre-launch checks.",
+      hardwareCost: analysis.hardwareCost,
+      propellantCost: analysis.propellantCost,
+    };
+  }
+  if (mode === "real") {
+    if (!analysis.canLaunchWithLimits) {
+      return {
+        flight: null,
+        error: analysis.warnings[0]?.message ?? "Vehicle exceeds facility limits.",
+        hardwareCost: analysis.hardwareCost,
+        propellantCost: analysis.propellantCost,
+      };
+    }
+    const check = canLaunchVehicle(p, {
+      name: bp.name,
+      wetMassTonnes: analysis.wetTonnes,
+      heightMeters: analysis.heightMeters,
+      hardwareCost: analysis.hardwareCost,
+      propellantCost: analysis.propellantCost,
+      cargo: 0,
+    });
+    if (!check.ok) {
+      return {
+        flight: null,
+        error: check.reason,
+        hardwareCost: check.hardwareCost,
+        propellantCost: check.propellantCost,
+      };
+    }
+    p.credits = Math.max(0, p.credits - check.hardwareCost);
+    p.propellant = Math.max(0, p.propellant - check.propellantCost);
+  }
+  const instance = buildVehicleInstance(bp, analysis);
+  p.activeBlueprintId = bp.id;
+  p.sortie = "practice";
+  p.award = null;
+  p.paid = false;
+  p.rewarded = false;
+  p.inclination = 0;
+  p.leoPassStartSec = null;
+  const flight = initial(instance.stages, instance.payloadDryKg, instance.name);
+  return {
+    flight,
+    error: "",
+    hardwareCost: mode === "real" ? instance.hardwareCost : 0,
+    propellantCost: mode === "real" ? instance.propellantCost : 0,
+  };
 }
 
 export function payLaunch(p: Program): string {
@@ -840,7 +929,6 @@ export function contractConditionMet(p: Program, f: Flight): boolean {
         p.leoPassStartSec = f.t;
         return false;
       }
-      // ~88 min orbital period at 200 km (~5300 s)
       return f.t - p.leoPassStartSec >= 5200;
     }
   }
@@ -866,6 +954,32 @@ export function settle(p: Program, f: Flight): string {
   const gainedC = p.credits - prevCredits;
   const capNote = gainedC < totalCredits ? " (capped)" : "";
   return `${CONTRACTS[job].name} complete · +${gainedC.toLocaleString("en-US")} C${capNote} · +${booked.research} RD`;
+}
+
+function validBlueprint(bp: unknown): bp is RocketBlueprint {
+  if (!bp || typeof bp !== "object") return false;
+  const b = bp as RocketBlueprint;
+  if (
+    typeof b.id !== "string" ||
+    !b.id.length ||
+    typeof b.name !== "string" ||
+    !b.name.length ||
+    !Number.isSafeInteger(b.version) ||
+    b.version < 1 ||
+    !Array.isArray(b.parts) ||
+    b.parts.length > 64
+  )
+    return false;
+  return b.parts.every(
+    (p) =>
+      p &&
+      typeof p.uid === "string" &&
+      Object.hasOwn(PARTS, p.partId) &&
+      Number.isSafeInteger(p.stage) &&
+      p.stage >= 0 &&
+      p.stage <= 5 &&
+      (p.symmetry === 1 || p.symmetry === 2),
+  );
 }
 
 export function validProgram(value: unknown, f: Flight): value is Program {
@@ -895,7 +1009,12 @@ export function validProgram(value: unknown, f: Flight): value is Program {
     typeof p.milestones.firstOrbit !== "boolean" ||
     !(p.sortie === "practice" || Object.hasOwn(CONTRACTS, p.sortie)) ||
     typeof p.paid !== "boolean" ||
-    typeof p.rewarded !== "boolean"
+    typeof p.rewarded !== "boolean" ||
+    !Array.isArray(p.blueprints) ||
+    p.blueprints.length < 1 ||
+    p.blueprints.length > 16 ||
+    !p.blueprints.every(validBlueprint) ||
+    typeof p.activeBlueprintId !== "string"
   )
     return false;
   if (

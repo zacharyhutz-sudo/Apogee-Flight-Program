@@ -1,18 +1,4 @@
-@import "@fontsource/barlow/latin-500.css";
-@import "@fontsource/barlow/latin-600.css";
-@import "@fontsource/barlow/latin-700.css";
-@import "@fontsource/ibm-plex-mono/latin-500.css";
-:root {
-  color-scheme: dark;
-  font-family: Barlow, system-ui, sans-serif;
-  color: #f0f2ed;
-  background: #111b2a;
-  --mono: "IBM Plex Mono", monospace;
-  --amber: #ffbd82;
-  --mint: #a5d9c6;
-  --glass: #15222edf;
-  --line: #a3bbc34a;
-}
+@import "./tokens.css";
 * {
   box-sizing: border-box;
 }
@@ -43,7 +29,7 @@ button {
   background: var(--glass);
   color: inherit;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -52,7 +38,7 @@ button:disabled {
   cursor: default;
 }
 button:enabled:active {
-  background: #384650;
+  background: var(--surface-raised);
 }
 button:focus-visible,
 select:focus-visible,
@@ -87,7 +73,7 @@ button svg {
   --r: calc(var(--gap) + env(safe-area-inset-right));
   --t: calc(var(--gap) + env(safe-area-inset-top));
   --b: calc(var(--gap) + env(safe-area-inset-bottom));
-  background: #111c2d;
+  background: var(--bg-void);
 }
 .flight-scene canvas {
   display: block;
@@ -133,22 +119,23 @@ button svg {
   height: 44px;
   padding: 0;
   color: var(--amber);
-  border: 1px solid #c4ac8c5c;
-  border-radius: 12px;
-  background: #192634cc;
+  border: 1px solid #f3a9535c;
+  border-radius: var(--radius-md);
+  background: var(--surface);
 }
 .insignia svg {
   width: 20px;
   height: 20px;
 }
 .timer {
-  font: 500 11px var(--mono);
-  color: #dce7ee;
+  font: 500 11px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
   padding: 5px 9px;
   border-radius: 99px;
-  background: #13212dc4;
+  background: var(--surface);
   border: 1px solid var(--line);
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 nav,
 .map-tools,
@@ -164,7 +151,7 @@ nav button,
   padding: 0;
 }
 .selected {
-  color: var(--mint);
+  color: var(--teal);
 }
 .telemetry {
   position: absolute;
@@ -179,7 +166,7 @@ nav button,
 }
 .meter {
   padding: 0 11px;
-  border-left: 1px solid #8495a152;
+  border-left: 1px solid var(--line);
 }
 .meter:first-child {
   padding-left: 0;
@@ -188,19 +175,20 @@ nav button,
 .meter span,
 .control-label,
 .fuel-label {
-  font: 500 10px var(--mono);
+  font: 500 10px var(--font-mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #c2d1d7;
+  color: var(--ink-muted);
 }
 .meter strong {
   display: block;
-  font: 500 clamp(15px, 2.6vmin, 24px) var(--mono);
-  letter-spacing: -0.06em;
+  font: 500 clamp(15px, 2.6vmin, 24px) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.05em;
 }
 .meter small {
-  font: 500 10px var(--mono);
-  color: #c3d0da;
+  font: 500 10px var(--font-mono);
+  color: var(--ink-muted);
   letter-spacing: 0;
   margin-left: 3px;
 }
@@ -224,8 +212,9 @@ nav button,
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--mint);
-  border-radius: 12px;
+  font-weight: 600;
+  color: var(--teal);
+  border-radius: var(--radius-md);
   background: var(--glass);
   border: 1px solid var(--line);
   padding: 0 10px;
@@ -245,7 +234,7 @@ nav button,
   border-radius: 14px;
   background: var(--glass);
   border: 1px solid var(--line);
-  box-shadow: 0 3px 16px #09111a24;
+  box-shadow: var(--shadow-panel);
 }
 .pitch {
   padding: 7px 4px 4px;
@@ -253,16 +242,17 @@ nav button,
 }
 .control-label b,
 .fuel-label b {
-  color: #edf2ef;
+  color: var(--ink);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .pitch-pair {
   margin-top: 4px;
   gap: 2px;
 }
 .pitch-pair button {
-  background: #293743;
-  border: 1px solid #72808c40;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
   border-radius: 9px;
 }
 .pitch-pair svg {
@@ -279,7 +269,8 @@ nav button,
   gap: 4px;
 }
 .thrust > b {
-  font: 500 13px var(--mono);
+  font: 500 13px var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--amber);
 }
 .thrust .control-label {
@@ -321,7 +312,7 @@ nav button,
   width: 26px;
   height: 14px;
   border-radius: 4px;
-  background: #ffd5a3;
+  background: var(--amber-bright);
   border: 1px solid #f9e4c3;
   box-shadow: 0 1px 5px #10151c;
   margin-left: -10px;
@@ -330,7 +321,7 @@ nav button,
   width: 26px;
   height: 14px;
   border-radius: 4px;
-  background: #ffd5a3;
+  background: var(--amber-bright);
   border: 1px solid #f9e4c3;
 }
 .command {
@@ -348,9 +339,10 @@ nav button,
   display: flex;
   justify-content: center;
   gap: 10px;
-  font: 600 11px var(--mono);
-  color: #e6efe9;
-  background: #13222de0;
+  font: 600 11px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 99px;
   padding: 4px 10px;
@@ -364,23 +356,23 @@ nav button,
   color: var(--amber);
 }
 .launch-costs span:last-child svg {
-  color: #7ee3dc;
+  color: var(--teal);
 }
 .sim-free-btn {
   min-height: 44px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--mint);
-  background: #13222dd9;
-  border: 1px solid #82c4b466;
+  color: var(--teal);
+  background: var(--surface);
+  border: 1px solid #72d6c666;
 }
 .state {
   justify-self: center;
   display: flex;
   align-items: center;
   gap: 6px;
-  font: 500 10px var(--mono);
-  background: #15222ed4;
+  font: 500 10px var(--font-mono);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 20px;
   padding: 4px 10px;
@@ -390,22 +382,22 @@ nav button,
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--mint);
+  background: var(--teal);
 }
 .state.alert i {
   background: var(--amber);
 }
 button.primary {
   background: var(--amber);
-  color: #27221c;
-  border: 1px solid #ffd5a6;
+  color: #211b14;
+  border: 1px solid var(--amber-bright);
   min-height: 48px;
   font-weight: 700;
   font-size: 16px;
   box-shadow: 0 3px 15px #111a284d;
 }
 button.primary:enabled:active {
-  background: #ffce99;
+  background: var(--amber-bright);
 }
 .fuel-label {
   display: flex;
@@ -424,7 +416,7 @@ button.primary:enabled:active {
 .fuel-track i {
   height: 100%;
   display: block;
-  background: var(--mint);
+  background: var(--teal);
 }
 .orbital {
   background: radial-gradient(ellipse at center, #172838, #0b1521);
@@ -435,7 +427,7 @@ button.primary:enabled:active {
 }
 .orbital svg text {
   fill: #c2ebe0;
-  font: 11px var(--mono);
+  font: 11px var(--font-mono);
   paint-order: stroke;
   stroke: #142432;
   stroke-width: 2px;
@@ -455,8 +447,8 @@ button.primary:enabled:active {
   position: absolute;
   right: var(--r);
   top: calc(var(--t) + 106px);
-  color: #b8cbd2;
-  font: 500 10px var(--mono);
+  color: var(--ink-muted);
+  font: 500 10px var(--font-mono);
   text-align: right;
 }
 .tracking-slot {
@@ -466,17 +458,17 @@ button.primary:enabled:active {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font: 500 10px var(--mono);
-  color: #b8cbd2;
-  background: #13222dd4;
-  border: 1px solid #86a4ae4d;
-  border-radius: 10px;
+  font: 500 10px var(--font-mono);
+  color: var(--ink-muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 6px 9px;
   z-index: 1;
 }
 .tracking-slot.unlocked {
-  color: var(--mint);
-  border-color: #82c4b477;
+  color: var(--teal);
+  border-color: #72d6c677;
 }
 .warp-toggle {
   position: absolute;
@@ -484,7 +476,7 @@ button.primary:enabled:active {
   right: 66px;
   min-height: 44px;
   padding: 0 10px;
-  font: 500 12px var(--mono);
+  font: 500 12px var(--font-mono);
 }
 .warp-toggle svg {
   width: 15px;
@@ -499,9 +491,9 @@ button.primary:enabled:active {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #24313cf2;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  background: var(--surface-solid);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
   padding: 3px 4px 3px 10px;
   font-size: 13px;
   z-index: 3;
@@ -519,10 +511,10 @@ dialog {
     100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 28px
   );
   padding: 18px;
-  background: #15222bf7;
-  color: #edf1ed;
-  border: 1px solid #61727d;
-  border-radius: 17px;
+  background: var(--surface-solid);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   box-shadow: 0 15px 65px #04091277;
   overflow: auto;
   overscroll-behavior: contain;
@@ -536,8 +528,9 @@ dialog p {
   margin: 0;
 }
 dialog h2 {
-  font-size: 22px;
-  letter-spacing: -0.03em;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 dialog h3 {
   font-size: 16px;
@@ -571,7 +564,7 @@ dialog h3 {
 }
 dialog button {
   padding: 0 12px;
-  background: #253541;
+  background: var(--surface-raised);
   font-size: 15px;
   font-weight: 600;
 }
@@ -580,13 +573,13 @@ dialog button {
 }
 .details {
   margin-top: 13px;
-  color: #adbfca;
-  font: 500 9px var(--mono);
+  color: var(--ink-muted);
+  font: 500 9px var(--font-mono);
 }
 dialog p,
 dialog ol {
   font-size: 14px;
-  color: #c1cdd2;
+  color: var(--ink-muted);
   line-height: 1.45;
   margin: 8px 0 12px;
 }
@@ -595,8 +588,8 @@ dialog ol {
   flex: 1;
 }
 .rates [aria-pressed="true"] {
-  border-color: var(--mint);
-  color: var(--mint);
+  border-color: var(--teal);
+  color: var(--teal);
 }
 .reset-row {
   margin-top: 12px;
@@ -608,7 +601,7 @@ dialog ol {
 }
 .pause-note {
   font-size: 12px;
-  color: var(--mint);
+  color: var(--teal);
 }
 .error {
   color: var(--amber);
@@ -628,25 +621,25 @@ dialog ol {
 .steps i {
   display: inline-grid;
   place-items: center;
-  border: 1px solid #788996;
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
   width: 20px;
   height: 20px;
-  font: 10px var(--mono);
+  font: 10px var(--font-mono);
 }
 .steps .next {
   color: var(--amber);
 }
 .steps .done {
-  color: var(--mint);
+  color: var(--teal);
 }
 .events li {
   font-size: 14px;
 }
 .events time {
   white-space: nowrap;
-  font: 10px var(--mono);
-  color: var(--mint);
+  font: 10px var(--font-mono);
+  color: var(--teal);
 }
 @media (max-width: 620px) {
   .map-tools {
