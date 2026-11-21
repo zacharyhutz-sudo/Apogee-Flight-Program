@@ -59,11 +59,24 @@ export const FACILITIES = {
       { credits: 26000, research: 0 },
     ],
   },
+  foundry: {
+    name: "Solar Foundry",
+    shortName: "Foundry",
+    tier: 1,
+    role: "Tap-to-collect Credits generator",
+    defaultPos: { x: 1, y: 3 },
+    costs: [
+      { credits: 0, research: 0 },
+      { credits: 850, research: 0 },
+      { credits: 3400, research: 0 },
+      { credits: 11500, research: 0 },
+    ],
+  },
   refinery: {
     name: "Propellant Refinery",
     shortName: "Refinery",
     tier: 1,
-    role: "Hourly propellant output",
+    role: "Tap-to-collect Propellant generator",
     defaultPos: { x: 3, y: 2 },
     costs: [
       { credits: 0, research: 0 },
@@ -144,6 +157,7 @@ export const FACILITY_KINDS = Object.keys(FACILITIES) as Kind[];
 export const STARTER_KINDS: Kind[] = [
   "command",
   "pad",
+  "foundry",
   "refinery",
   "tanks",
   "office",
@@ -267,10 +281,19 @@ export interface Milestones {
   firstOrbit: boolean;
 }
 
+export interface CollectorHoppers {
+  credits: number;
+  propellant: number;
+}
+
 export interface EconomyState {
   credits: number;
   propellant: number;
   research: number;
+  /** Local tap-to-collect hoppers on Solar Foundry (credits) & Propellant Refinery (propellant). */
+  collectors: CollectorHoppers;
+  /** Real wall-clock timestamp (ms) for offline collector accumulation (capped by hopper size). */
+  lastRealTimestampMs: number;
   simTimeSec: number;
   elapsed: number;
   buildings: Building[];
@@ -285,7 +308,6 @@ export interface EconomyState {
   inclination: 0 | 90;
   leoPassStartSec: number | null;
   warpAlert: string;
-  /** v0.4 Rocket Workshop versioned blueprints (separate from active flight vehicle). */
   blueprints: RocketBlueprint[];
   activeBlueprintId: string;
 }
@@ -294,11 +316,16 @@ export type Program = EconomyState;
 
 const PAD_MASS_BY_LEVEL = [0, 35, 90, 220, 500] as const;
 const PAD_HEIGHT_BY_LEVEL = [0, 42, 56, 74, 96] as const;
-const REFINERY_RATE_BY_LEVEL = [0, 120, 280, 650, 1500] as const;
+
+// Clash-of-Clans-style collector output per hour & local hopper cap (~2.5-3 hr capacity)
+const FOUNDRY_RATE_BY_LEVEL = [0, 180, 420, 950, 2200] as const;
+const FOUNDRY_HOPPER_BY_LEVEL = [0, 450, 1100, 2500, 6000] as const;
+const REFINERY_RATE_BY_LEVEL = [0, 140, 320, 720, 1650] as const;
+const REFINERY_HOPPER_BY_LEVEL = [0, 350, 850, 2000, 4800] as const;
+
 const TANK_CAP_BY_LEVEL = [0, 1000, 2800, 7500, 18000] as const;
 const CREDIT_CAP_BY_LEVEL = [0, 5000, 15000, 45000, 150000] as const;
 const ACTIVE_CONTRACTS_BY_LEVEL = [0, 1, 2, 3, 4] as const;
-// Before VAB is built (Lv 0), field pad supports up to 8 starter parts / 2 stages.
 const VAB_PARTS_BY_LEVEL = [8, 12, 24, 40, 64] as const;
 const VAB_STAGES_BY_LEVEL = [2, 2, 3, 4, 5] as const;
 const VAB_DISCOUNT_BY_LEVEL = [0, 0, 0.05, 0.1, 0.15] as const;
@@ -309,6 +336,7 @@ export function syncBuildingLevels(buildings: Building[]): Record<Kind, number> 
   const map: Record<Kind, number> = {
     command: 0,
     pad: 0,
+    foundry: 0,
     refinery: 0,
     tanks: 0,
     office: 0,
@@ -332,6 +360,8 @@ export const startProgram = (): Program => {
     credits: 600,
     propellant: 900,
     research: 0,
+    collectors: { credits: 0, propellant: 0 },
+    lastRealTimestampMs: 0,
     simTimeSec: 0,
     elapsed: 0,
     buildings,
@@ -464,14 +494,16 @@ export function facilityBenefit(k: Kind, n: number): string {
   const lv = clamp(Math.floor(n), 1, MAX_LEVEL);
   switch (k) {
     case "command":
-      if (lv === 1) return "Starter 5 facilities · Tier 1 contracts";
+      if (lv === 1) return "Starter 6 facilities · Tier 1 contracts";
       if (lv === 2) return "Unlocks VAB, Tracking, Lab · Tier 2 contracts";
       if (lv === 3) return "Facility cap Lv 3 · Lunar tier ready";
       return "Facility cap Lv 4 · Interplanetary tier ready";
     case "pad":
       return `${padCaps(lv).tonnes} t max wet mass · ${padCaps(lv).height} m`;
+    case "foundry":
+      return `${FOUNDRY_RATE_BY_LEVEL[lv].toLocaleString("en-US")} C/hr · ${FOUNDRY_HOPPER_BY_LEVEL[lv].toLocaleString("en-US")} hopper`;
     case "refinery":
-      return `${REFINERY_RATE_BY_LEVEL[lv].toLocaleString("en-US")} Prop / sim-hr`;
+      return `${REFINERY_RATE_BY_LEVEL[lv].toLocaleString("en-US")} Prop/hr · ${REFINERY_HOPPER_BY_LEVEL[lv].toLocaleString("en-US")} hopper`;
     case "tanks":
       return `${TANK_CAP_BY_LEVEL[lv].toLocaleString("en-US")} Prop cap`;
     case "office":
@@ -502,32 +534,160 @@ export function getStorageCaps(state: Program) {
   };
 }
 
+export function getCollectorCaps(state: Program) {
+  const foundryLv = clamp(level(state, "foundry"), 0, MAX_LEVEL);
+  const refLv = clamp(level(state, "refinery"), 0, MAX_LEVEL);
+  return {
+    credits: FOUNDRY_HOPPER_BY_LEVEL[foundryLv],
+    propellant: REFINERY_HOPPER_BY_LEVEL[refLv],
+  };
+}
+
+export function getCreditRatePerHour(state: Program): number {
+  const foundryLv = clamp(level(state, "foundry"), 0, MAX_LEVEL);
+  return FOUNDRY_RATE_BY_LEVEL[foundryLv];
+}
+
 export function getPropellantRatePerHour(state: Program): number {
   const refLv = clamp(level(state, "refinery"), 0, MAX_LEVEL);
   return REFINERY_RATE_BY_LEVEL[refLv];
 }
 
+/**
+ * Pure helper: advances unified simulation clock and fills local tap-to-collect hoppers
+ * (Solar Foundry for Credits, Propellant Refinery for Propellant) strictly up to their hopper caps.
+ * Never auto-deposits into main storage until the player taps the building.
+ */
 export function advanceEconomyClock(state: Program, dtSimSec: number): Program {
   const dt = Number.isFinite(dtSimSec) && dtSimSec > 0 ? dtSimSec : 0;
-  const caps = getStorageCaps(state);
-  const ratePerSec = getPropellantRatePerHour(state) / 3600;
+  const storageCaps = getStorageCaps(state);
+  const hopperCaps = getCollectorCaps(state);
+  const creditRatePerSec = getCreditRatePerHour(state) / 3600;
+  const propRatePerSec = getPropellantRatePerHour(state) / 3600;
   const nextTime = safeFinite(state.simTimeSec, 0) + dt;
-  const curProp = clamp(safeFinite(state.propellant, 0), 0, caps.propellant);
-  const nextProp = clamp(curProp + ratePerSec * dt, 0, caps.propellant);
-  const nextCredits = clamp(
-    Math.floor(safeFinite(state.credits, 0)),
+
+  const curHopperC = clamp(
+    safeFinite(state.collectors?.credits, 0),
     0,
-    caps.credits,
+    hopperCaps.credits,
   );
-  const nextResearch = Math.max(0, Math.floor(safeFinite(state.research, 0)));
+  const curHopperP = clamp(
+    safeFinite(state.collectors?.propellant, 0),
+    0,
+    hopperCaps.propellant,
+  );
+
   return {
     ...state,
-    credits: nextCredits,
-    propellant: nextProp,
-    research: nextResearch,
+    credits: clamp(Math.floor(safeFinite(state.credits, 0)), 0, storageCaps.credits),
+    propellant: clamp(safeFinite(state.propellant, 0), 0, storageCaps.propellant),
+    research: Math.max(0, Math.floor(safeFinite(state.research, 0))),
+    collectors: {
+      credits: clamp(curHopperC + creditRatePerSec * dt, 0, hopperCaps.credits),
+      propellant: clamp(curHopperP + propRatePerSec * dt, 0, hopperCaps.propellant),
+    },
     simTimeSec: nextTime,
     elapsed: nextTime,
   };
+}
+
+/** Pure helper: applies real-world wall-clock offline accumulation strictly capped by collector hoppers. */
+export function applyOfflineProgress(state: Program, nowMs: number) {
+  const validNow = Number.isFinite(nowMs) && nowMs > 0 ? Math.floor(nowMs) : 0;
+  const prevMs = safeFinite(state.lastRealTimestampMs, 0);
+  if (!validNow || prevMs <= 0 || validNow <= prevMs) {
+    return {
+      state: { ...state, lastRealTimestampMs: validNow || prevMs },
+      creditsAdded: 0,
+      propellantAdded: 0,
+    };
+  }
+  const elapsedSec = Math.min(30 * 86400, (validNow - prevMs) / 1000);
+  const hopperCaps = getCollectorCaps(state);
+  const curC = clamp(safeFinite(state.collectors?.credits, 0), 0, hopperCaps.credits);
+  const curP = clamp(safeFinite(state.collectors?.propellant, 0), 0, hopperCaps.propellant);
+  const nextC = clamp(curC + (getCreditRatePerHour(state) / 3600) * elapsedSec, 0, hopperCaps.credits);
+  const nextP = clamp(curP + (getPropellantRatePerHour(state) / 3600) * elapsedSec, 0, hopperCaps.propellant);
+  return {
+    state: {
+      ...state,
+      collectors: { credits: nextC, propellant: nextP },
+      lastRealTimestampMs: validNow,
+    },
+    creditsAdded: Math.floor(nextC - curC),
+    propellantAdded: Math.floor(nextP - curP),
+  };
+}
+
+/** Pure helper: transfers accumulated hopper resources into main storage on player tap. */
+export function collectResource(
+  state: Program,
+  resource: "credits" | "propellant",
+) {
+  const storageCaps = getStorageCaps(state);
+  const available = Math.floor(
+    Math.max(0, safeFinite(state.collectors?.[resource], 0)),
+  );
+  if (available < 1) {
+    return { state, collected: 0, reason: "Nothing ready to collect yet." };
+  }
+  if (resource === "credits") {
+    const room = Math.max(0, storageCaps.credits - state.credits);
+    if (room <= 0) {
+      return {
+        state,
+        collected: 0,
+        reason: "Credit storage full — upgrade Contract Office or spend Credits.",
+      };
+    }
+    const take = Math.min(available, room);
+    return {
+      state: {
+        ...state,
+        credits: clamp(state.credits + take, 0, storageCaps.credits),
+        collectors: {
+          ...state.collectors,
+          credits: Math.max(0, state.collectors.credits - take),
+        },
+      },
+      collected: take,
+      reason: "",
+    };
+  }
+  const room = Math.max(0, Math.floor(storageCaps.propellant - state.propellant));
+  if (room <= 0) {
+    return {
+      state,
+      collected: 0,
+      reason: "Cryo Tanks full — upgrade tanks or launch a mission.",
+    };
+  }
+  const take = Math.min(available, room);
+  return {
+    state: {
+      ...state,
+      propellant: clamp(state.propellant + take, 0, storageCaps.propellant),
+      collectors: {
+        ...state.collectors,
+        propellant: Math.max(0, state.collectors.propellant - take),
+      },
+    },
+    collected: take,
+    reason: "",
+  };
+}
+
+export function collectFromBuilding(p: Program, kind: Kind) {
+  const resource: "credits" | "propellant" | null =
+    kind === "foundry" ? "credits" : kind === "refinery" ? "propellant" : null;
+  if (!resource) return { collected: 0, resource: null, reason: "" };
+  const res = collectResource(p, resource);
+  if (res.collected > 0) {
+    p.credits = res.state.credits;
+    p.propellant = res.state.propellant;
+    p.collectors = res.state.collectors;
+  }
+  return { collected: res.collected, resource, reason: res.reason };
 }
 
 export function tickEconomy(p: Program, dtSimSec: number) {
@@ -535,6 +695,7 @@ export function tickEconomy(p: Program, dtSimSec: number) {
   p.credits = next.credits;
   p.propellant = next.propellant;
   p.research = next.research;
+  p.collectors = next.collectors;
   p.simTimeSec = next.simTimeSec;
   p.elapsed = next.elapsed;
 }
@@ -655,7 +816,7 @@ export function canLaunchVehicle(state: Program, vehicleSpec: VehicleSpec) {
   if (!vehicleSpec.sponsored && state.credits < hardwareCost) {
     return {
       ok: false,
-      reason: `Need ${hardwareCost.toLocaleString("en-US")} C. Try Atmospheric Sounding.`,
+      reason: `Need ${hardwareCost.toLocaleString("en-US")} C. Collect from Solar Foundry or fly Sounding.`,
       hardwareCost,
       propellantCost,
       emergencyFuelUsed: 0,
@@ -673,7 +834,7 @@ export function canLaunchVehicle(state: Program, vehicleSpec: VehicleSpec) {
     }
     return {
       ok: false,
-      reason: `Need ${Math.ceil(propellantCost - state.propellant)} more Propellant.`,
+      reason: `Need ${Math.ceil(propellantCost - state.propellant)} more Propellant. Tap Refinery to collect.`,
       hardwareCost,
       propellantCost,
       emergencyFuelUsed: 0,
@@ -806,7 +967,6 @@ export function prepare(p: Program, job: Sortie): Flight {
   return flight;
 }
 
-/** Constructs a concrete VehicleInstance from a saved blueprint and stages it on the pad. */
 export function prepareBlueprintFlight(
   p: Program,
   blueprintId: string,
@@ -993,6 +1153,16 @@ export function validProgram(value: unknown, f: Flight): value is Program {
     typeof p.propellant !== "number" ||
     !Number.isFinite(p.propellant) ||
     p.propellant < 0 ||
+    !p.collectors ||
+    typeof p.collectors.credits !== "number" ||
+    !Number.isFinite(p.collectors.credits) ||
+    p.collectors.credits < 0 ||
+    typeof p.collectors.propellant !== "number" ||
+    !Number.isFinite(p.collectors.propellant) ||
+    p.collectors.propellant < 0 ||
+    typeof p.lastRealTimestampMs !== "number" ||
+    !Number.isFinite(p.lastRealTimestampMs) ||
+    p.lastRealTimestampMs < 0 ||
     typeof p.simTimeSec !== "number" ||
     !Number.isFinite(p.simTimeSec) ||
     p.simTimeSec < 0 ||
@@ -1033,7 +1203,13 @@ export function validProgram(value: unknown, f: Flight): value is Program {
     return false;
 
   const caps = getStorageCaps(p);
-  if (p.credits > caps.credits || p.propellant > caps.propellant + 1e-6)
+  const hopCaps = getCollectorCaps(p);
+  if (
+    p.credits > caps.credits ||
+    p.propellant > caps.propellant + 1e-6 ||
+    p.collectors.credits > hopCaps.credits + 1e-6 ||
+    p.collectors.propellant > hopCaps.propellant + 1e-6
+  )
     return false;
 
   const expectedCargo =

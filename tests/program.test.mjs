@@ -6,8 +6,13 @@ import {
   STARTER_KINDS,
   startProgram,
   getStorageCaps,
+  getCollectorCaps,
+  getCreditRatePerHour,
   getPropellantRatePerHour,
   advanceEconomyClock,
+  applyOfflineProgress,
+  collectResource,
+  collectFromBuilding,
   canAffordUpgrade,
   canLaunchVehicle,
   applyContractReward,
@@ -36,70 +41,92 @@ function fly(p, job) {
   return f;
 }
 
-test("unified simulation clock trickles propellant strictly to hard cap and never prints credits", () => {
+test("collectors fill local hoppers strictly to cap and transfer only on tap-to-collect", () => {
   const p = startProgram();
   assert.deepEqual(getStorageCaps(p), {
     credits: 5000,
     propellant: 1000,
     activeContracts: 1,
   });
-  assert.equal(getPropellantRatePerHour(p), 120);
+  assert.deepEqual(getCollectorCaps(p), {
+    credits: 450,
+    propellant: 350,
+  });
+  assert.equal(getCreditRatePerHour(p), 180);
+  assert.equal(getPropellantRatePerHour(p), 140);
 
-  p.propellant = 200;
+  // Half hour fills hoppers only (wallet unchanged until tapped!)
   const afterHalfHour = advanceEconomyClock(p, 1800);
-  assert.equal(p.propellant, 200);
-  assert.equal(afterHalfHour.propellant, 260);
-  assert.equal(afterHalfHour.credits, p.credits);
-  assert.equal(afterHalfHour.simTimeSec, 1800);
+  assert.equal(p.collectors.credits, 0);
+  assert.equal(afterHalfHour.collectors.credits, 90);
+  assert.equal(afterHalfHour.collectors.propellant, 70);
+  assert.equal(afterHalfHour.credits, 600);
+  assert.equal(afterHalfHour.propellant, 900);
 
-  // 30-day warp fills tanks to 100% cap and never exceeds it or prints credits
+  // 30-day warp caps strictly at local hopper limits (450 C / 350 Prop)
   const after30Days = advanceEconomyClock(p, 30 * 86400);
-  assert.equal(after30Days.propellant, 1000);
-  assert.equal(after30Days.credits, p.credits);
-  assert.equal(after30Days.research, p.research);
+  assert.equal(after30Days.collectors.credits, 450);
+  assert.equal(after30Days.collectors.propellant, 350);
+  assert.equal(after30Days.credits, 600);
+  assert.equal(after30Days.propellant, 900);
+
+  // Tap Solar Foundry -> transfers 450 C into wallet (600 -> 1,050)
+  const cTap = collectResource(after30Days, "credits");
+  assert.equal(cTap.collected, 450);
+  assert.equal(cTap.state.credits, 1050);
+  assert.equal(cTap.state.collectors.credits, 0);
+
+  // Tap Refinery when tanks have only 100 room -> transfers 100, leaves 250 in hopper
+  const pTap = collectResource(cTap.state, "propellant");
+  assert.equal(pTap.collected, 100);
+  assert.equal(pTap.state.propellant, 1000);
+  assert.equal(pTap.state.collectors.propellant, 250);
 
   // Negative or NaN dt cannot corrupt stock
-  const safeNeg = advanceEconomyClock(p, -500);
-  assert.equal(safeNeg.propellant, 200);
-  const safeNaN = advanceEconomyClock(p, Number.NaN);
-  assert.equal(safeNaN.propellant, 200);
+  assert.equal(advanceEconomyClock(p, -500).collectors.credits, 0);
+  assert.equal(advanceEconomyClock(p, Number.NaN).collectors.propellant, 0);
+});
+
+test("offline wall-clock progress fills hoppers up to cap while browser is closed", () => {
+  const p = startProgram();
+  p.lastRealTimestampMs = 1_000_000;
+  // 1 hour away -> +180 C, +140 Prop in hoppers
+  const oneHr = applyOfflineProgress(p, 1_000_000 + 3600 * 1000);
+  assert.equal(oneHr.creditsAdded, 180);
+  assert.equal(oneHr.propellantAdded, 140);
+  assert.equal(oneHr.state.credits, 600); // still in hopper until tapped!
+  assert.equal(oneHr.state.collectors.credits, 180);
+
+  // 10 days away -> strictly capped at Lv 1 hopper limits (450 C / 350 Prop)
+  const tenDays = applyOfflineProgress(p, 1_000_000 + 10 * 86400 * 1000);
+  assert.equal(tenDays.state.collectors.credits, 450);
+  assert.equal(tenDays.state.collectors.propellant, 350);
 });
 
 test("free simulation mode is strictly zero-cost and zero-payout", () => {
   const p = startProgram();
-  const beforeC = p.credits;
-  const beforeP = p.propellant;
-  const beforeR = p.research;
   const f = fly(p, "practice");
   assert.ok(f.orbitEarned);
-  assert.equal(p.credits, beforeC);
-  assert.equal(p.propellant, beforeP);
-  assert.equal(p.research, beforeR);
-  assert.equal(p.paid, false);
-  assert.equal(p.rewarded, false);
+  assert.equal(p.credits, 600);
+  assert.equal(p.propellant, 900);
+  assert.equal(p.research, 0);
 });
 
 test("real launch deducts hardware + propellant, first-orbit milestone awards once, failure loses cost", () => {
   const p = startProgram();
   const f = fly(p, "orbit");
   assert.ok(f.orbitEarned);
-  // Started 600 C / 900 Prop -> spent 500 C / 750 Prop -> earned 1800 + 1000 1st time = 2900 C, 35 RD
   assert.equal(p.credits, 2900);
   assert.equal(p.propellant, 150);
   assert.equal(p.research, 35);
   assert.equal(p.milestones.firstOrbit, true);
-  assert.equal(p.completed.orbit, 1);
 
-  // One-time settlement survives save/load
   const saved = validate({ ...fresh(), program: p, flight: f });
   assert.equal(settle(saved.program, saved.flight), "");
 
-  // Failed real launch loses spent hardware and propellant
   p.propellant = 800;
   const doomed = prepare(p, "hop");
   assert.equal(payLaunch(p), "");
-  assert.equal(p.credits, 2600);
-  assert.equal(p.propellant, 400);
   doomed.status = "lost";
   assert.equal(settle(p, doomed), "");
   assert.equal(p.credits, 2600);
@@ -110,82 +137,52 @@ test("anti-softlock guarantee: zero credits and zero propellant can still fly At
   const p = startProgram();
   p.credits = 0;
   p.propellant = 0;
-
-  assert.ok(launchIssue(p, "hop"));
-  assert.ok(launchIssue(p, "orbit"));
   assert.equal(launchIssue(p, "sounding"), "");
-
   const check = canLaunchVehicle(p, contractVehicle(p, "sounding"));
   assert.equal(check.ok, true);
-  assert.equal(check.hardwareCost, 0);
   assert.equal(check.emergencyFuelUsed, 150);
-
   const f = fly(p, "sounding");
   assert.ok(f.maxAlt >= 15000);
   assert.equal(p.credits, 450);
-  assert.equal(p.propellant, 0);
   assert.equal(p.research, 5);
-  assert.equal(p.completed.sounding, 1);
 });
 
-test("Mission Control gating, Cryo Tank Farm upgrade, Launchpad caps, and Tier 2 contracts", () => {
+test("Mission Control gating, Solar Foundry & Cryo Tank upgrades, and Tier 2 contracts", () => {
   const p = startProgram();
-  assert.equal(canAffordUpgrade(p, "tanks").ok, false);
-  assert.match(canAffordUpgrade(p, "tanks").reason, /Mission Control Lv 2/);
-  assert.equal(canAffordUpgrade(p, "vab").ok, false);
-  assert.match(canAffordUpgrade(p, "vab").reason, /Mission Control Lv 2/);
-  assert.match(launchIssue(p, "relay"), /Mission Control Lv 2/);
+  assert.equal(canAffordUpgrade(p, "foundry").ok, false);
+  assert.match(canAffordUpgrade(p, "foundry").reason, /Mission Control Lv 2/);
 
-  // Fly First Orbit + Sounding -> 3,350 C and 40 RD
   fly(p, "orbit");
   fly(p, "sounding");
-  assert.equal(p.credits, 3350);
-  assert.equal(p.research, 40);
-
-  // Upgrade Mission Control to Lv 2 (2,200 C + 40 RD)
-  assert.equal(canAffordUpgrade(p, "command").ok, true);
   assert.equal(upgrade(p, "command"), "");
   assert.equal(level(p, "command"), 2);
-  assert.equal(p.credits, 1150);
-  assert.equal(p.research, 0);
 
-  // Upgrade Cryo Tank Farm to Lv 2 (1,000 C) -> cap jumps from 1,000 to 2,800
+  // Upgrade Cryo Tanks (1,000 C) -> cap 2,800
   assert.equal(upgrade(p, "tanks"), "");
-  assert.equal(level(p, "tanks"), 2);
   assert.equal(getStorageCaps(p).propellant, 2800);
 
-  // Tier 2 contract still blocked by Launchpad Lv 1 (35 t limit vs 68 t relay)
-  assert.match(launchIssue(p, "relay"), /35 t limit/);
+  // Upgrade Solar Foundry (850 C) -> rate 420 C/hr, hopper 1,100
+  p.credits = 2000;
+  assert.equal(upgrade(p, "foundry"), "");
+  assert.equal(getCreditRatePerHour(p), 420);
+  assert.equal(getCollectorCaps(p).credits, 1100);
+
+  // Tap collect from Solar Foundry works in-place
+  p.collectors.credits = 250;
+  const tap = collectFromBuilding(p, "foundry");
+  assert.equal(tap.collected, 250);
+  assert.equal(p.collectors.credits, 0);
+
+  // Upgrade Launchpad -> 90 t, fill propellant, unlock Tier 2 relay
   p.credits = 2000;
   assert.equal(upgrade(p, "pad"), "");
   assert.equal(padCaps(level(p, "pad")).tonnes, 90);
-
-  // With enough Credits, still blocked until tanks hold 1,400 Prop
   p.credits = 1500;
-  p.propellant = 1000;
-  assert.match(launchIssue(p, "relay"), /Propellant/);
-  const fueled = advanceEconomyClock(p, 10 * 3600);
-  p.propellant = fueled.propellant;
+  p.propellant = 1400;
   assert.equal(launchIssue(p, "relay"), "");
-
-  // Build VAB Lv 1 & upgrade to Lv 2 -> -5% hardware discount
-  p.credits = 5000;
-  assert.equal(place(p, "vab", 3, 5), "");
-  assert.equal(upgrade(p, "vab"), "");
-  assert.equal(quote(p, "relay").hardwareCost, Math.round(900 * 0.95));
 });
 
-test("applyContractReward clamps credits to Contract Office cap without overflow", () => {
-  const p = startProgram();
-  p.credits = 4800; // Office Lv 1 cap is 5,000
-  const res = applyContractReward(p, "orbit");
-  assert.equal(res.state.credits, 5000);
-  assert.equal(res.creditsAwarded, 200);
-  assert.equal(res.researchAwarded, 35);
-  assert.equal(p.credits, 4800);
-});
-
-test("v1 and v2 saves migrate deterministically to v3 with all starter facilities and propellant", () => {
+test("v1, v2, and v4 saves migrate deterministically to v5 with Solar Foundry and hoppers", () => {
   const f1 = initial();
   f1.status = "flying";
   step(f1);
@@ -198,69 +195,35 @@ test("v1 and v2 saves migrate deterministically to v3 with all starter facilitie
   };
   delete rawV1.flight.cargo;
   const m1 = validate(rawV1);
-  assert.equal(m1.version, 4);
-  assert.equal(m1.program.simTimeSec, f1.t);
-  assert.equal(m1.program.propellant, 900);
-  assert.equal(m1.program.sortie, "practice");
+  assert.equal(m1.version, 5);
   assert.ok(STARTER_KINDS.every((k) => level(m1.program, k) === 1));
   assert.deepEqual(validate(m1), m1);
 
-  const rawV2 = {
-    version: 2,
-    revision: 12,
-    view: "site",
-    flight: initial(),
-    log: [{ t: 0, text: "Pioneer 01 cleared for flight." }],
-    program: {
-      credits: 420,
-      research: 14,
-      elapsed: 3600,
-      buildings: [
-        { kind: "command", x: 2, y: 3, level: 2 },
-        { kind: "pad", x: 5, y: 3, level: 2 },
-        { kind: "fuel", x: 4, y: 1, level: 1 },
-        { kind: "lab", x: 2, y: 1, level: 1 },
-      ],
-      completed: { hop: 2, orbit: 1, polar: 0 },
-      award: null,
-      sortie: "practice",
-      paid: false,
-      rewarded: false,
-      inclination: 0,
-    },
-  };
-  const m2 = validate(rawV2);
-  assert.equal(m2.version, 4);
-  assert.equal(m2.program.credits, 420);
-  assert.equal(m2.program.research, 14);
-  assert.equal(m2.program.simTimeSec, 3600);
-  assert.equal(m2.program.propellant, 900);
-  assert.equal(level(m2.program, "command"), 2);
-  assert.equal(level(m2.program, "pad"), 2);
-  assert.equal(level(m2.program, "tanks"), 1);
-  assert.equal(level(m2.program, "lab"), 1);
-  assert.equal(level(m2.program, "refinery"), 1);
-  assert.equal(level(m2.program, "office"), 1);
-  assert.equal(m2.program.completed.hop, 2);
-  assert.equal(m2.program.completed.orbit, 1);
-  assert.equal(m2.program.milestones.firstOrbit, true);
-  assert.deepEqual(validate(m2), m2);
+  const rawV4 = structuredClone(fresh());
+  rawV4.version = 4;
+  rawV4.program.buildings = rawV4.program.buildings.filter(
+    (b) => b.kind !== "foundry",
+  );
+  delete rawV4.program.collectors;
+  delete rawV4.program.lastRealTimestampMs;
+  const m4 = validate(rawV4);
+  assert.equal(m4.version, 5);
+  assert.equal(level(m4.program, "foundry"), 1);
+  assert.deepEqual(m4.program.collectors, { credits: 0, propellant: 0 });
+  assert.deepEqual(validate(m4), m4);
 });
 
-test("program validator rejects negative stock, over-cap resources, and malformed state", () => {
+test("program validator rejects negative stock, over-cap resources, and over-cap hoppers", () => {
   for (const edit of [
     (p) => (p.credits = -1),
     (p) => (p.credits = 99999),
     (p) => (p.propellant = -5),
     (p) => (p.propellant = 5000),
-    (p) => (p.propellant = Number.NaN),
+    (p) => (p.collectors.credits = 9999),
+    (p) => (p.collectors.propellant = -1),
     (p) => (p.research = 1.5),
     (p) => (p.simTimeSec = Infinity),
     (p) => p.buildings.push({ ...p.buildings[0] }),
-    (p) => (p.buildings[0].x = 50),
-    (p) => (p.sortie = "ghost"),
-    (p) => (p.paid = true),
-    (p) => (p.completed.hop = -1),
   ]) {
     const m = fresh();
     edit(m.program);

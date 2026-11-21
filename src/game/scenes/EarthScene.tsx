@@ -4,6 +4,7 @@ import {
   FACILITIES,
   SIZE,
   TIER2_KINDS,
+  getCollectorCaps,
   getStorageCaps,
   level,
   placement,
@@ -14,6 +15,14 @@ import {
 
 export type Tile = { x: number; y: number };
 
+export interface CollectBurst {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  seq: number;
+}
+
 const frames: Record<Kind, number> = {
   command: 8,
   pad: 12,
@@ -23,9 +32,10 @@ const frames: Record<Kind, number> = {
   vab: 28,
   tracking: 32,
   lab: 36,
+  foundry: 40,
 };
-const LAMP_FRAME = 40;
-const LOCKED_PAD_FRAME = 41;
+const LAMP_FRAME = 44;
+const LOCKED_PAD_FRAME = 45;
 
 const project = (x: number, y: number) => ({
   x: (x - y) * 32,
@@ -37,6 +47,7 @@ interface Props {
   selected: Tile | null;
   placing: Kind | null;
   onTile: (t: Tile) => void;
+  collectBurst?: CollectBurst | null;
   zoom?: number;
   recenter?: number;
 }
@@ -117,7 +128,7 @@ export function EarthScene(props: Props) {
           x = e.clientX - rect.left,
           y = e.clientY - rect.top;
         const t = tileAt(x, y);
-        // Upper pixels of tall structures belong to their footprint as well.
+        // Upper pixels of tall structures and collect bubbles belong to their footprint.
         if (!state.current.placing) {
           const o = origin(),
             z = size();
@@ -125,9 +136,14 @@ export function EarthScene(props: Props) {
             .sort((a, b) => b.x + b.y - a.x - a.y)
             .find((b) => {
               const pt = project(b.x, b.y);
-              const tall = b.kind === "pad" ? 42 : b.kind === "vab" ? 34 : 25;
+              const tall =
+                b.kind === "pad"
+                  ? 44
+                  : b.kind === "vab" || b.kind === "foundry" || b.kind === "refinery"
+                    ? 40
+                    : 26;
               return (
-                Math.abs((x - o.x) / z - pt.x) < 18 &&
+                Math.abs((x - o.x) / z - pt.x) < 19 &&
                 (y - o.y) / z > pt.y - tall &&
                 (y - o.y) / z < pt.y + 8
               );
@@ -154,6 +170,8 @@ export function EarthScene(props: Props) {
       overlay!: Phaser.GameObjects.Graphics;
       ghost!: Phaser.GameObjects.Image;
       buildings!: Phaser.GameObjects.Container;
+      fx!: Phaser.GameObjects.Container;
+      lastBurstSeq = 0;
       signature = "";
       ready = false;
 
@@ -225,6 +243,8 @@ export function EarthScene(props: Props) {
         this.board.add(this.buildings);
         this.overlay = this.add.graphics();
         this.board.add(this.overlay);
+        this.fx = this.add.container(0, 0);
+        this.board.add(this.fx);
         this.ghost = this.add
           .image(0, 0, "terrain", 8)
           .setOrigin(0.5, 80 / 104)
@@ -233,7 +253,7 @@ export function EarthScene(props: Props) {
         this.ready = true;
       }
 
-      update() {
+      update(time: number) {
         if (!this.ready) return;
         const p = state.current;
         const nextZoom = p.zoom ?? 0;
@@ -264,7 +284,6 @@ export function EarthScene(props: Props) {
           this.signature = key;
           this.buildings.removeAll(true);
 
-          // Combine built facilities and unbuilt Tier 2 construction footprints, sorted back-to-front
           const items: Array<{
             x: number;
             y: number;
@@ -312,15 +331,43 @@ export function EarthScene(props: Props) {
           }
         }
 
-        // Subtle live Cryo Tank Farm propellant fill indicator
+        // Spawn rising floating text when player taps to collect
+        if (p.collectBurst && p.collectBurst.seq !== this.lastBurstSeq) {
+          this.lastBurstSeq = p.collectBurst.seq;
+          const pt = project(p.collectBurst.x, p.collectBurst.y);
+          const txt = this.add
+            .text(pt.x, pt.y - 34, p.collectBurst.text, {
+              fontFamily: "IBM Plex Mono, monospace",
+              fontSize: "9px",
+              fontStyle: "bold",
+              color: p.collectBurst.color,
+              stroke: "#0d1722",
+              strokeThickness: 2.5,
+            })
+            .setOrigin(0.5);
+          this.fx.add(txt);
+          this.tweens.add({
+            targets: txt,
+            y: pt.y - 58,
+            alpha: 0,
+            duration: 950,
+            ease: "Cubic.easeOut",
+            onComplete: () => txt.destroy(),
+          });
+        }
+
+        // Overlays: Cryo Tank fill gauge + Clash-of-Clans bobbing collect bubbles
         this.overlay.clear();
+        const storageCaps = getStorageCaps(p.program);
+        const hopperCaps = getCollectorCaps(p.program);
+        const bob = Math.sin(time * 0.0045) * 2.2;
+
         const tanksBuilding = p.program.buildings.find(
           (b) => b.kind === "tanks",
         );
         if (tanksBuilding) {
-          const caps = getStorageCaps(p.program);
           const ratio = Phaser.Math.Clamp(
-            p.program.propellant / Math.max(1, caps.propellant),
+            p.program.propellant / Math.max(1, storageCaps.propellant),
             0,
             1,
           );
@@ -330,8 +377,70 @@ export function EarthScene(props: Props) {
           const by = pt.y - 29 - tanksBuilding.level * 2;
           this.overlay.fillStyle(0x10202b, 0.85);
           this.overlay.fillRoundedRect(bx - 1, by - 1, barW + 2, 5, 2);
-          this.overlay.fillStyle(ratio >= 0.99 ? 0xffcb84 : 0x67d6cf, 0.95);
-          this.overlay.fillRect(bx, by, Math.max(1, Math.round(barW * ratio)), 3);
+          this.overlay.fillStyle(ratio >= 0.99 ? 0xf3a953 : 0x72d6c6, 0.95);
+          this.overlay.fillRect(
+            bx,
+            by,
+            Math.max(1, Math.round(barW * ratio)),
+            3,
+          );
+        }
+
+        const drawCollectBubble = (
+          b: { x: number; y: number; level: number },
+          amount: number,
+          hopperCap: number,
+          storageFull: boolean,
+          fillColor: number,
+        ) => {
+          if (amount < 1) return;
+          const pt = project(b.x, b.y);
+          const cx = pt.x;
+          const cy = pt.y - 34 - b.level * 2 + bob;
+          const fullHopper = amount >= hopperCap * 0.98;
+          const ringColor = storageFull
+            ? 0xf07c6b
+            : fullHopper
+              ? 0xffefd0
+              : fillColor;
+          // Bubble pointer triangle
+          this.overlay
+            .fillStyle(0x13222e, 0.95)
+            .fillTriangle(cx - 3, cy + 5, cx + 3, cy + 5, cx, cy + 9);
+          // Circular pill badge
+          this.overlay
+            .fillStyle(0x13222e, 0.96)
+            .fillCircle(cx, cy, 8)
+            .lineStyle(1.4, ringColor, 1)
+            .strokeCircle(cx, cy, 8);
+          // Inner resource pip (amber coin or teal fuel drop)
+          this.overlay
+            .fillStyle(storageFull ? 0x8e9da3 : fillColor, 1)
+            .fillCircle(cx, cy, 3.6);
+        };
+
+        const foundryB = p.program.buildings.find((b) => b.kind === "foundry");
+        if (foundryB) {
+          drawCollectBubble(
+            foundryB,
+            Math.floor(p.program.collectors.credits),
+            hopperCaps.credits,
+            p.program.credits >= storageCaps.credits,
+            0xf3a953,
+          );
+        }
+
+        const refineryB = p.program.buildings.find(
+          (b) => b.kind === "refinery",
+        );
+        if (refineryB) {
+          drawCollectBubble(
+            refineryB,
+            Math.floor(p.program.collectors.propellant),
+            hopperCaps.propellant,
+            p.program.propellant >= storageCaps.propellant,
+            0x72d6c6,
+          );
         }
 
         this.marker.clear();

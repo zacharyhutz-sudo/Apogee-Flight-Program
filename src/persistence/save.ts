@@ -29,7 +29,7 @@ export interface Entry {
 }
 
 export interface Snapshot {
-  version: 4;
+  version: 5;
   program: Program;
   revision: number;
   view: "flight" | "map" | "site" | "workshop";
@@ -38,7 +38,7 @@ export interface Snapshot {
 }
 
 export const fresh = (): Snapshot => ({
-  version: 4,
+  version: 5,
   program: startProgram(),
   revision: 0,
   view: "site",
@@ -58,6 +58,18 @@ function findFreePlot(p: Program, kind: Kind): { x: number; y: number } {
     for (let x = 1; x < SIZE; x++)
       if (!placement(p, kind, x, y)) return { x, y };
   return { x: def.x, y: def.y };
+}
+
+function backfillStarterFacilities(p: Program) {
+  const seen = new Set(p.buildings.map((b) => b.kind));
+  for (const kind of STARTER_KINDS) {
+    if (!seen.has(kind)) {
+      const pos = findFreePlot(p, kind);
+      p.buildings.push({ kind, x: pos.x, y: pos.y, level: 1 });
+      seen.add(kind);
+    }
+  }
+  p.buildingLevels = syncBuildingLevels(p.buildings);
 }
 
 function migrateV2Program(rawProg: unknown, f: Flight): Program | null {
@@ -117,14 +129,7 @@ function migrateV2Program(rawProg: unknown, f: Flight): Program | null {
     seen.add(mapped);
   }
 
-  for (const kind of STARTER_KINDS) {
-    if (!seen.has(kind)) {
-      const pos = findFreePlot(base, kind);
-      base.buildings.push({ kind, x: pos.x, y: pos.y, level: 1 });
-      seen.add(kind);
-    }
-  }
-  base.buildingLevels = syncBuildingLevels(base.buildings);
+  backfillStarterFacilities(base);
 
   const caps = getStorageCaps(base);
   base.credits = clamp(oldCredits, 0, caps.credits);
@@ -183,13 +188,13 @@ export function validate(raw: unknown): Snapshot {
   };
   if (
     !record(raw) ||
-    ![1, 2, 3, 4].includes(Number(raw.version)) ||
+    ![1, 2, 3, 4, 5].includes(Number(raw.version)) ||
     !num(raw.revision, 0, Number.MAX_SAFE_INTEGER) ||
     !Number.isSafeInteger(raw.revision) ||
     !(
       raw.version === 1
         ? ["flight", "map"]
-        : raw.version === 4
+        : Number(raw.version) >= 4
           ? ["flight", "map", "site", "workshop"]
           : ["flight", "map", "site"]
     ).includes(String(raw.view)) ||
@@ -254,20 +259,29 @@ export function validate(raw: unknown): Snapshot {
   } else {
     program = structuredClone(raw.program);
     if (record(program) && Array.isArray(program.buildings)) {
-      program.buildingLevels = syncBuildingLevels(
-        program.buildings as Building[],
-      );
       if (
         typeof program.elapsed !== "number" &&
         typeof program.simTimeSec === "number"
       ) {
         program.elapsed = program.simTimeSec;
       }
-      // Deterministic v3 -> v4 migration: backfill starter blueprints cleanly
-      if (raw.version === 3 || !Array.isArray(program.blueprints)) {
+      if (Number(raw.version) <= 3 || !Array.isArray(program.blueprints)) {
         const defaults = starterBlueprints();
         program.blueprints = defaults;
         program.activeBlueprintId = defaults[0].id;
+      }
+      if (Number(raw.version) <= 4) {
+        if (!record(program.collectors)) {
+          program.collectors = { credits: 0, propellant: 0 };
+        }
+        if (typeof program.lastRealTimestampMs !== "number") {
+          program.lastRealTimestampMs = 0;
+        }
+        backfillStarterFacilities(program as unknown as Program);
+      } else {
+        program.buildingLevels = syncBuildingLevels(
+          program.buildings as Building[],
+        );
       }
     }
   }
@@ -275,7 +289,7 @@ export function validate(raw: unknown): Snapshot {
   if (!validProgram(program, f)) return invalid();
 
   return {
-    version: 4,
+    version: 5,
     program,
     flight: f,
     view: raw.view as Snapshot["view"],

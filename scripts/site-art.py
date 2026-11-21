@@ -9,9 +9,9 @@ docs_out = root / "docs/art/site.png"
 W, H = 80, 104
 # 8 columns x 6 rows = 48 frames:
 # 0..7   terrain tiles
-# 8..39  8 facilities x 4 tiers (command, pad, refinery, tanks, office, vab, tracking, lab)
-# 40     road lamp
-# 41     Tier 2 locked/unbuilt construction pad footprint
+# 8..43  9 facilities x 4 tiers (command, pad, refinery, tanks, office, vab, tracking, lab, foundry)
+# 44     road lamp
+# 45     Tier 2 locked/unbuilt construction pad footprint
 atlas = Image.new("RGBA", (W * 8, H * 6))
 
 
@@ -114,7 +114,7 @@ light = ("#d3d4bc", "#a4ac9c", "#84978e")
 dark = ("#6b787d", "#4c5c66", "#374754")
 warm = ("#d6c49e", "#a98c64", "#7e6547")
 
-for typ in range(8):
+for typ in range(9):
     for tier in range(4):
         idx = 8 + typ * 4 + tier
         frame(idx)
@@ -203,7 +203,7 @@ for typ in range(8):
                 d.line((cx2, cy2 + 5, cx2, cy2), fill="#657a82", width=2)
                 d.pieslice((cx2 - 7, cy2 - 8, cx2 + 7, cy2 + 4), 175, 355, fill="#c9d7d2", outline="#728e96")
 
-        else:  # Research Lab (lab)
+        elif typ == 7:  # Research Lab (lab)
             box(-12, -10, 22, 20, 2, 9 + tier, light)
             box(-13, -11, 24, 22, 11 + tier, 2, steel)
             cx, cy = iso(-3, -2, 13 + tier)
@@ -211,6 +211,19 @@ for typ in range(8):
             d.arc((cx - 4, cy - 12, cx + 4, cy + 9), 180, 360, fill="#dbe3d8")
             for k in [-8, -3, 2]:
                 line((k, 10, 7), (k + 3, 10, 7), "#577a81", 2)
+
+        else:  # Solar Foundry (foundry) - golden solar arrays + crucible core
+            box(-11, -10, 20, 18, 2, 7 + tier, dark)
+            # Central amber crucible core
+            box(-5, -5, 10, 10, 9 + tier, 5 + tier, ("#f5c57a", "#c98b43", "#94612c"))
+            # Angled deep-blue solar wing arrays flanking the foundry
+            for sx in [-11, 4]:
+                face([(sx, -11, 5 + tier), (sx + 7, -11, 5 + tier), (sx + 7, 10, 8 + tier), (sx, 10, 8 + tier)], "#2b5272")
+                for gy in range(-8, 10, 5):
+                    line((sx + 1, gy, 6 + tier), (sx + 6, gy, 6 + tier), "#6ea6c9", 1)
+            # Warm foundry glow strips
+            for k in [-7, -2, 3]:
+                line((k, 9, 5), (k + 2, 9, 5), "#ffcf85", 2)
 
         # Level badge pips (1..4 golden pips along front rim)
         for i in range(tier + 1):
@@ -223,21 +236,21 @@ for typ in range(8):
 
 
 # Frame 40: Road lamp fixture
-frame(40)
+frame(44)
 cx, cy = iso(0, 0)
 d.line((cx, cy, cx, cy - 11), fill="#5b7377", width=2)
 d.line((cx, cy - 11, cx + 4, cy - 13), fill="#aabbb1", width=2)
 d.line((cx + 4, cy - 13, cx + 6, cy - 13), fill="#f4d295", width=2)
-put(40)
+put(44)
 
 # Frame 41: Tier 2 unbuilt/locked construction pad footprint
-frame(41)
+frame(45)
 box(-12, -12, 24, 24, 0, 1, ("#7b8b8e", "#56676c", "#425258"))
 for px, py in [(-11, -11), (9, -11), (-11, 9), (9, 9)]:
     box(px, py, 2, 2, 1, 3, ("#e8b878", "#b3834c", "#7d5932"))
 line((-9, 0, 1), (9, 0, 1), "#a5b8ba", 1)
 line((0, -9, 1), (0, 9, 1), "#a5b8ba", 1)
-put(41)
+put(45)
 
 atlas.save(out)
 if docs_out.parent.exists():

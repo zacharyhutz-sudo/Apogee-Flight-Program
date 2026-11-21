@@ -15,10 +15,15 @@ import {
   Move,
   Radar,
   Rocket,
+  Sun,
   Wrench,
   X,
 } from "lucide-react";
-import { EarthScene, type Tile } from "../game/scenes/EarthScene";
+import {
+  EarthScene,
+  type CollectBurst,
+  type Tile,
+} from "../game/scenes/EarthScene";
 import {
   CONTRACTS,
   CONTRACT_JOBS,
@@ -28,6 +33,8 @@ import {
   SIZE,
   canAffordUpgrade,
   facilityBenefit,
+  getCollectorCaps,
+  getCreditRatePerHour,
   getPropellantRatePerHour,
   getStorageCaps,
   launchIssue,
@@ -46,6 +53,7 @@ import "./site.css";
 const glyph: Record<Kind, typeof Landmark> = {
   command: Landmark,
   pad: Rocket,
+  foundry: Sun,
   refinery: Factory,
   tanks: Flame,
   office: ClipboardList,
@@ -79,6 +87,8 @@ export function LaunchSite({
   const p = m.mission.program,
     flight = m.mission.flight;
   const caps = getStorageCaps(p);
+  const hopperCaps = getCollectorCaps(p);
+  const creditRate = getCreditRatePerHour(p);
   const propRate = getPropellantRatePerHour(p);
   const propPct = Math.min(100, (100 * p.propellant) / caps.propellant);
   const credPct = Math.min(100, (100 * p.credits) / caps.credits);
@@ -89,6 +99,7 @@ export function LaunchSite({
   const [placing, G] = useState<Kind | null>(null);
   const [pending, Q] = useState<Sortie>("practice");
   const [message, M] = useState("");
+  const [burst, setBurst] = useState<CollectBurst | null>(null);
 
   const builtAtTile = selected
     ? p.buildings.find((b) => b.x === selected.x && b.y === selected.y)
@@ -119,7 +130,42 @@ export function LaunchSite({
     M("");
   }
 
+  function triggerCollect(kind: Kind, pos: Tile) {
+    const res = m.collectFacility(kind);
+    if (res.collected > 0 && res.resource) {
+      setBurst((prev) => ({
+        x: pos.x,
+        y: pos.y,
+        text:
+          res.resource === "credits"
+            ? `+${res.collected.toLocaleString("en-US")} C`
+            : `+${res.collected.toLocaleString("en-US")} Prop`,
+        color: res.resource === "credits" ? "#ffd298" : "#72d6c6",
+        seq: (prev?.seq ?? 0) + 1,
+      }));
+      return true;
+    }
+    return false;
+  }
+
   function chooseTile(t: Tile) {
+    // 1-tap Clash-of-Clans collect when tapping Solar Foundry or Refinery with resources ready
+    if (!placing) {
+      const hit = p.buildings.find((b) => b.x === t.x && b.y === t.y);
+      if (hit && (hit.kind === "foundry" || hit.kind === "refinery")) {
+        const avail =
+          hit.kind === "foundry"
+            ? Math.floor(p.collectors.credits)
+            : Math.floor(p.collectors.propellant);
+        const alreadySelected = selected?.x === t.x && selected?.y === t.y;
+        if (avail >= 1 && !alreadySelected) {
+          if (triggerCollect(hit.kind, t)) {
+            M("");
+            return;
+          }
+        }
+      }
+    }
     S(t);
     setInspectLocked(null);
     M("");
@@ -191,6 +237,19 @@ export function LaunchSite({
   const buttonsDisabled = !m.loaded;
   const activeLv = activeKind ? level(p, activeKind) : 0;
   const upgCheck = activeKind ? canAffordUpgrade(p, activeKind) : null;
+  const isCollector = activeKind === "foundry" || activeKind === "refinery";
+  const collectorStored =
+    activeKind === "foundry"
+      ? Math.floor(p.collectors.credits)
+      : activeKind === "refinery"
+        ? Math.floor(p.collectors.propellant)
+        : 0;
+  const collectorCap =
+    activeKind === "foundry"
+      ? hopperCaps.credits
+      : activeKind === "refinery"
+        ? hopperCaps.propellant
+        : 0;
 
   return (
     <main className="game site-game" aria-label="Earth launch site">
@@ -199,6 +258,7 @@ export function LaunchSite({
         selected={selected}
         placing={placing}
         onTile={chooseTile}
+        collectBurst={burst}
       />
       <div className="site-vignette" />
       <div className="site-hud">
@@ -209,6 +269,7 @@ export function LaunchSite({
                 <Coins />
                 <strong>{compactNum(p.credits)}</strong>
                 <small>/{compactNum(caps.credits)}</small>
+                <em className="res-rate">+{creditRate}/h</em>
               </div>
               <div className="res-track">
                 <i style={{ width: credPct + "%" }} />
@@ -282,6 +343,13 @@ export function LaunchSite({
                     ? facilityBenefit(activeKind, activeLv)
                     : FACILITIES[activeKind].role}
                 </p>
+                {isCollector && activeLv > 0 && (
+                  <p className="inspect-next">
+                    Hopper · {collectorStored.toLocaleString("en-US")} /{" "}
+                    {collectorCap.toLocaleString("en-US")}{" "}
+                    {activeKind === "foundry" ? "C" : "Prop"}
+                  </p>
+                )}
                 {activeLv < MAX_LEVEL && upgCheck && (
                   <p className="inspect-next">
                     {activeLv === 0 ? "Unlocks · " : `Lv ${activeLv + 1} · `}
@@ -304,6 +372,14 @@ export function LaunchSite({
                       onClick={() => startPlace(activeKind)}
                     >
                       <Move />
+                    </button>
+                  )}
+                  {isCollector && activeLv > 0 && collectorStored >= 1 && (
+                    <button
+                      aria-label="Collect resources"
+                      onClick={() => triggerCollect(activeKind, selected)}
+                    >
+                      Collect {collectorStored}
                     </button>
                   )}
                   {activeLv < MAX_LEVEL && upgCheck && (

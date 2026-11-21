@@ -1,5 +1,7 @@
 import {
   CONTRACTS,
+  applyOfflineProgress,
+  collectFromBuilding,
   launchIssue,
   payLaunch,
   place,
@@ -65,6 +67,7 @@ export function useMission() {
     if (!ready.current) return;
     const m = mission.current;
     m.revision++;
+    m.program.lastRealTimestampMs = Date.now();
     dirty.current = false;
     const copy = structuredClone(m);
     let journal = true;
@@ -90,6 +93,19 @@ export function useMission() {
     if (!canWarp(vessel.current)) rate.current = 1;
     save();
     refresh();
+  }
+
+  function collectFacility(kind: Kind) {
+    if (!ready.current)
+      return { collected: 0, resource: null as "credits" | "propellant" | null, reason: "" };
+    const res = collectFromBuilding(mission.current.program, kind);
+    if (res.collected > 0) {
+      save();
+      refresh();
+    } else if (res.reason) {
+      setNotice(res.reason);
+    }
+    return res;
   }
 
   function launch() {
@@ -279,7 +295,18 @@ export function useMission() {
       try {
         const data = await readSave();
         if (!alive) return;
-        if (data) install(data);
+        if (data) {
+          const offline = applyOfflineProgress(data.program, Date.now());
+          data.program = offline.state;
+          install(data);
+          if (offline.creditsAdded >= 5 || offline.propellantAdded >= 5) {
+            setNotice(
+              "Collectors filled while away — tap Solar Foundry or Refinery to collect.",
+            );
+          }
+        } else {
+          mission.current.program.lastRealTimestampMs = Date.now();
+        }
         setSaveStatus(data ? "Saved locally" : "Local save ready");
       } catch {
         if (!alive) return;
@@ -444,6 +471,7 @@ export function useMission() {
     paused: paused.current,
     rate: rate.current,
     change,
+    collectFacility,
     launch,
     launchFreeSim,
     openWorkshop,
