@@ -1,19 +1,26 @@
+import {
+  startProgram,
+  validProgram,
+  type Program,
+} from "../program/program.ts";
 import { R, STAGES, initial, radius, type Flight } from "../sim/flight.ts";
 export interface Entry {
   t: number;
   text: string;
 }
 export interface Snapshot {
-  version: 1;
+  version: 2;
+  program: Program;
   revision: number;
-  view: "flight" | "map";
+  view: "flight" | "map" | "site";
   flight: Flight;
   log: Entry[];
 }
 export const fresh = (): Snapshot => ({
-  version: 1,
+  version: 2,
+  program: startProgram(),
   revision: 0,
-  view: "flight",
+  view: "site",
   flight: initial(),
   log: [{ t: 0, text: "Pioneer 01 cleared for flight." }],
 });
@@ -23,20 +30,27 @@ const num = (v: unknown, min: number, max: number) =>
   typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
 export function validate(raw: unknown): Snapshot {
   const invalid = () => {
-    throw Error("This file is not a valid Apogee v1 flight save.");
+    throw Error("This file is not a valid Apogee flight save.");
   };
   if (
     !record(raw) ||
-    raw.version !== 1 ||
+    (raw.version !== 1 && raw.version !== 2) ||
     !num(raw.revision, 0, Number.MAX_SAFE_INTEGER) ||
     !Number.isSafeInteger(raw.revision) ||
-    !["flight", "map"].includes(String(raw.view)) ||
+    !(
+      raw.version === 1 ? ["flight", "map"] : ["flight", "map", "site"]
+    ).includes(String(raw.view)) ||
     !Array.isArray(raw.log) ||
     raw.log.length > 64 ||
     !record(raw.flight)
   )
     return invalid();
-  const f = raw.flight as unknown as Flight;
+  const f = structuredClone(raw.flight) as unknown as Flight;
+  if (raw.version === 1) f.cargo = 0;
+  const program =
+    raw.version === 1
+      ? { ...startProgram(), elapsed: f.t }
+      : structuredClone(raw.program);
   if (
     ![0, 1].includes(f.stage) ||
     !["manual", "guide", "prograde", "retrograde"].includes(f.mode) ||
@@ -77,7 +91,15 @@ export function validate(raw: unknown): Snapshot {
     )
   )
     return invalid();
-  return structuredClone(raw) as unknown as Snapshot;
+  if (!validProgram(program, f)) return invalid();
+  return {
+    version: 2,
+    program,
+    flight: f,
+    view: raw.view as Snapshot["view"],
+    log: structuredClone(raw.log) as Entry[],
+    revision: Number(raw.revision),
+  };
 }
 const scope = () => new URL(".", document.baseURI).pathname;
 const key = () => "apogee-v1:" + scope();

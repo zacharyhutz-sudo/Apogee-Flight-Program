@@ -54,6 +54,7 @@ test("launch, stage, insert, warp, reload and exchange a flight save", async ({
   page.on("pageerror", (e) => errors.push(e.message));
   await useFlightClock(page);
   await page.goto("./");
+  await page.getByRole("button", { name: "Flight deck", exact: true }).click();
   await expect(page.locator(".flight-scene canvas")).toBeVisible();
   await page.getByRole("button", { name: "Orbital map", exact: true }).click();
   await page.getByRole("button", { name: "Time warp" }).click();
@@ -122,6 +123,7 @@ test("offline cold reload from project URL keeps the local flight", async ({
   context,
 }) => {
   await page.goto("./");
+  await page.getByRole("button", { name: "Flight deck", exact: true }).click();
   await page.getByRole("button", { name: "Launch vehicle" }).click();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.evaluate(async () => {
@@ -144,6 +146,7 @@ test("pilot inputs, map camera, stage confirmation and touch controls", async ({
   page,
 }, info) => {
   await page.goto("./");
+  await page.getByRole("button", { name: "Flight deck", exact: true }).click();
   const primary = page.getByRole("button", { name: "Launch vehicle" });
   await expect(primary).toBeEnabled();
   await page.getByLabel("Throttle", { exact: true }).fill("32");
@@ -193,6 +196,7 @@ test("both worlds fill the viewport and mission text stays in overlays", async (
   page,
 }) => {
   await page.goto("./");
+  await page.getByRole("button", { name: "Flight deck", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Launch vehicle" }),
   ).toBeEnabled();
@@ -231,6 +235,7 @@ test("both worlds fill the viewport and mission text stays in overlays", async (
 });
 test("moving the thrust lever up increases throttle", async ({ page }) => {
   await page.goto("./");
+  await page.getByRole("button", { name: "Flight deck", exact: true }).click();
   const lever = page.getByLabel("Throttle", { exact: true });
   await expect(lever).toBeEnabled();
   const box = await lever.boundingBox();
@@ -239,4 +244,156 @@ test("moving the thrust lever up increases throttle", async ({ page }) => {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.2);
   expect(low).toBeLessThan(45);
   expect(Number(await lever.inputValue())).toBeGreaterThan(55);
+});
+test("commission a mission, spend its payout, unlock the survey launch, and restore the site", async ({
+  page,
+}) => {
+  await useFlightClock(page);
+  const button = (name) => page.getByRole("button", { name, exact: true });
+  const close = () => button("Close dialog").click();
+  await page.goto("./");
+  await button("Contracts").click();
+  await expect(button("Accept Polar orbit")).toBeDisabled();
+  await button("Accept Suborbital hop").click();
+  await button("Launch vehicle").click();
+  await page.evaluate(() => window.advanceFlight(131));
+  await button("Separate stage").click();
+  await page.evaluate(() => window.advanceFlight(55));
+  await expect(
+    page.getByText(/Suborbital hop complete ·/).first(),
+  ).toBeVisible();
+  await button("Earth launch site").click();
+  await button("Dismiss message").click();
+  const wallet = page.getByLabel("Program resources");
+  await expect(wallet).toContainText("180");
+  await button("Facilities").click();
+  await button("Build Research Lab").click();
+  await button("Confirm placement").click();
+  await expect(wallet).toContainText("115");
+  await button("Close inspector").click();
+  await button("Facilities").click();
+  await button("Inspect Launchpad").click();
+  await page.getByRole("button", { name: /Upgrade · 105/ }).click();
+  await expect(
+    page.getByText("Level 2 · 347 t · 55 m clearance"),
+  ).toBeVisible();
+  await page.reload();
+  await expect(wallet).toContainText("10");
+  await button("Facilities").click();
+  await expect(button("Inspect Research Lab")).toBeEnabled();
+  await close();
+  await button("Contracts").click();
+  await expect(button("Accept Polar orbit")).toBeDisabled();
+  await expect(page.getByText(/Insufficient credits/).first()).toBeVisible();
+  await button("Accept Suborbital hop").click();
+  await button("Prepare flight").click();
+  await button("Launch vehicle").click();
+  await page.evaluate(() => window.advanceFlight(131));
+  await button("Separate stage").click();
+  await page.evaluate(() => window.advanceFlight(55));
+  await button("Earth launch site").click();
+  await button("Dismiss message").click();
+  await button("Contracts").click();
+  await button("Accept Polar orbit").click();
+  await button("Prepare flight").click();
+  await button("Launch vehicle").click();
+  await page.evaluate(() => window.advanceFlight(131));
+  await button("Separate stage").click();
+  await page.evaluate(() => window.advanceFlight(180));
+  await button("Orbital map").click();
+  await button("Time warp").click();
+  await button("20×").click();
+  await page.evaluate(() => window.advanceFlight(85));
+  const saved = await downloadSave(page);
+  expect(saved.program.rewarded).toBe(true);
+  expect(saved.program.completed).toEqual({ hop: 2, orbit: 0, polar: 1 });
+  expect(saved.program.credits).toBe(315);
+  expect(saved.program.research).toBe(19);
+  expect(saved.flight.cargo).toBe(4000);
+  expect(saved.program.elapsed).toBeGreaterThan(saved.flight.t);
+  await page.reload();
+  const reloaded = await downloadSave(page);
+  expect(reloaded.program).toEqual(saved.program);
+});
+test("tap a plot, preview blocked ground, build and relocate a facility", async ({
+  page,
+}) => {
+  await page.goto("./");
+  const button = (name) => page.getByRole("button", { name, exact: true });
+  await button("Facilities").click();
+  await button("Build Fuel Storage").click();
+  const tapPlot = async (x, y) => {
+    const { width: w, height: h } = page.viewportSize();
+    const z = Math.min(w / 455, h / 340, 2.35);
+    await page.mouse.click(
+      w / 2 + (x - y) * 32 * z,
+      h * 0.49 + ((x + y) * 16 - 112) * z,
+    );
+  };
+  await tapPlot(3, 4);
+  await expect(button("Confirm placement")).toBeDisabled();
+  await tapPlot(4, 1);
+  await expect(button("Confirm placement")).toBeEnabled();
+  await button("Confirm placement").click();
+  await expect(
+    page.getByRole("heading", { name: "Fuel Storage" }),
+  ).toBeVisible();
+  await button("Move").click();
+  await tapPlot(1, 1);
+  await button("Confirm placement").click();
+  await expect(page.getByText("Plot B2")).toBeVisible();
+  await button("Close inspector").click();
+  await button("Zoom in on site").click();
+  await button("Center site").click();
+  await page.reload();
+  await button("Facilities").click();
+  await button("Inspect Fuel Storage").click();
+  await expect(page.getByText("Plot B2")).toBeVisible();
+  await expect(page.getByLabel("Program resources")).toContainText("25");
+});
+test("upgrade an existing v1 IndexedDB orbit and retain it when visiting Earth", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.getByRole("button", { name: "Flight deck", exact: true }).click();
+  await page.getByRole("button", { name: "Launch vehicle" }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const newSave = await downloadSave(page);
+  const old = {
+    version: 1,
+    revision: newSave.revision + 50,
+    view: "map",
+    flight: { ...newSave.flight },
+    log: newSave.log,
+  };
+  delete old.flight.cargo;
+  await page.evaluate(async (raw) => {
+    const name = "apogee-v1:" + new URL(".", document.baseURI).pathname;
+    localStorage.removeItem(name);
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open(name, 1);
+      req.onsuccess = () => {
+        const db = req.result,
+          tx = db.transaction("missions", "readwrite");
+        tx.objectStore("missions").put(raw, "active");
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, old);
+  await page.reload();
+  await expect(page.getByLabel("Live Earth orbital map")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume" })).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Earth launch site", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Flight deck", exact: true }).click();
+  const migrated = await downloadSave(page);
+  expect(migrated.version).toBe(2);
+  expect(migrated.flight).toEqual({ ...old.flight, cargo: 0 });
+  expect(migrated.program.credits).toBe(80);
+  expect(migrated.program.sortie).toBe("practice");
 });

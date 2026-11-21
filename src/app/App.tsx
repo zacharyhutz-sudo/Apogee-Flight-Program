@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Dialog } from "./Dialog";
+import { LaunchSite } from "./LaunchSite";
+import { CONTRACTS, quote, latitude } from "../program/program";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Menu,
   FastForward,
   Gauge,
+  Landmark,
   ArrowDownToLine,
   ArrowUpFromLine,
   BookOpen,
@@ -50,40 +54,6 @@ const distance = (n: number) =>
         minimumFractionDigits: 1,
       })
     : "Escape";
-function Dialog({
-  title,
-  children,
-  close,
-}: {
-  title: string;
-  children: ReactNode;
-  close: () => void;
-}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const el = ref.current!;
-    el.showModal();
-    return () => el.close();
-  }, []);
-  return (
-    <dialog
-      ref={ref}
-      aria-label={title}
-      onCancel={close}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
-    >
-      <div className="dialog-head">
-        <h2>{title}</h2>
-        <button aria-label="Close dialog" onClick={close}>
-          <X size={18} />
-        </button>
-      </div>
-      {children}
-    </dialog>
-  );
-}
 export default function App() {
   const m = useMission(),
     s = m.vessel.current,
@@ -101,12 +71,23 @@ export default function App() {
   const twr = thrustToWeight(s);
   const lowThrust = pad && twr <= 1;
   function flightStatus() {
-    if (pad) return "On pad";
+    if (pad)
+      return m.mission.program.sortie === "practice"
+        ? "Simulation"
+        : CONTRACTS[m.mission.program.sortie].name;
     if (m.paused) return "Paused";
     if (s.status === "lost") return "Vehicle lost";
     if (s.status === "landed") return "Landed";
     if (booster && fuelPct === 0) return "Stage ready";
-    if (s.orbitEarned && o.pe >= AIR) return "In orbit";
+    if (s.orbitEarned && o.pe >= AIR) {
+      if (m.mission.program.sortie === "polar" && !m.mission.program.rewarded) {
+        const lat = latitude(m.mission.program, s);
+        return (
+          "Survey · " + Math.abs(lat).toFixed(1) + "° " + (lat < 0 ? "S" : "N")
+        );
+      }
+      return "In orbit";
+    }
     return s.throttle > 0 && fuelPct > 0 ? "Powered flight" : "Coasting";
   }
   function primaryLabel() {
@@ -159,6 +140,7 @@ export default function App() {
     function key(e: KeyboardEvent) {
       if (
         dialog ||
+        m.mission.view === "site" ||
         !m.loaded ||
         e.altKey ||
         e.ctrlKey ||
@@ -215,24 +197,33 @@ export default function App() {
   const objectives = [
     { name: "Lift off", done: !pad },
     { name: "Separate booster", done: !booster },
-    { name: "Establish orbit", done: s.orbitEarned },
+    ...(m.mission.program.sortie === "hop"
+      ? [{ name: "Reach 100 km", done: s.maxAlt >= AIR }]
+      : [{ name: "Establish orbit", done: s.orbitEarned }]),
+    ...(m.mission.program.sortie === "polar"
+      ? [{ name: "Survey above 75° N", done: m.mission.program.rewarded }]
+      : []),
   ];
   const current = objectives.findIndex((t) => !t.done);
-  const guidance = ended
-    ? s.status === "lost"
-      ? "Surface impact. Return to the pad for another flight."
-      : "Touchdown confirmed. Start a new flight when ready."
-    : pad
-      ? "Launch at full throttle. Ascent guide will fly the pitch program."
-      : booster && fuelPct === 0
-        ? "Booster depleted. Separate the stage to ignite the upper engine."
-        : s.orbitEarned
-          ? "Orbit milestone complete. Switch to the map and coast at 5× or 20×."
-          : booster
-            ? "Watch booster fuel. Separate the stage when its tank reaches zero."
-            : s.mode === "guide"
-              ? "Hold full throttle. The guide cuts thrust when the orbit is stable."
-              : "Raise periapsis above 100 km and keep apoapsis below 2,000 km.";
+  const guidance = m.mission.program.rewarded
+    ? "Reward collected. Return to Earth range to invest or take another contract."
+    : m.mission.program.sortie === "polar" && s.orbitEarned
+      ? "Coast in the orbital map. Use 20× warp to reach the northern survey pass."
+      : ended
+        ? s.status === "lost"
+          ? "Surface impact. Return to the pad for another flight."
+          : "Touchdown confirmed. Start a new flight when ready."
+        : pad
+          ? "Launch at full throttle. Ascent guide will fly the pitch program."
+          : booster && fuelPct === 0
+            ? "Booster depleted. Separate the stage to ignite the upper engine."
+            : s.orbitEarned
+              ? "Orbit milestone complete. Switch to the map and coast at 5× or 20×."
+              : booster
+                ? "Watch booster fuel. Separate the stage when its tank reaches zero."
+                : s.mode === "guide"
+                  ? "Hold full throttle. The guide cuts thrust when the orbit is stable."
+                  : "Raise periapsis above 100 km and keep apoapsis below 2,000 km.";
   const flightMode = (mode: Mode) =>
     m.change((f) => {
       f.mode = mode;
@@ -256,6 +247,8 @@ export default function App() {
       </strong>
     </div>
   );
+  if (m.mission.view === "site")
+    return <LaunchSite mission={m} onFlight={() => toggleView(false)} />;
   return (
     <>
       <main
@@ -270,11 +263,20 @@ export default function App() {
         <div className="hud">
           <header className="topline">
             <div className="identity">
-              <span className="insignia">
-                <Orbit />
-              </span>
+              <button
+                className="insignia"
+                aria-label="Earth launch site"
+                title="Earth launch site"
+                onClick={m.visitSite}
+              >
+                <Landmark />
+              </button>
               <div>
-                <strong>Pioneer 01</strong>
+                <strong>
+                  {m.mission.program.sortie === "polar"
+                    ? "Pioneer Survey"
+                    : "Pioneer 01"}
+                </strong>
                 <span className="timer">T+ {clock(s.t)}</span>
               </div>
             </div>
@@ -486,6 +488,15 @@ export default function App() {
           {dialog === "menu" && (
             <>
               <div className="menu-grid">
+                <button
+                  onClick={() => {
+                    D("");
+                    m.visitSite();
+                  }}
+                >
+                  <Landmark size={19} />
+                  Earth launch site
+                </button>
                 {[
                   [Flag, "Flight plan", "plan"],
                   [List, "Event log", "log"],
@@ -504,7 +515,10 @@ export default function App() {
               <div className="details">
                 <span>{m.saveStatus}</span>
                 <span>
-                  TWR {twr.toFixed(2)} · Δv{" "}
+                  {m.mission.program.sortie === "practice"
+                    ? "Simulation"
+                    : m.mission.program.inclination + "° plane"}{" "}
+                  · TWR {twr.toFixed(2)} · Δv{" "}
                   {Math.round(deltaV(s)).toLocaleString("en-US")} m/s
                 </span>
               </div>
@@ -512,7 +526,29 @@ export default function App() {
           )}
           {dialog === "plan" && (
             <>
-              <h3>First orbit</h3>
+              <h3>
+                {m.mission.program.sortie === "practice"
+                  ? "First orbit"
+                  : CONTRACTS[m.mission.program.sortie].name}
+              </h3>
+              {m.mission.program.sortie !== "practice" && (
+                <p>
+                  {CONTRACTS[m.mission.program.sortie].goal}{" "}
+                  {m.mission.program.rewarded
+                    ? "Reward collected."
+                    : pad
+                      ? "Ignition fee: " +
+                        quote(m.mission.program, m.mission.program.sortie).fee +
+                        " cr."
+                      : ""}
+                </p>
+              )}
+              {m.mission.program.sortie === "polar" && (
+                <p>
+                  Latitude {latitude(m.mission.program, s).toFixed(1)}° · 90°
+                  orbital plane
+                </p>
+              )}
               <p>{guidance}</p>
               <ol className="steps">
                 {objectives.map((t, i) => (
@@ -681,8 +717,8 @@ export default function App() {
           {dialog === "reset" && (
             <>
               <p>
-                This replaces the current mission and its log. You can export a
-                backup first.
+                Return to the pad for a free simulation. Site buildings and
+                earned rewards are kept. This retires the current vehicle.
               </p>
               <button
                 className="primary"

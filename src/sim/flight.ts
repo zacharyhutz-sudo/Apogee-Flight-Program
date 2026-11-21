@@ -31,6 +31,7 @@ export interface Flight {
   vx: number;
   vy: number;
   t: number;
+  cargo: number;
   stage: 0 | 1;
   fuel: [number, number];
   throttle: number;
@@ -47,6 +48,7 @@ export function initial(): Flight {
     vx: 0,
     vy: 0,
     t: 0,
+    cargo: 0,
     stage: 0,
     fuel: [STAGES[0].fuel, STAGES[1].fuel],
     throttle: 1,
@@ -64,6 +66,7 @@ export const speed = (s: Flight) => Math.hypot(s.vx, s.vy);
 export function mass(s: Flight) {
   return (
     payload +
+    s.cargo +
     STAGES[1].dry +
     s.fuel[1] +
     (s.stage === 0 ? STAGES[0].dry + s.fuel[0] : 0)
@@ -77,7 +80,10 @@ export function deltaV(s: Flight) {
   const upper =
     STAGES[1].isp *
     G0 *
-    Math.log((payload + STAGES[1].dry + s.fuel[1]) / (payload + STAGES[1].dry));
+    Math.log(
+      (payload + s.cargo + STAGES[1].dry + s.fuel[1]) /
+        (payload + s.cargo + STAGES[1].dry),
+    );
   return (
     upper +
     (s.stage === 0

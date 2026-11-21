@@ -1,3 +1,14 @@
+import {
+  CONTRACTS,
+  launchIssue,
+  payLaunch,
+  place,
+  prepare,
+  settle,
+  upgrade,
+  type Kind,
+  type Sortie,
+} from "../program/program";
 import { useEffect, useRef, useState } from "react";
 import {
   STEP,
@@ -74,6 +85,12 @@ export function useMission() {
   function launch() {
     if (vessel.current.status !== "pad" || thrustToWeight(vessel.current) <= 1)
       return;
+    if (!ready.current) return;
+    const reason = payLaunch(mission.current.program);
+    if (reason) {
+      setNotice(reason);
+      return;
+    }
     change((s) => {
       s.status = "flying";
       paused.current = false;
@@ -99,12 +116,50 @@ export function useMission() {
     rate.current = value;
     refresh();
   }
-  function reset() {
-    const next = fresh();
-    next.revision = mission.current.revision;
-    install(next);
+  function newSortie(job: Sortie) {
+    if (!ready.current) return false;
+    const data = mission.current,
+      issue = launchIssue(data.program, job);
+    if (issue) {
+      setNotice(issue);
+      return false;
+    }
+    data.flight = prepare(data.program, job);
+    data.log = [
+      {
+        t: 0,
+        text:
+          job === "practice"
+            ? "Pioneer 01 cleared for flight."
+            : CONTRACTS[job].name + " accepted.",
+      },
+    ];
+    data.view = "flight";
+    install(data);
     setNotice("");
     save();
+    return true;
+  }
+  function reset() {
+    newSortie("practice");
+  }
+  function editSite(kind: Kind, tile?: { x: number; y: number }) {
+    if (!ready.current) return "Save is still loading.";
+    const p = mission.current.program;
+    const issue = tile ? place(p, kind, tile.x, tile.y) : upgrade(p, kind);
+    if (!issue) {
+      save();
+      refresh();
+    }
+    return issue;
+  }
+  function visitSite() {
+    if (!ready.current) return;
+    if (vessel.current.status === "flying") paused.current = true;
+    rate.current = 1;
+    change(() => {
+      mission.current.view = "site";
+    });
   }
   function restore(data: Snapshot) {
     data.revision = mission.current.revision;
@@ -167,7 +222,9 @@ export function useMission() {
       const dt = last ? Math.min((now - last) / 1000, 0.25) : 0;
       last = now;
       const s = vessel.current;
+      const program = mission.current.program;
       if (!document.hidden && !paused.current && s.status === "flying") {
+        const startTime = s.t;
         const prevFuel = s.fuel[s.stage],
           wasOrbit = s.orbitEarned,
           wasAlt = s.maxAlt;
@@ -177,7 +234,6 @@ export function useMission() {
             if (!coast(s, STEP * rate.current)) {
               rate.current = 1;
               log("Warp ended before atmospheric entry.");
-              save();
             }
           } else if (canWarp(s)) {
             const before = s.t;
@@ -190,7 +246,13 @@ export function useMission() {
           acc -= STEP;
         }
         dirty.current = true;
-        let event = false;
+        program.elapsed += s.t - startTime;
+        const reward = settle(program, s);
+        let event = Boolean(reward);
+        if (reward) {
+          log(reward);
+          setNotice(reward);
+        }
         if (prevFuel > 0 && s.fuel[s.stage] === 0) {
           log(
             s.stage === 0
@@ -221,11 +283,21 @@ export function useMission() {
           saveAt = now;
         }
         if (event) refresh();
-      } else acc = 0;
+      } else {
+        acc = 0;
+        if (!document.hidden && !paused.current && s.status !== "flying") {
+          program.elapsed += dt;
+          dirty.current = true;
+          if (now - saveAt >= 5000) {
+            save();
+            saveAt = now;
+          }
+        }
+      }
       if (
         !paused.current &&
         (s.status === "flying" || dirty.current) &&
-        now - paintAt >= 100
+        now - paintAt >= (s.status === "flying" ? 100 : 1000)
       ) {
         refresh();
         paintAt = now;
@@ -265,6 +337,9 @@ export function useMission() {
     change,
     launch,
     separate,
+    newSortie,
+    editSite,
+    visitSite,
     togglePause,
     warp,
     reset,
