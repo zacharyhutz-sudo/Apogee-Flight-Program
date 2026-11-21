@@ -5,62 +5,67 @@ import {
   Check,
   ClipboardList,
   Coins,
-  Crosshair,
+  Database,
+  Factory,
+  Flame,
   FlaskConical,
-  Globe,
+  Hammer,
   Landmark,
-  Minus,
+  Lock,
   Move,
-  Plus,
+  Radar,
   Rocket,
-  Warehouse,
   X,
 } from "lucide-react";
 import { EarthScene, type Tile } from "../game/scenes/EarthScene";
 import {
   CONTRACTS,
+  CONTRACT_JOBS,
   FACILITIES,
+  FACILITY_KINDS,
+  MAX_LEVEL,
   SIZE,
-  launchMass,
+  canAffordUpgrade,
+  facilityBenefit,
+  getPropellantRatePerHour,
+  getStorageCaps,
   launchIssue,
   level,
-  padCaps,
   placement,
   quote,
   terrain,
-  upgradeCost,
   type Kind,
-  type Job,
   type Sortie,
   type Program,
 } from "../program/program";
 import type { useMission } from "./useMission";
 import { Dialog } from "./Dialog";
 import "./site.css";
-const glyph = {
+
+const glyph: Record<Kind, typeof Landmark> = {
   command: Landmark,
   pad: Rocket,
+  refinery: Factory,
+  tanks: Flame,
+  office: ClipboardList,
+  vab: Hammer,
+  tracking: Radar,
   lab: FlaskConical,
-  fuel: Warehouse,
 };
-const kinds = Object.keys(FACILITIES) as Kind[];
-const jobs = Object.keys(CONTRACTS) as Job[];
-function benefit(k: Kind, n: number) {
-  if (k === "pad") {
-    const c = padCaps(n);
-    return c.tonnes + " t · " + c.height + " m clearance";
-  }
-  if (k === "lab") return "+" + n + " research per contract";
-  if (k === "fuel") return "−" + 10 * n + " credits per paid launch";
-  return n === 1
-    ? "Standard mission payouts"
-    : "+" + 15 * (n - 1) + " credits per contract";
+
+function compactNum(n: number) {
+  if (n >= 10000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + "k";
+  return Math.floor(n).toLocaleString("en-US");
 }
+
 function freeTile(p: Program, k: Kind): Tile {
+  const def = FACILITIES[k].defaultPos;
+  if (!placement(p, k, def.x, def.y)) return { x: def.x, y: def.y };
   for (let y = 1; y < SIZE; y++)
     for (let x = 1; x < SIZE; x++) if (!placement(p, k, x, y)) return { x, y };
-  return { x: 2, y: 2 };
+  return { x: def.x, y: def.y };
 }
+
 export function LaunchSite({
   mission: m,
   onFlight,
@@ -70,36 +75,62 @@ export function LaunchSite({
 }) {
   const p = m.mission.program,
     flight = m.mission.flight;
+  const caps = getStorageCaps(p);
+  const propRate = getPropellantRatePerHour(p);
+  const propPct = Math.min(100, (100 * p.propellant) / caps.propellant);
+  const credPct = Math.min(100, (100 * p.credits) / caps.credits);
+
   const [panel, P] = useState<"board" | "build" | "replace" | null>(null);
-  const [selected, S] = useState<Tile | null>(null),
-    [placing, G] = useState<Kind | null>(null),
-    [pending, Q] = useState<Sortie>("practice");
-  const [zoom, Z] = useState(0),
-    [home, H] = useState(0),
-    [message, M] = useState("");
-  const b = p.buildings.find((b) => b.x === selected?.x && b.y === selected?.y);
+  const [selected, S] = useState<Tile | null>(null);
+  const [inspectLocked, setInspectLocked] = useState<Kind | null>(null);
+  const [placing, G] = useState<Kind | null>(null);
+  const [pending, Q] = useState<Sortie>("practice");
+  const [message, M] = useState("");
+
+  const builtAtTile = selected
+    ? p.buildings.find((b) => b.x === selected.x && b.y === selected.y)
+    : undefined;
+  const slotKindAtTile =
+    selected && !builtAtTile
+      ? FACILITY_KINDS.find(
+          (k) =>
+            level(p, k) === 0 &&
+            FACILITIES[k].defaultPos.x === selected.x &&
+            FACILITIES[k].defaultPos.y === selected.y,
+        ) ?? null
+      : null;
+
+  const activeKind: Kind | null = placing
+    ? placing
+    : builtAtTile
+      ? builtAtTile.kind
+      : inspectLocked ?? slotKindAtTile;
+
   const issue =
     selected && placing ? placement(p, placing, selected.x, selected.y) : "";
-  const cellName = selected
-    ? String.fromCharCode(65 + selected.x) + (selected.y + 1)
-    : "";
-  const credits = (n: number) => n.toLocaleString("en-US");
+
   function cancel() {
     S(null);
+    setInspectLocked(null);
     G(null);
     M("");
   }
+
   function chooseTile(t: Tile) {
     S(t);
+    setInspectLocked(null);
     M("");
   }
+
   function startPlace(k: Kind) {
     const built = p.buildings.find((b) => b.kind === k);
     S(built ? { x: built.x, y: built.y } : freeTile(p, k));
+    setInspectLocked(null);
     G(k);
     M("");
     P(null);
   }
+
   function pick(job: Sortie) {
     Q(job);
     if (flight.status !== "pad") {
@@ -108,7 +139,8 @@ export function LaunchSite({
     }
     if (m.newSortie(job)) P(null);
   }
-  function confirm() {
+
+  function confirmPlacement() {
     if (!placing || !selected) return;
     const result = m.editSite(placing, selected);
     if (result) M(result);
@@ -117,13 +149,15 @@ export function LaunchSite({
       M("");
     }
   }
-  function move(dx: number, dy: number) {
+
+  function moveCursor(dx: number, dy: number) {
     if (selected)
       chooseTile({
         x: Math.min(7, Math.max(0, selected.x + dx)),
         y: Math.min(7, Math.max(0, selected.y + dy)),
       });
   }
+
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (panel || !selected) return;
@@ -139,17 +173,22 @@ export function LaunchSite({
       };
       if (placing && dirs[e.key]) {
         e.preventDefault();
-        move(...dirs[e.key]);
+        moveCursor(...dirs[e.key]);
       }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   });
+
   function showPanel(v: "build" | "board") {
     cancel();
     P(v);
   }
+
   const buttonsDisabled = !m.loaded;
+  const activeLv = activeKind ? level(p, activeKind) : 0;
+  const upgCheck = activeKind ? canAffordUpgrade(p, activeKind) : null;
+
   return (
     <main className="game site-game" aria-label="Earth launch site">
       <EarthScene
@@ -157,119 +196,147 @@ export function LaunchSite({
         selected={selected}
         placing={placing}
         onTile={chooseTile}
-        zoom={zoom}
-        recenter={home}
       />
       <div className="site-vignette" />
       <div className="site-hud">
         <header className="site-top">
-          <div className="site-identity">
-            <Globe />
-            <div>
-              <h1>Earth range</h1>
-              <small>Launch complex 01</small>
+          <div className="resource-bar" aria-label="Program resources">
+            <div className="res-pill credits" title="Credits">
+              <div className="res-row">
+                <Coins />
+                <strong>{compactNum(p.credits)}</strong>
+                <small>/{compactNum(caps.credits)}</small>
+              </div>
+              <div className="res-track">
+                <i style={{ width: credPct + "%" }} />
+              </div>
+            </div>
+            <div className="res-pill propellant" title="Propellant">
+              <div className="res-row">
+                <Flame />
+                <strong>{compactNum(p.propellant)}</strong>
+                <small>/{compactNum(caps.propellant)}</small>
+                <em className="res-rate">+{propRate}/h</em>
+              </div>
+              <div className="res-track">
+                <i style={{ width: propPct + "%" }} />
+              </div>
+            </div>
+            <div className="res-pill research" title="Research Data">
+              <div className="res-row">
+                <FlaskConical />
+                <strong>{p.research.toLocaleString("en-US")}</strong>
+                <small>RD</small>
+              </div>
             </div>
           </div>
-          <div className="wallet" aria-label="Program resources">
-            <span title="Credits">
-              <Coins />
-              {credits(p.credits)}
-            </span>
-            <span title="Research">
-              <FlaskConical />
-              {p.research}
-            </span>
-          </div>
         </header>
-        <div className="site-cameras">
-          <button aria-label="Zoom in on site" onClick={() => Z((v) => v + 1)}>
-            <Plus />
-          </button>
-          <button aria-label="Zoom out of site" onClick={() => Z((v) => v - 1)}>
-            <Minus />
-          </button>
-          <button aria-label="Center site" onClick={() => H((v) => v + 1)}>
-            <Crosshair />
-          </button>
-        </div>
+
         {selected && (
-          <section className="inspector">
+          <section className="inspector" aria-label="Facility inspector">
             <header>
-              <div>
-                <small>Plot {cellName}</small>
+              <div className="inspect-title">
                 <h2>
                   {placing
-                    ? (level(p, placing) ? "Move " : "Place ") +
-                      FACILITIES[placing].name
-                    : b
-                      ? FACILITIES[b.kind].name
+                    ? (level(p, placing) ? "Move " : "Build ") +
+                      FACILITIES[placing].shortName
+                    : activeKind
+                      ? FACILITIES[activeKind].name
                       : terrain(selected.x, selected.y) === "land"
-                        ? "Open ground"
-                        : "Reserved terrain"}
+                        ? "Open plot"
+                        : "Terrain"}
                 </h2>
+                {activeKind && !placing && (
+                  <span className="lv-badge">
+                    {activeLv > 0 ? `Lv ${activeLv}/${MAX_LEVEL}` : "Unbuilt"}
+                  </span>
+                )}
               </div>
               <button aria-label="Close inspector" onClick={cancel}>
                 <X />
               </button>
             </header>
+
             {placing ? (
               <>
-                <p>{issue || "Tap a plot to preview placement."}</p>
+                <p>{issue || "Tap an open plot to place."}</p>
                 <div className="inspect-actions">
                   <button onClick={cancel}>Cancel</button>
                   <button
                     className="primary"
                     disabled={Boolean(issue) || buttonsDisabled}
-                    onClick={confirm}
+                    onClick={confirmPlacement}
                   >
                     <Check />
-                    Confirm placement
+                    Confirm
                   </button>
                 </div>
               </>
-            ) : b ? (
+            ) : activeKind ? (
               <>
-                <p>
-                  Level {b.level} · {benefit(b.kind, b.level)}
+                <p className="inspect-stat">
+                  {activeLv > 0
+                    ? facilityBenefit(activeKind, activeLv)
+                    : FACILITIES[activeKind].role}
                 </p>
+                {activeLv < MAX_LEVEL && upgCheck && (
+                  <p className="inspect-next">
+                    {activeLv === 0 ? "Unlocks · " : `Lv ${activeLv + 1} · `}
+                    {facilityBenefit(activeKind, Math.max(1, activeLv + 1))}
+                  </p>
+                )}
+                {upgCheck &&
+                  !upgCheck.ok &&
+                  upgCheck.reason.includes("Mission Control") && (
+                    <div className="prereq-tag">
+                      <Lock size={13} />
+                      {upgCheck.reason}
+                    </div>
+                  )}
                 <div className="inspect-actions">
-                  <button onClick={() => startPlace(b.kind)}>
-                    <Move />
-                    Move
-                  </button>
-                  {b.level < 3 && (
+                  {activeLv > 0 && (
                     <button
-                      className="primary"
-                      disabled={
-                        buttonsDisabled ||
-                        p.credits < upgradeCost(b.kind, b.level).credits ||
-                        p.research < upgradeCost(b.kind, b.level).research
-                      }
-                      onClick={() => M(m.editSite(b.kind))}
+                      aria-label="Move"
+                      title="Move facility"
+                      onClick={() => startPlace(activeKind)}
                     >
-                      Upgrade · {upgradeCost(b.kind, b.level).credits} cr /{" "}
-                      {upgradeCost(b.kind, b.level).research} RP
+                      <Move />
+                    </button>
+                  )}
+                  {activeLv < MAX_LEVEL && upgCheck && (
+                    <button
+                      className="primary grow"
+                      disabled={buttonsDisabled || !upgCheck.ok}
+                      onClick={() => {
+                        if (activeLv === 0 && !builtAtTile) {
+                          const err = m.editSite(activeKind);
+                          if (err) M(err);
+                          else setInspectLocked(null);
+                        } else {
+                          M(m.editSite(activeKind));
+                        }
+                      }}
+                    >
+                      {activeLv === 0 ? "Build" : "Upgrade"} ·{" "}
+                      {upgCheck.cost.credits.toLocaleString("en-US")} C
+                      {upgCheck.cost.research > 0
+                        ? ` + ${upgCheck.cost.research} RD`
+                        : ""}
                     </button>
                   )}
                 </div>
-                {b.level < 3 && (
-                  <small>Next · {benefit(b.kind, b.level + 1)}</small>
-                )}
               </>
             ) : (
-              <p>
-                {terrain(selected.x, selected.y) === "land"
-                  ? "Choose Facilities to place a building."
-                  : "Choose a clear plot for construction."}
-              </p>
+              <p>Tap a building to inspect or open Build.</p>
             )}
             {message && <p role="alert">{message}</p>}
           </section>
         )}
+
         <div className="site-dock">
           <button disabled={buttonsDisabled} onClick={() => showPanel("build")}>
             <Building2 />
-            Facilities
+            Build
           </button>
           <button
             className="primary"
@@ -279,12 +346,17 @@ export function LaunchSite({
             <ClipboardList />
             Contracts
           </button>
-          <button disabled={buttonsDisabled} onClick={onFlight}>
+          <button
+            aria-label="Flight deck"
+            disabled={buttonsDisabled}
+            onClick={onFlight}
+          >
             <Rocket />
-            Flight deck
+            Pad
           </button>
         </div>
       </div>
+
       {m.notice && (
         <div className="site-toast" role="status">
           {m.notice}
@@ -293,6 +365,7 @@ export function LaunchSite({
           </button>
         </div>
       )}
+
       {panel && (
         <Dialog
           title={
@@ -300,47 +373,65 @@ export function LaunchSite({
               ? "Contracts"
               : panel === "build"
                 ? "Facilities"
-                : "Replace current flight?"
+                : "Replace flight?"
           }
           close={() => P(null)}
         >
           {panel === "board" && (
             <>
               <div className="contract-list">
-                {jobs.map((job) => {
+                {CONTRACT_JOBS.map((job) => {
                   const c = CONTRACTS[job],
                     q = quote(p, job),
                     reason = launchIssue(p, job);
                   return (
-                    <article className="contract" key={job}>
+                    <article
+                      className={
+                        "contract" + (reason ? " contract-locked" : "")
+                      }
+                      key={job}
+                    >
                       <header>
                         <h3>{c.name}</h3>
-                        <small>
-                          {q.fee ? q.fee + " cr launch" : "Sponsored"}
-                        </small>
+                        <span className={"tier-chip tier-" + c.tier}>
+                          {c.tierLabel}
+                        </span>
                       </header>
                       <p>{c.goal}</p>
-                      <div className="mission-row">
+                      <div className="cost-strip">
                         <span>
-                          <Coins />
-                          {q.credits} <FlaskConical />
-                          {q.research}
+                          <Coins size={13} />
+                          {q.hardwareCost === 0
+                            ? "0 C (Sponsored)"
+                            : `${q.hardwareCost.toLocaleString("en-US")} C`}
+                        </span>
+                        <span>
+                          <Flame size={13} />
+                          {q.propellantCost.toLocaleString("en-US")} Prop
+                        </span>
+                        <span>
+                          <Database size={13} />
+                          {c.wetMassTonnes} t
+                        </span>
+                      </div>
+                      <div className="mission-row">
+                        <span className="payout-chip">
+                          +{q.credits.toLocaleString("en-US")} C
+                          {q.firstTimeBonus > 0
+                            ? ` (+${q.firstTimeBonus.toLocaleString("en-US")} 1st)`
+                            : ""}{" "}
+                          · +{q.research} RD
                         </span>
                         <button
+                          className={!reason ? "primary" : ""}
                           disabled={Boolean(reason)}
                           aria-label={"Accept " + c.name}
                           onClick={() => pick(job)}
                         >
-                          Accept <ArrowRight />
+                          Fly <ArrowRight />
                         </button>
                       </div>
-                      {job === "polar" && (
-                        <small>
-                          Pioneer Survey · {launchMass(job).toFixed(1)} t /{" "}
-                          {c.height} m
-                        </small>
-                      )}
-                      {reason && <small>{reason}</small>}
+                      {reason && <small className="lock-note">{reason}</small>}
                       {p.completed[job] > 0 && (
                         <small>Completed ×{p.completed[job]}</small>
                       )}
@@ -348,17 +439,26 @@ export function LaunchSite({
                   );
                 })}
               </div>
-              <button className="practice-btn" onClick={() => pick("practice")}>
+              <button
+                className="practice-btn"
+                onClick={() => pick("practice")}
+              >
                 <Rocket />
-                Free simulation
+                Simulate Free (0 C · 0 Prop · 0 Payout)
               </button>
             </>
           )}
+
           {panel === "build" && (
             <div className="facilities-list">
-              {kinds.map((k) => {
+              {FACILITY_KINDS.map((k) => {
                 const built = p.buildings.find((b) => b.kind === k),
-                  Icon = glyph[k];
+                  Icon = glyph[k],
+                  check = canAffordUpgrade(p, k),
+                  locked =
+                    !built &&
+                    !check.ok &&
+                    check.reason.includes("Mission Control");
                 return (
                   <button
                     key={k}
@@ -367,39 +467,42 @@ export function LaunchSite({
                         ? "Inspect " + FACILITIES[k].name
                         : "Build " + FACILITIES[k].name
                     }
-                    disabled={!built && p.credits < FACILITIES[k].cost}
                     onClick={() => {
-                      if (!built) {
-                        startPlace(k);
-                        return;
-                      }
-                      S({ x: built.x, y: built.y });
+                      const pos = built
+                        ? { x: built.x, y: built.y }
+                        : FACILITIES[k].defaultPos;
+                      S(pos);
+                      setInspectLocked(built ? null : k);
                       G(null);
                       P(null);
-                      H((v) => v + 1);
                     }}
                   >
                     <Icon />
                     <span>
                       <strong>{FACILITIES[k].name}</strong>
-                      <small>{benefit(k, built?.level ?? 1)}</small>
+                      <small>{facilityBenefit(k, built?.level ?? 1)}</small>
                     </span>
-                    <b>
-                      {built ? "Lv " + built.level : FACILITIES[k].cost + " cr"}
+                    <b className={locked ? "locked-badge" : ""}>
+                      {built
+                        ? `Lv ${built.level}`
+                        : locked
+                          ? "MC Lv 2"
+                          : `${FACILITIES[k].costs[0].credits.toLocaleString("en-US")} C`}
                     </b>
                   </button>
                 );
               })}
             </div>
           )}
+
           {panel === "replace" && (
             <>
               <p>
-                Retire the current vehicle and prepare{" "}
+                Retire the active vehicle and stage{" "}
                 {pending === "practice"
                   ? "a free simulation"
-                  : CONTRACTS[pending].name.toLowerCase()}
-                . Unfinished contracts earn no reward.
+                  : CONTRACTS[pending].name}
+                ?
               </p>
               <button
                 className="primary"
@@ -410,12 +513,6 @@ export function LaunchSite({
                 Prepare flight
               </button>
             </>
-          )}
-          {panel === "board" && (
-            <small className="program-clock">
-              Range time {Math.floor(p.elapsed / 3600)}h{" "}
-              {Math.floor(p.elapsed / 60) % 60}m · Charged at ignition
-            </small>
           )}
         </Dialog>
       )}

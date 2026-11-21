@@ -43,7 +43,7 @@ button {
   background: var(--glass);
   color: inherit;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
   touch-action: manipulation;
 }
@@ -82,7 +82,7 @@ button svg {
   height: 100dvh;
   overflow: hidden;
   isolation: isolate;
-  --gap: clamp(12px, 2.5vmin, 28px);
+  --gap: clamp(12px, 2.5vmin, 24px);
   --l: calc(var(--gap) + env(safe-area-inset-left));
   --r: calc(var(--gap) + env(safe-area-inset-right));
   --t: calc(var(--gap) + env(safe-area-inset-top));
@@ -99,9 +99,9 @@ button svg {
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    #0711208c,
-    transparent 25%,
-    transparent 68%,
+    #07112078,
+    transparent 22%,
+    transparent 70%,
     #08121dbf
   );
 }
@@ -126,45 +126,37 @@ button svg {
 .identity {
   display: flex;
   align-items: center;
-  gap: 10px;
-  text-shadow: 0 1px 3px #071220;
-}
-.identity strong {
-  display: block;
-  font-weight: 600;
-  font-size: clamp(19px, 2.5vmin, 26px);
-  line-height: 1;
-  letter-spacing: -0.04em;
+  gap: 8px;
 }
 .insignia {
-  width: 37px;
-  height: 37px;
-  display: grid;
-  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   color: var(--amber);
   border: 1px solid #c4ac8c5c;
   border-radius: 12px;
-  background: #192634aa;
+  background: #192634cc;
 }
 .insignia svg {
-  width: 24px;
+  width: 20px;
+  height: 20px;
 }
 .timer {
-  font: 500 10px var(--mono);
-  display: block;
-  color: #b7c4d0;
-  margin-top: 4px;
+  font: 500 11px var(--mono);
+  color: #dce7ee;
+  padding: 5px 9px;
+  border-radius: 99px;
+  background: #13212dc4;
+  border: 1px solid var(--line);
   letter-spacing: 0.03em;
 }
 nav,
-.quick,
 .map-tools,
 .pitch-pair {
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 nav button,
-.quick button,
 .map-tools button,
 .pitch-pair button {
   width: 44px;
@@ -176,18 +168,17 @@ nav button,
 }
 .telemetry {
   position: absolute;
-  top: 61px;
+  top: 54px;
   left: 0;
   display: flex;
   align-items: flex-start;
   gap: 0;
   max-width: 100%;
-  padding: 6px 0;
-  background: linear-gradient(90deg, #17232e52, transparent);
+  padding: 5px 0;
   text-shadow: 0 1px 2px #071220;
 }
 .meter {
-  padding: 0 12px;
+  padding: 0 11px;
   border-left: 1px solid #8495a152;
 }
 .meter:first-child {
@@ -198,28 +189,20 @@ nav button,
 .control-label,
 .fuel-label {
   font: 500 10px var(--mono);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #c2d1d7;
 }
 .meter strong {
   display: block;
-  font: 500 clamp(16px, 2.7vmin, 26px) var(--mono);
-  letter-spacing: -0.08em;
+  font: 500 clamp(15px, 2.6vmin, 24px) var(--mono);
+  letter-spacing: -0.06em;
 }
 .meter small {
   font: 500 10px var(--mono);
   color: #c3d0da;
   letter-spacing: 0;
   margin-left: 3px;
-}
-.quick {
-  position: absolute;
-  top: 0;
-  right: 153px;
-}
-.quick button {
-  background: #15222ea3;
 }
 .pilot-left,
 .command,
@@ -231,7 +214,7 @@ nav button,
   left: 0;
   display: grid;
   justify-items: start;
-  gap: 9px;
+  gap: 8px;
 }
 .assist {
   width: max-content;
@@ -242,10 +225,10 @@ nav button,
   gap: 6px;
   font-size: 13px;
   color: var(--mint);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--glass);
   border: 1px solid var(--line);
-  padding: 0 9px;
+  padding: 0 10px;
   height: 44px;
   cursor: pointer;
 }
@@ -259,13 +242,13 @@ nav button,
 }
 .pitch,
 .thrust {
-  border-radius: 13px;
+  border-radius: 14px;
   background: var(--glass);
   border: 1px solid var(--line);
   box-shadow: 0 3px 16px #09111a24;
 }
 .pitch {
-  padding: 8px 4px 4px;
+  padding: 7px 4px 4px;
   text-align: center;
 }
 .control-label b,
@@ -275,12 +258,12 @@ nav button,
 }
 .pitch-pair {
   margin-top: 4px;
-  gap: 1px;
+  gap: 2px;
 }
 .pitch-pair button {
   background: #293743;
   border: 1px solid #72808c40;
-  border-radius: 8px;
+  border-radius: 9px;
 }
 .pitch-pair svg {
   width: 22px;
@@ -292,16 +275,16 @@ nav button,
   flex-direction: column;
   align-items: center;
   padding: 9px 3px 6px;
-  width: 56px;
+  width: 54px;
   gap: 4px;
 }
 .thrust > b {
-  font: 500 14px var(--mono);
+  font: 500 13px var(--mono);
   color: var(--amber);
 }
 .thrust .control-label {
   font-size: 9px;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.06em;
 }
 .thrust input {
   writing-mode: vertical-lr;
@@ -309,7 +292,7 @@ nav button,
   appearance: none;
   display: block;
   width: 44px;
-  height: clamp(80px, 17dvh, 165px);
+  height: clamp(80px, 16dvh, 155px);
   margin: 2px 0;
   background: transparent;
   touch-action: none;
@@ -353,21 +336,54 @@ nav button,
 .command {
   left: 50%;
   transform: translateX(-50%);
-  width: clamp(124px, 20vw, 210px);
+  width: clamp(148px, 28vw, 224px);
   display: grid;
   justify-items: stretch;
   gap: 7px;
+}
+.command-pad {
+  width: clamp(188px, 52vw, 240px);
+}
+.launch-costs {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  font: 600 11px var(--mono);
+  color: #e6efe9;
+  background: #13222de0;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 4px 10px;
+}
+.launch-costs span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.launch-costs span:first-child svg {
+  color: var(--amber);
+}
+.launch-costs span:last-child svg {
+  color: #7ee3dc;
+}
+.sim-free-btn {
+  min-height: 44px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mint);
+  background: #13222dd9;
+  border: 1px solid #82c4b466;
 }
 .state {
   justify-self: center;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   font: 500 10px var(--mono);
-  background: #15222ece;
+  background: #15222ed4;
   border: 1px solid var(--line);
   border-radius: 20px;
-  padding: 4px 9px;
+  padding: 4px 10px;
   white-space: nowrap;
 }
 .state i {
@@ -432,20 +448,40 @@ button.primary:enabled:active {
 .map-tools {
   position: absolute;
   right: var(--r);
-  top: calc(var(--t) + 63px);
+  top: calc(var(--t) + 56px);
   z-index: 1;
 }
 .map-selection {
   position: absolute;
   right: var(--r);
-  top: calc(var(--t) + 114px);
+  top: calc(var(--t) + 106px);
   color: #b8cbd2;
   font: 500 10px var(--mono);
+  text-align: right;
+}
+.tracking-slot {
+  position: absolute;
+  left: var(--l);
+  top: calc(var(--t) + 108px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 10px var(--mono);
+  color: #b8cbd2;
+  background: #13222dd4;
+  border: 1px solid #86a4ae4d;
+  border-radius: 10px;
+  padding: 6px 9px;
+  z-index: 1;
+}
+.tracking-slot.unlocked {
+  color: var(--mint);
+  border-color: #82c4b477;
 }
 .warp-toggle {
   position: absolute;
   bottom: 0;
-  right: 70px;
+  right: 66px;
   min-height: 44px;
   padding: 0 10px;
   font: 500 12px var(--mono);
@@ -457,17 +493,18 @@ button.primary:enabled:active {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(var(--b) + 171px);
+  top: calc(var(--t) + 54px);
   width: max-content;
-  max-width: min(85%, 440px);
+  max-width: min(88%, 420px);
   display: flex;
   align-items: center;
   gap: 8px;
   background: #24313cf2;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 3px 4px 3px 10px;
   font-size: 13px;
+  z-index: 3;
 }
 .notice svg {
   flex: none;
@@ -477,9 +514,9 @@ button.primary:enabled:active {
   border: 0;
 }
 dialog {
-  width: min(390px, calc(100vw - 32px));
+  width: min(390px, calc(100vw - 28px));
   max-height: calc(
-    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px
+    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 28px
   );
   padding: 18px;
   background: #15222bf7;
@@ -499,12 +536,12 @@ dialog p {
   margin: 0;
 }
 dialog h2 {
-  font-size: 23px;
-  letter-spacing: -0.035em;
+  font-size: 22px;
+  letter-spacing: -0.03em;
 }
 dialog h3 {
-  font-size: 17px;
-  margin: 14px 0 6px;
+  font-size: 16px;
+  margin: 12px 0 6px;
 }
 .dialog-head,
 .dialog-actions,
@@ -525,6 +562,7 @@ dialog h3 {
 }
 .dialog-head button {
   background: transparent;
+  border: 0;
 }
 .menu-grid {
   display: grid;
@@ -547,7 +585,7 @@ dialog button {
 }
 dialog p,
 dialog ol {
-  font-size: 15px;
+  font-size: 14px;
   color: #c1cdd2;
   line-height: 1.45;
   margin: 8px 0 12px;
@@ -603,7 +641,7 @@ dialog ol {
   color: var(--mint);
 }
 .events li {
-  font-size: 15px;
+  font-size: 14px;
 }
 .events time {
   white-space: nowrap;
@@ -611,22 +649,17 @@ dialog ol {
   color: var(--mint);
 }
 @media (max-width: 620px) {
-  .quick {
-    top: 119px;
-    left: 0;
-    right: auto;
-  }
-  .quick button {
-    background: #15222eaa;
-  }
   .map-tools {
-    top: calc(var(--t) + 119px);
+    top: calc(var(--t) + 108px);
   }
   .map-selection {
-    top: calc(var(--t) + 167px);
+    top: calc(var(--t) + 158px);
+  }
+  .tracking-slot {
+    top: calc(var(--t) + 158px);
   }
   .warp-toggle {
-    bottom: calc(110px + 2px);
+    bottom: 112px;
     left: 50%;
     right: auto;
     transform: translateX(-50%);
@@ -635,7 +668,7 @@ dialog ol {
     padding: 0 8px;
   }
   .meter strong {
-    font-size: clamp(13px, 4vw, 19px);
+    font-size: clamp(13px, 4vw, 18px);
   }
   .meter small {
     font-size: 9px;
@@ -643,36 +676,31 @@ dialog ol {
 }
 @media (max-width: 365px) {
   .command {
-    left: 55%;
-    width: 110px;
+    left: 50%;
+    width: 140px;
   }
   .meter {
     padding: 0 5px;
   }
   .thrust {
-    width: 50px;
+    width: 48px;
   }
   .map-view .meter strong {
     font-size: 12px;
   }
-  .timer {
-    font-size: 9px;
-  }
 }
 @media (max-height: 475px) and (orientation: landscape) {
   .telemetry {
-    top: 50px;
-  }
-  .quick {
-    top: 0;
-    left: auto;
-    right: 152px;
+    top: 48px;
   }
   .map-tools {
-    top: calc(var(--t) + 53px);
+    top: calc(var(--t) + 50px);
   }
   .map-selection {
-    top: calc(var(--t) + 100px);
+    top: calc(var(--t) + 98px);
+  }
+  .tracking-slot {
+    top: calc(var(--t) + 98px);
   }
   .thrust input {
     height: 70px;
@@ -682,7 +710,7 @@ dialog ol {
     align-items: flex-end;
   }
   .warp-toggle {
-    right: 70px;
+    right: 66px;
     bottom: 0;
     left: auto;
     transform: none;

@@ -8,8 +8,15 @@ import {
   speed,
   type Flight,
 } from "../../sim/flight";
-import { Plus, Minus, LocateFixed, Globe } from "lucide-react";
-export function OrbitalMap({ s }: { s: Flight }) {
+import { Plus, Minus, LocateFixed, Globe, Lock, Radar } from "lucide-react";
+
+export function OrbitalMap({
+  s,
+  trackingLevel = 1,
+}: {
+  s: Flight;
+  trackingLevel?: number;
+}) {
   const [zoom, Z] = useState(1),
     [pan, P] = useState([0, 0]),
     [track, T] = useState(false),
@@ -20,6 +27,7 @@ export function OrbitalMap({ s }: { s: Flight }) {
     fingers = useRef(new Map<number, number[]>());
   const lastSpan = useRef(0),
     moved = useRef(false);
+
   useEffect(() => {
     const el = svg.current!;
     const observer = new ResizeObserver(() =>
@@ -36,6 +44,7 @@ export function OrbitalMap({ s }: { s: Flight }) {
       el.removeEventListener("wheel", wheel);
     };
   }, []);
+
   const o = orbit(s),
     scale = (D * zoom) / R;
   const ox = size.w / 2 + pan[0] - (track ? s.y * scale : 0),
@@ -43,9 +52,8 @@ export function OrbitalMap({ s }: { s: Flight }) {
   const point = (x: number, y: number) => [ox + y * scale, oy - x * scale];
   const pts: string[] = [];
   let previousVisible = false;
+
   if (Math.abs(o.h) > 1 && o.p > 0) {
-    // Parameterize only the portion above the surface. Uniform full-orbit sampling
-    // misses almost-radial suborbital arcs shortly after liftoff.
     const cut = o.e > 1e-12 ? (o.p / R - 1) / o.e : 2;
     const start = cut >= 1 ? 0 : Math.acos(clamp(cut, -1, 1));
     const end = 2 * Math.PI - start;
@@ -69,6 +77,7 @@ export function OrbitalMap({ s }: { s: Flight }) {
       "M" + point(s.x, s.y).join(" ") + "L" + point(s.x * k, s.y * k).join(" "),
     );
   }
+
   const [cx, cy] = point(s.x, s.y);
   const handle = (e: PointerEvent<SVGSVGElement>) => {
     if (!fingers.current.has(e.pointerId)) return;
@@ -86,10 +95,12 @@ export function OrbitalMap({ s }: { s: Flight }) {
       lastSpan.current = span;
     } else P((p) => [p[0] + dx, p[1] + dy]);
   };
+
   function release(e: PointerEvent<SVGSVGElement>) {
     fingers.current.delete(e.pointerId);
     lastSpan.current = 0;
   }
+
   const marker = (name: string, x: number, y: number) => {
     const [px, py] = point(x, y);
     if (!Number.isFinite(px + py)) return null;
@@ -106,6 +117,9 @@ export function OrbitalMap({ s }: { s: Flight }) {
       </g>
     );
   };
+
+  const hasManeuverSlot = trackingLevel >= 2;
+
   return (
     <div className="orbital">
       <svg
@@ -227,6 +241,19 @@ export function OrbitalMap({ s }: { s: Flight }) {
           />
         </g>
       </svg>
+
+      <div
+        className={"tracking-slot" + (hasManeuverSlot ? " unlocked" : "")}
+        aria-label="Tracking Station maneuver node status"
+      >
+        {hasManeuverSlot ? <Radar size={13} /> : <Lock size={13} />}
+        <span>
+          {hasManeuverSlot
+            ? "Maneuver Nodes · Ready (v0.5)"
+            : "Maneuver Nodes · Tracking Lv 2"}
+        </span>
+      </div>
+
       <div className="map-tools">
         <button
           aria-label="Zoom in"

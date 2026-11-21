@@ -1,30 +1,51 @@
 import { useEffect, useRef } from "react";
 import Phaser from "phaser";
 import {
+  FACILITIES,
   SIZE,
+  TIER2_KINDS,
+  getStorageCaps,
+  level,
   placement,
   terrain,
   type Program,
   type Kind,
 } from "../../program/program";
+
 export type Tile = { x: number; y: number };
-const frames: Record<Kind, number> = { command: 8, pad: 11, fuel: 14, lab: 17 };
+
+const frames: Record<Kind, number> = {
+  command: 8,
+  pad: 12,
+  refinery: 16,
+  tanks: 20,
+  office: 24,
+  vab: 28,
+  tracking: 32,
+  lab: 36,
+};
+const LAMP_FRAME = 40;
+const LOCKED_PAD_FRAME = 41;
+
 const project = (x: number, y: number) => ({
   x: (x - y) * 32,
   y: (x + y) * 16,
 });
+
 interface Props {
   program: Program;
   selected: Tile | null;
   placing: Kind | null;
   onTile: (t: Tile) => void;
-  zoom: number;
-  recenter: number;
+  zoom?: number;
+  recenter?: number;
 }
+
 export function EarthScene(props: Props) {
   const host = useRef<HTMLDivElement>(null),
     state = useRef(props);
   state.current = props;
+
   useEffect(() => {
     const el = host.current!;
     let scale = 1,
@@ -34,9 +55,10 @@ export function EarthScene(props: Props) {
       startX = 0,
       startY = 0,
       span = 0,
-      zoomState = props.zoom,
-      home = props.recenter;
+      zoomState = props.zoom ?? 0,
+      home = props.recenter ?? 0;
     const points = new Map<number, { x: number; y: number }>();
+
     function size() {
       return (
         Math.min(el.clientWidth / 455, el.clientHeight / 340, 2.35) * scale
@@ -103,10 +125,11 @@ export function EarthScene(props: Props) {
             .sort((a, b) => b.x + b.y - a.x - a.y)
             .find((b) => {
               const pt = project(b.x, b.y);
+              const tall = b.kind === "pad" ? 42 : b.kind === "vab" ? 34 : 25;
               return (
-                Math.abs((x - o.x) / z - pt.x) < 17 &&
-                (y - o.y) / z > pt.y - (b.kind === "pad" ? 40 : 23) &&
-                (y - o.y) / z < pt.y + 7
+                Math.abs((x - o.x) / z - pt.x) < 18 &&
+                (y - o.y) / z > pt.y - tall &&
+                (y - o.y) / z < pt.y + 8
               );
             });
           if (b) {
@@ -124,13 +147,16 @@ export function EarthScene(props: Props) {
       e.preventDefault();
       zoomBy(Math.exp(-e.deltaY * 0.0015));
     }
+
     class Site extends Phaser.Scene {
       board!: Phaser.GameObjects.Container;
       marker!: Phaser.GameObjects.Graphics;
+      overlay!: Phaser.GameObjects.Graphics;
       ghost!: Phaser.GameObjects.Image;
       buildings!: Phaser.GameObjects.Container;
       signature = "";
       ready = false;
+
       preload() {
         this.load.spritesheet(
           "terrain",
@@ -138,6 +164,7 @@ export function EarthScene(props: Props) {
           { frameWidth: 80, frameHeight: 104 },
         );
       }
+
       create() {
         this.board = this.add.container(0, 0);
         for (let sum = -8; sum < 24; sum++)
@@ -188,7 +215,7 @@ export function EarthScene(props: Props) {
             if (y === 4 && x % 2 === 1)
               this.board.add(
                 this.add
-                  .image(pt.x - 13, pt.y + 4, "terrain", 20)
+                  .image(pt.x - 13, pt.y + 4, "terrain", LAMP_FRAME)
                   .setOrigin(0.5, 80 / 104),
               );
           }
@@ -196,6 +223,8 @@ export function EarthScene(props: Props) {
         this.board.add(this.marker);
         this.buildings = this.add.container(0, 0);
         this.board.add(this.buildings);
+        this.overlay = this.add.graphics();
+        this.board.add(this.overlay);
         this.ghost = this.add
           .image(0, 0, "terrain", 8)
           .setOrigin(0.5, 80 / 104)
@@ -203,40 +232,108 @@ export function EarthScene(props: Props) {
         this.board.add(this.ghost);
         this.ready = true;
       }
+
       update() {
         if (!this.ready) return;
         const p = state.current;
-        if (zoomState !== p.zoom) {
-          zoomBy(1.25 ** (p.zoom - zoomState));
-          zoomState = p.zoom;
+        const nextZoom = p.zoom ?? 0;
+        const nextHome = p.recenter ?? 0;
+        if (zoomState !== nextZoom) {
+          zoomBy(1.25 ** (nextZoom - zoomState));
+          zoomState = nextZoom;
         }
-        if (home !== p.recenter) {
+        if (home !== nextHome) {
           scale = 1;
           panX = 0;
           panY = 0;
-          home = p.recenter;
+          home = nextHome;
         }
         const o = origin();
         this.board
           .setPosition(Math.round(o.x), Math.round(o.y))
           .setScale(size());
-        const key = p.program.buildings
-          .map((b) => [b.kind, b.level, b.x, b.y].join())
-          .join("|");
+
+        const mcLv = level(p.program, "command");
+        const key =
+          mcLv +
+          ":" +
+          p.program.buildings
+            .map((b) => [b.kind, b.level, b.x, b.y].join())
+            .join("|");
         if (key !== this.signature) {
           this.signature = key;
           this.buildings.removeAll(true);
-          for (const b of [...p.program.buildings].sort(
-            (a, b) => a.x + a.y - b.x - b.y,
-          )) {
-            const pt = project(b.x, b.y);
-            this.buildings.add(
-              this.add
-                .image(pt.x, pt.y, "terrain", frames[b.kind] + b.level - 1)
-                .setOrigin(0.5, 80 / 104),
-            );
+
+          // Combine built facilities and unbuilt Tier 2 construction footprints, sorted back-to-front
+          const items: Array<{
+            x: number;
+            y: number;
+            frame: number;
+            alpha: number;
+            tint?: number;
+          }> = [];
+
+          for (const k of TIER2_KINDS) {
+            if (level(p.program, k) === 0) {
+              const pos = FACILITIES[k].defaultPos;
+              const occupied = p.program.buildings.some(
+                (b) => b.x === pos.x && b.y === pos.y,
+              );
+              if (!occupied) {
+                items.push({
+                  x: pos.x,
+                  y: pos.y,
+                  frame: LOCKED_PAD_FRAME,
+                  alpha: mcLv >= 2 ? 0.92 : 0.65,
+                  tint: mcLv >= 2 ? 0xb4f0d8 : 0x9db0b8,
+                });
+              }
+            }
+          }
+
+          for (const b of p.program.buildings) {
+            items.push({
+              x: b.x,
+              y: b.y,
+              frame: frames[b.kind] + Math.min(3, Math.max(0, b.level - 1)),
+              alpha: 1,
+            });
+          }
+
+          items.sort((a, b) => a.x + a.y - (b.x + b.y));
+          for (const it of items) {
+            const pt = project(it.x, it.y);
+            const img = this.add
+              .image(pt.x, pt.y, "terrain", it.frame)
+              .setOrigin(0.5, 80 / 104)
+              .setAlpha(it.alpha);
+            if (it.tint) img.setTint(it.tint);
+            this.buildings.add(img);
           }
         }
+
+        // Subtle live Cryo Tank Farm propellant fill indicator
+        this.overlay.clear();
+        const tanksBuilding = p.program.buildings.find(
+          (b) => b.kind === "tanks",
+        );
+        if (tanksBuilding) {
+          const caps = getStorageCaps(p.program);
+          const ratio = Phaser.Math.Clamp(
+            p.program.propellant / Math.max(1, caps.propellant),
+            0,
+            1,
+          );
+          const pt = project(tanksBuilding.x, tanksBuilding.y);
+          const barW = 24;
+          const bx = pt.x - barW / 2;
+          const by = pt.y - 29 - tanksBuilding.level * 2;
+          this.overlay.fillStyle(0x10202b, 0.85);
+          this.overlay.fillRoundedRect(bx - 1, by - 1, barW + 2, 5, 2);
+          this.overlay.fillStyle(ratio >= 0.99 ? 0xffcb84 : 0x67d6cf, 0.95);
+          this.overlay.fillRect(bx, by, Math.max(1, Math.round(barW * ratio)), 3);
+        }
+
         this.marker.clear();
         this.ghost.setVisible(false);
         if (p.placing) {
@@ -281,6 +378,7 @@ export function EarthScene(props: Props) {
         }
       }
     }
+
     const game = new Phaser.Game({
       type: Phaser.CANVAS,
       parent: el,
@@ -295,6 +393,7 @@ export function EarthScene(props: Props) {
       input: { keyboard: false, mouse: false, touch: false },
       fps: { target: 30, forceSetTimeOut: true },
     });
+
     const obs = new ResizeObserver(() =>
       game.scale.resize(el.clientWidth, el.clientHeight),
     );
@@ -304,6 +403,7 @@ export function EarthScene(props: Props) {
     el.addEventListener("pointerup", end);
     el.addEventListener("pointercancel", end);
     el.addEventListener("wheel", wheel, { passive: false });
+
     return () => {
       obs.disconnect();
       game.destroy(true);
@@ -314,6 +414,7 @@ export function EarthScene(props: Props) {
       el.removeEventListener("wheel", wheel);
     };
   }, []);
+
   return (
     <div
       ref={host}

@@ -1,40 +1,184 @@
 import {
+  CONTRACTS,
+  FACILITIES,
+  MAX_LEVEL,
+  SIZE,
+  STARTER_KINDS,
+  getStorageCaps,
+  placement,
   startProgram,
+  syncBuildingLevels,
   validProgram,
+  type Building,
+  type Kind,
   type Program,
 } from "../program/program.ts";
-import { R, STAGES, initial, radius, type Flight } from "../sim/flight.ts";
+import { R, STAGES, clamp, initial, radius, type Flight } from "../sim/flight.ts";
+
 export interface Entry {
   t: number;
   text: string;
 }
+
 export interface Snapshot {
-  version: 2;
+  version: 3;
   program: Program;
   revision: number;
   view: "flight" | "map" | "site";
   flight: Flight;
   log: Entry[];
 }
+
 export const fresh = (): Snapshot => ({
-  version: 2,
+  version: 3,
   program: startProgram(),
   revision: 0,
   view: "site",
   flight: initial(),
   log: [{ t: 0, text: "Pioneer 01 cleared for flight." }],
 });
+
 const record = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 const num = (v: unknown, min: number, max: number) =>
   typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
+
+function findFreePlot(p: Program, kind: Kind): { x: number; y: number } {
+  const def = FACILITIES[kind].defaultPos;
+  if (!placement(p, kind, def.x, def.y)) return { x: def.x, y: def.y };
+  for (let y = 1; y < SIZE; y++)
+    for (let x = 1; x < SIZE; x++)
+      if (!placement(p, kind, x, y)) return { x, y };
+  return { x: def.x, y: def.y };
+}
+
+/** Deterministic v2 -> v3 migration preserving progress and backfilling Lv 1 Earth facilities & starter Propellant. */
+function migrateV2Program(rawProg: unknown, f: Flight): Program | null {
+  if (!record(rawProg)) return null;
+  const base = startProgram();
+  base.buildings = [];
+
+  const oldCredits =
+    typeof rawProg.credits === "number" &&
+    Number.isSafeInteger(rawProg.credits) &&
+    rawProg.credits >= 0
+      ? rawProg.credits
+      : null;
+  const oldResearch =
+    typeof rawProg.research === "number" &&
+    Number.isSafeInteger(rawProg.research) &&
+    rawProg.research >= 0
+      ? rawProg.research
+      : null;
+  const oldElapsed =
+    typeof rawProg.elapsed === "number" &&
+    Number.isFinite(rawProg.elapsed) &&
+    rawProg.elapsed >= 0
+      ? rawProg.elapsed
+      : null;
+
+  if (oldCredits === null || oldResearch === null || oldElapsed === null)
+    return null;
+
+  if (!Array.isArray(rawProg.buildings)) return null;
+  const seen = new Set<Kind>();
+  const kindMap: Record<string, Kind> = {
+    command: "command",
+    pad: "pad",
+    fuel: "tanks",
+    lab: "lab",
+  };
+
+  for (const item of rawProg.buildings) {
+    if (!record(item)) return null;
+    const mapped = kindMap[String(item.kind)];
+    if (!mapped || seen.has(mapped)) return null;
+    const lv = Number(item.level);
+    const x = Number(item.x);
+    const y = Number(item.y);
+    if (
+      !Number.isSafeInteger(lv) ||
+      lv < 1 ||
+      lv > MAX_LEVEL ||
+      !Number.isInteger(x) ||
+      !Number.isInteger(y)
+    )
+      return null;
+    const b: Building = { kind: mapped, x, y, level: lv };
+    if (placement(base, mapped, x, y)) return null;
+    base.buildings.push(b);
+    seen.add(mapped);
+  }
+
+  // Backfill any missing starter Lv 1 Earth facilities cleanly.
+  for (const kind of STARTER_KINDS) {
+    if (!seen.has(kind)) {
+      const pos = findFreePlot(base, kind);
+      base.buildings.push({ kind, x: pos.x, y: pos.y, level: 1 });
+      seen.add(kind);
+    }
+  }
+  base.buildingLevels = syncBuildingLevels(base.buildings);
+
+  const caps = getStorageCaps(base);
+  base.credits = clamp(oldCredits, 0, caps.credits);
+  base.propellant = clamp(900, 0, caps.propellant);
+  base.research = oldResearch;
+  base.simTimeSec = oldElapsed;
+  base.elapsed = oldElapsed;
+
+  if (record(rawProg.completed)) {
+    const hopDone = Number(rawProg.completed.hop ?? 0);
+    const orbitDone = Number(rawProg.completed.orbit ?? 0);
+    if (
+      !Number.isSafeInteger(hopDone) ||
+      hopDone < 0 ||
+      !Number.isSafeInteger(orbitDone) ||
+      orbitDone < 0
+    )
+      return null;
+    base.completed.hop = hopDone;
+    base.completed.orbit = orbitDone;
+    base.milestones.firstKarman = hopDone > 0;
+    base.milestones.firstOrbit = orbitDone > 0;
+  }
+
+  const oldSortie = String(rawProg.sortie ?? "practice");
+  if (oldSortie === "hop" || oldSortie === "orbit") {
+    base.sortie = oldSortie;
+    base.paid = Boolean(rawProg.paid) && f.status !== "pad";
+    base.rewarded = Boolean(rawProg.rewarded) && base.paid;
+    if (base.paid) {
+      const c = CONTRACTS[oldSortie];
+      base.award = {
+        credits: c.credits,
+        research: c.research,
+        milestoneBonus: 0,
+      };
+      if (!base.rewarded) base.activeContracts = [oldSortie];
+    }
+    f.cargo = CONTRACTS[oldSortie].cargo;
+  } else {
+    // Polar or practice v2 flights migrate safely into free simulation
+    base.sortie = "practice";
+    base.paid = false;
+    base.rewarded = false;
+    base.award = null;
+    f.cargo = 0;
+  }
+  base.inclination = 0;
+  base.leoPassStartSec = null;
+  base.warpAlert = "";
+  return base;
+}
+
 export function validate(raw: unknown): Snapshot {
-  const invalid = () => {
+  const invalid = (): never => {
     throw Error("This file is not a valid Apogee flight save.");
   };
   if (
     !record(raw) ||
-    (raw.version !== 1 && raw.version !== 2) ||
+    (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) ||
     !num(raw.revision, 0, Number.MAX_SAFE_INTEGER) ||
     !Number.isSafeInteger(raw.revision) ||
     !(
@@ -45,12 +189,10 @@ export function validate(raw: unknown): Snapshot {
     !record(raw.flight)
   )
     return invalid();
+
   const f = structuredClone(raw.flight) as unknown as Flight;
   if (raw.version === 1) f.cargo = 0;
-  const program =
-    raw.version === 1
-      ? { ...startProgram(), elapsed: f.t }
-      : structuredClone(raw.program);
+
   if (
     ![0, 1].includes(f.stage) ||
     !["manual", "guide", "prograde", "retrograde"].includes(f.mode) ||
@@ -69,6 +211,7 @@ export function validate(raw: unknown): Snapshot {
     (f.stage === 1 && f.fuel[0] !== 0)
   )
     return invalid();
+
   if (
     f.status === "pad" &&
     (f.t !== 0 ||
@@ -81,6 +224,7 @@ export function validate(raw: unknown): Snapshot {
       f.orbitEarned)
   )
     return invalid();
+
   if (
     raw.log.some(
       (e) =>
@@ -91,9 +235,28 @@ export function validate(raw: unknown): Snapshot {
     )
   )
     return invalid();
+
+  let program: unknown;
+  if (raw.version === 1) {
+    program = { ...startProgram(), simTimeSec: f.t, elapsed: f.t };
+  } else if (raw.version === 2) {
+    program = migrateV2Program(raw.program, f);
+  } else {
+    program = structuredClone(raw.program);
+    if (record(program) && Array.isArray(program.buildings)) {
+      program.buildingLevels = syncBuildingLevels(
+        program.buildings as Building[],
+      );
+      if (typeof program.elapsed !== "number" && typeof program.simTimeSec === "number") {
+        program.elapsed = program.simTimeSec;
+      }
+    }
+  }
+
   if (!validProgram(program, f)) return invalid();
+
   return {
-    version: 2,
+    version: 3,
     program,
     flight: f,
     view: raw.view as Snapshot["view"],
@@ -101,9 +264,11 @@ export function validate(raw: unknown): Snapshot {
     revision: Number(raw.revision),
   };
 }
+
 const scope = () => new URL(".", document.baseURI).pathname;
 const key = () => "apogee-v1:" + scope();
 let db: Promise<IDBDatabase> | undefined;
+
 function openDB() {
   return (db ??= new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(key(), 1);
@@ -117,6 +282,7 @@ function openDB() {
     };
   }));
 }
+
 export async function writeSave(data: Snapshot) {
   const db = await openDB();
   await new Promise<void>((resolve, reject) => {
@@ -127,10 +293,12 @@ export async function writeSave(data: Snapshot) {
     tx.onabort = () => reject(tx.error);
   });
 }
+
 // A synchronous lifecycle checkpoint covers a mobile browser suspending an IDB transaction.
 export function checkpoint(data: Snapshot) {
   localStorage.setItem(key(), JSON.stringify(data));
 }
+
 export async function readSave(): Promise<Snapshot | null> {
   let fallback: Snapshot | undefined, fallbackError: unknown;
   try {

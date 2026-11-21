@@ -4,7 +4,9 @@ import {
   payLaunch,
   place,
   prepare,
+  quote,
   settle,
+  tickEconomy,
   upgrade,
   type Kind,
   type Sortie,
@@ -29,6 +31,7 @@ import {
   writeSave,
   type Snapshot,
 } from "../persistence/save";
+
 export function useMission() {
   const mission = useRef(fresh()),
     vessel = useRef<Flight>(mission.current.flight);
@@ -41,6 +44,7 @@ export function useMission() {
   const [, paint] = useState(0),
     refresh = () => paint((v) => v + 1);
   const [notice, setNotice] = useState("");
+
   function install(data: Snapshot) {
     mission.current = data;
     vessel.current = data.flight;
@@ -48,11 +52,13 @@ export function useMission() {
     paused.current = data.flight.status === "flying";
     refresh();
   }
+
   function log(text: string) {
     const m = mission.current;
     m.log.push({ t: m.flight.t, text });
     m.log = m.log.slice(-64);
   }
+
   function save() {
     if (!ready.current) return;
     const m = mission.current;
@@ -74,6 +80,7 @@ export function useMission() {
         setSaveStatus(journal ? "Backup saved" : "Save unavailable"),
       );
   }
+
   function change(fn: (s: Flight) => void, msg?: string) {
     if (!ready.current) return;
     fn(vessel.current);
@@ -82,20 +89,47 @@ export function useMission() {
     save();
     refresh();
   }
+
   function launch() {
     if (vessel.current.status !== "pad" || thrustToWeight(vessel.current) <= 1)
       return;
     if (!ready.current) return;
-    const reason = payLaunch(mission.current.program);
+    const prog = mission.current.program;
+    const sortie = prog.sortie;
+    const q = sortie === "practice" ? null : quote(prog, sortie);
+    const reason = payLaunch(prog);
     if (reason) {
       setNotice(reason);
       return;
     }
+    const costNote = q
+      ? `Ignition · −${q.hardwareCost.toLocaleString("en-US")} C · −${q.propellantCost.toLocaleString("en-US")} Prop`
+      : "Free simulation ignition (0 cost · 0 payout).";
     change((s) => {
       s.status = "flying";
       paused.current = false;
-    }, "Ignition confirmed. Pioneer 01 is in flight.");
+    }, costNote);
   }
+
+  function launchFreeSim() {
+    if (!ready.current) return;
+    const data = mission.current;
+    if (data.program.sortie !== "practice" || vessel.current.status !== "pad") {
+      data.flight = prepare(data.program, "practice");
+      data.log = [{ t: 0, text: "Free simulation ready (0 cost · 0 payout)." }];
+      data.view = "flight";
+      install(data);
+      setNotice("");
+      save();
+    }
+    if (thrustToWeight(vessel.current) > 1) {
+      change((s) => {
+        s.status = "flying";
+        paused.current = false;
+      }, "Free simulation ignition (0 cost · 0 payout).");
+    }
+  }
+
   function separate() {
     if (stage(vessel.current)) {
       if (!canWarp(vessel.current)) rate.current = 1;
@@ -104,6 +138,7 @@ export function useMission() {
       refresh();
     }
   }
+
   function togglePause() {
     if (vessel.current.status !== "flying") return;
     paused.current = !paused.current;
@@ -111,11 +146,17 @@ export function useMission() {
     save();
     refresh();
   }
+
   function warp(value: number) {
     if (value !== 1 && !canWarp(vessel.current)) return;
+    if (value > 1 && mission.current.program.warpAlert) {
+      setNotice(mission.current.program.warpAlert);
+      return;
+    }
     rate.current = value;
     refresh();
   }
+
   function newSortie(job: Sortie) {
     if (!ready.current) return false;
     const data = mission.current,
@@ -130,8 +171,8 @@ export function useMission() {
         t: 0,
         text:
           job === "practice"
-            ? "Pioneer 01 cleared for flight."
-            : CONTRACTS[job].name + " accepted.",
+            ? "Free simulation ready (0 cost · 0 payout)."
+            : CONTRACTS[job].name + " staged on pad.",
       },
     ];
     data.view = "flight";
@@ -140,9 +181,11 @@ export function useMission() {
     save();
     return true;
   }
+
   function reset() {
     newSortie("practice");
   }
+
   function editSite(kind: Kind, tile?: { x: number; y: number }) {
     if (!ready.current) return "Save is still loading.";
     const p = mission.current.program;
@@ -153,6 +196,7 @@ export function useMission() {
     }
     return issue;
   }
+
   function visitSite() {
     if (!ready.current) return;
     if (vessel.current.status === "flying") paused.current = true;
@@ -161,12 +205,14 @@ export function useMission() {
       mission.current.view = "site";
     });
   }
+
   function restore(data: Snapshot) {
     data.revision = mission.current.revision;
     install(data);
     save();
     setNotice("Flight restored from backup.");
   }
+
   useEffect(() => {
     let alive = true,
       id = 0,
@@ -175,6 +221,7 @@ export function useMission() {
       paintAt = 0,
       saveAt = 0,
       releaseLock = () => {};
+
     async function start() {
       try {
         const data = await readSave();
@@ -192,6 +239,7 @@ export function useMission() {
       load(true);
       id = requestAnimationFrame(frame);
     }
+
     if (navigator.locks) {
       void navigator.locks
         .request(
@@ -217,6 +265,7 @@ export function useMission() {
           if (alive) void start();
         });
     } else void start();
+
     function frame(now: number) {
       if (!alive) return;
       const dt = last ? Math.min((now - last) / 1000, 0.25) : 0;
@@ -237,7 +286,6 @@ export function useMission() {
             }
           } else if (canWarp(s)) {
             const before = s.t;
-            // At ordinary speed integrate any remainder across the atmosphere boundary.
             if (!coast(s, STEP)) {
               const left = STEP - (s.t - before);
               if (left > 1e-8) step(s, left);
@@ -245,8 +293,14 @@ export function useMission() {
           } else step(s);
           acc -= STEP;
         }
+        const dtSim = Math.max(0, s.t - startTime);
         dirty.current = true;
-        program.elapsed += s.t - startTime;
+        tickEconomy(program, dtSim);
+        if (program.warpAlert && rate.current > 1) {
+          rate.current = 1;
+          log(program.warpAlert);
+          setNotice(program.warpAlert);
+        }
         const reward = settle(program, s);
         let event = Boolean(reward);
         if (reward) {
@@ -286,7 +340,7 @@ export function useMission() {
       } else {
         acc = 0;
         if (!document.hidden && !paused.current && s.status !== "flying") {
-          program.elapsed += dt;
+          tickEconomy(program, dt);
           dirty.current = true;
           if (now - saveAt >= 5000) {
             save();
@@ -304,6 +358,7 @@ export function useMission() {
       }
       id = requestAnimationFrame(frame);
     }
+
     function suspend() {
       last = 0;
       acc = 0;
@@ -325,6 +380,7 @@ export function useMission() {
       window.removeEventListener("pagehide", suspend);
     };
   }, []);
+
   return {
     mission: mission.current,
     vessel,
@@ -336,6 +392,7 @@ export function useMission() {
     rate: rate.current,
     change,
     launch,
+    launchFreeSim,
     separate,
     newSortie,
     editSite,

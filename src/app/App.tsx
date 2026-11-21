@@ -1,6 +1,6 @@
 import { Dialog } from "./Dialog";
 import { LaunchSite } from "./LaunchSite";
-import { CONTRACTS, quote, latitude } from "../program/program";
+import { CONTRACTS, level, quote } from "../program/program";
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
@@ -13,8 +13,10 @@ import {
   ArrowUpFromLine,
   BookOpen,
   Check,
+  Coins,
   Database,
   Flag,
+  Flame,
   Layers2,
   List,
   Orbit,
@@ -47,6 +49,7 @@ const clock = (t: number) =>
   [Math.floor(t / 3600), Math.floor(t / 60) % 60, Math.floor(t) % 60]
     .map((n) => String(n).padStart(2, "0"))
     .join(":");
+
 const distance = (n: number) =>
   Number.isFinite(n)
     ? (n / 1000).toLocaleString("en-US", {
@@ -54,6 +57,7 @@ const distance = (n: number) =>
         minimumFractionDigits: 1,
       })
     : "Escape";
+
 export default function App() {
   const m = useMission(),
     s = m.vessel.current,
@@ -63,6 +67,7 @@ export default function App() {
     [error, E] = useState("");
   const upload = useRef<HTMLInputElement>(null),
     backup = useRef<ReturnType<typeof validate> | null>(null);
+
   const pad = s.status === "pad",
     flying = s.status === "flying",
     ended = !pad && !flying,
@@ -70,26 +75,22 @@ export default function App() {
   const fuelPct = (100 * s.fuel[s.stage]) / STAGES[s.stage].fuel;
   const twr = thrustToWeight(s);
   const lowThrust = pad && twr <= 1;
+  const sortie = m.mission.program.sortie;
+  const isRealContract = sortie !== "practice";
+  const launchQuote = isRealContract ? quote(m.mission.program, sortie) : null;
+  const trackingLevel = level(m.mission.program, "tracking");
+
   function flightStatus() {
     if (pad)
-      return m.mission.program.sortie === "practice"
-        ? "Simulation"
-        : CONTRACTS[m.mission.program.sortie].name;
+      return isRealContract ? CONTRACTS[sortie].name : "Free Simulation";
     if (m.paused) return "Paused";
     if (s.status === "lost") return "Vehicle lost";
     if (s.status === "landed") return "Landed";
     if (booster && fuelPct === 0) return "Stage ready";
-    if (s.orbitEarned && o.pe >= AIR) {
-      if (m.mission.program.sortie === "polar" && !m.mission.program.rewarded) {
-        const lat = latitude(m.mission.program, s);
-        return (
-          "Survey · " + Math.abs(lat).toFixed(1) + "° " + (lat < 0 ? "S" : "N")
-        );
-      }
-      return "In orbit";
-    }
-    return s.throttle > 0 && fuelPct > 0 ? "Powered flight" : "Coasting";
+    if (s.orbitEarned && o.pe >= AIR) return "In orbit";
+    return s.throttle > 0 && fuelPct > 0 ? "Powered" : "Coasting";
   }
+
   function primaryLabel() {
     if (lowThrust) return "Raise throttle to launch";
     if (pad) return "Launch vehicle";
@@ -98,16 +99,19 @@ export default function App() {
     if (!fuelPct) return "Stage depleted";
     return s.throttle > 0 ? "Cut engine" : "Ignite engine";
   }
+
   function open(name: string) {
     if (flying && !m.paused) m.togglePause();
     E("");
     D(name);
   }
+
   function toggleView(map: boolean) {
     m.change(() => {
       m.mission.view = map ? "map" : "flight";
     });
   }
+
   function primary() {
     if (!m.loaded || lowThrust || (flying && !booster && !fuelPct)) return;
     if (pad) m.launch();
@@ -125,17 +129,20 @@ export default function App() {
           : "Engine ignition commanded.",
       );
   }
+
   function pitch(value: number) {
     m.change((f) => {
       f.mode = "manual";
       f.pitch = clamp(value, -180, 180);
     });
   }
+
   function throttle(value: number) {
     m.change((f) => {
       f.throttle = clamp(value, 0, 1);
     });
   }
+
   useEffect(() => {
     function key(e: KeyboardEvent) {
       if (
@@ -182,6 +189,7 @@ export default function App() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   });
+
   function exportSave() {
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(m.mission, null, 2)], {
@@ -194,43 +202,41 @@ export default function App() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
+
   const objectives = [
     { name: "Lift off", done: !pad },
     { name: "Separate booster", done: !booster },
-    ...(m.mission.program.sortie === "hop"
-      ? [{ name: "Reach 100 km", done: s.maxAlt >= AIR }]
-      : [{ name: "Establish orbit", done: s.orbitEarned }]),
-    ...(m.mission.program.sortie === "polar"
-      ? [{ name: "Survey above 75° N", done: m.mission.program.rewarded }]
-      : []),
+    ...(sortie === "sounding"
+      ? [{ name: "Reach 45 km", done: s.maxAlt >= 45000 }]
+      : sortie === "hop"
+        ? [{ name: "Reach 100 km", done: s.maxAlt >= AIR }]
+        : [{ name: "Establish orbit", done: s.orbitEarned }]),
   ];
   const current = objectives.findIndex((t) => !t.done);
   const guidance = m.mission.program.rewarded
-    ? "Reward collected. Return to Earth range to invest or take another contract."
-    : m.mission.program.sortie === "polar" && s.orbitEarned
-      ? "Coast in the orbital map. Use 20× warp to reach the northern survey pass."
-      : ended
-        ? s.status === "lost"
-          ? "Surface impact. Return to the pad for another flight."
-          : "Touchdown confirmed. Start a new flight when ready."
-        : pad
-          ? "Launch at full throttle. Ascent guide will fly the pitch program."
-          : booster && fuelPct === 0
-            ? "Booster depleted. Separate the stage to ignite the upper engine."
-            : s.orbitEarned
-              ? "Orbit milestone complete. Switch to the map and coast at 5× or 20×."
-              : booster
-                ? "Watch booster fuel. Separate the stage when its tank reaches zero."
-                : s.mode === "guide"
-                  ? "Hold full throttle. The guide cuts thrust when the orbit is stable."
-                  : "Raise periapsis above 100 km and keep apoapsis below 2,000 km.";
+    ? "Reward collected. Return to Base to upgrade facilities."
+    : ended
+      ? s.status === "lost"
+        ? "Surface impact. Return to pad for another flight."
+        : "Touchdown confirmed."
+      : pad
+        ? isRealContract
+          ? "Launch commits Hardware + Propellant, or test in Simulate Free."
+          : "Free simulation (0 cost, 0 payout). Launch when ready."
+        : booster && fuelPct === 0
+          ? "Booster empty. Tap Stage."
+          : s.orbitEarned
+            ? "Orbit reached. Open Map to coast at 5× or 20×."
+            : "Hold throttle for guided ascent.";
+
   const flightMode = (mode: Mode) =>
     m.change((f) => {
       f.mode = mode;
     });
+
   const pilotDisabled = !m.loaded || ended;
   const actionText = lowThrust
-    ? "Thrust too low"
+    ? "Low thrust"
     : pad
       ? "Launch"
       : ended
@@ -238,6 +244,7 @@ export default function App() {
         : booster
           ? "Stage"
           : primaryLabel();
+
   const instrument = (label: string, value: string, unit: string) => (
     <div className="meter" key={label}>
       <span>{label}</span>
@@ -247,8 +254,10 @@ export default function App() {
       </strong>
     </div>
   );
+
   if (m.mission.view === "site")
     return <LaunchSite mission={m} onFlight={() => toggleView(false)} />;
+
   return (
     <>
       <main
@@ -258,7 +267,9 @@ export default function App() {
         <div className="scene-wrap" hidden={!active}>
           <FlightScene vessel={m.vessel} />
         </div>
-        {!active && <OrbitalMap s={s} />}
+        {!active && (
+          <OrbitalMap s={s} trackingLevel={trackingLevel} />
+        )}
         <div className="shade" aria-hidden="true" />
         <div className="hud">
           <header className="topline">
@@ -266,19 +277,12 @@ export default function App() {
               <button
                 className="insignia"
                 aria-label="Earth launch site"
-                title="Earth launch site"
+                title="Base"
                 onClick={m.visitSite}
               >
                 <Landmark />
               </button>
-              <div>
-                <strong>
-                  {m.mission.program.sortie === "polar"
-                    ? "Pioneer Survey"
-                    : "Pioneer 01"}
-                </strong>
-                <span className="timer">T+ {clock(s.t)}</span>
-              </div>
+              <span className="timer">T+ {clock(s.t)}</span>
             </div>
             <nav aria-label="Flight views and tools">
               <button
@@ -289,106 +293,102 @@ export default function App() {
               >
                 {active ? <Orbit /> : <Rocket />}
               </button>
-              <button
-                aria-label={m.paused ? "Resume" : "Pause"}
-                title={m.paused ? "Resume" : "Pause"}
-                disabled={!flying}
-                onClick={m.togglePause}
-              >
-                {m.paused ? <Play /> : <Pause />}
-              </button>
+              {flying && (
+                <button
+                  aria-label={m.paused ? "Resume" : "Pause"}
+                  title={m.paused ? "Resume" : "Pause"}
+                  onClick={m.togglePause}
+                >
+                  {m.paused ? <Play /> : <Pause />}
+                </button>
+              )}
               <button
                 aria-label="Mission menu"
-                title="Mission menu"
+                title="Menu"
                 onClick={() => open("menu")}
               >
                 <Menu />
               </button>
             </nav>
           </header>
-          <div className="telemetry">
-            {instrument("ALT", distance(m.alt), "km")}
-            {instrument(
-              "VEL",
-              Math.round(speed(s)).toLocaleString("en-US"),
-              "m/s",
-            )}
-            {!active && (
-              <>
-                {instrument(
-                  "Ap",
-                  pad ? "—" : distance(Math.max(0, o.ap)),
-                  pad || !Number.isFinite(o.ap) ? "" : "km",
-                )}
-                {instrument("Pe", pad ? "—" : distance(o.pe), pad ? "" : "km")}
-              </>
-            )}
-          </div>
-          <div className="quick">
-            <button
-              title="Flight plan"
-              aria-label="Flight plan"
-              onClick={() => open("plan")}
-            >
-              <Flag />
-            </button>
-            <button
-              title="Event log"
-              aria-label="Event log"
-              onClick={() => open("log")}
-            >
-              <List />
-            </button>
-          </div>
-          <div className="pilot-left">
-            <label className="assist">
-              <Gauge size={15} />
-              <span>
-                {
+
+          {(!pad || !active) && (
+            <div className="telemetry">
+              {instrument("ALT", distance(m.alt), "km")}
+              {instrument(
+                "VEL",
+                Math.round(speed(s)).toLocaleString("en-US"),
+                "m/s",
+              )}
+              {!active && (
+                <>
+                  {instrument(
+                    "Ap",
+                    pad ? "—" : distance(Math.max(0, o.ap)),
+                    pad || !Number.isFinite(o.ap) ? "" : "km",
+                  )}
+                  {instrument(
+                    "Pe",
+                    pad ? "—" : distance(o.pe),
+                    pad ? "" : "km",
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {!pad && (
+            <div className="pilot-left">
+              <label className="assist">
+                <Gauge size={15} />
+                <span>
                   {
-                    guide: "Guide",
-                    manual: "Manual",
-                    prograde: "Prograde",
-                    retrograde: "Retrograde",
-                  }[s.mode]
-                }
-              </span>
-              <select
-                aria-label="Attitude"
-                disabled={pilotDisabled}
-                value={s.mode}
-                onChange={(e) => flightMode(e.target.value as Mode)}
-              >
-                <option value="guide">Ascent guide</option>
-                <option value="manual">Manual pitch</option>
-                <option value="prograde">Prograde hold</option>
-                <option value="retrograde">Retrograde hold</option>
-              </select>
-            </label>
-            <div className="pitch">
-              <span className="control-label">
-                Pitch <b>{Math.round(s.pitch)}°</b>
-              </span>
-              <div className="pitch-pair">
-                <button
-                  aria-label="Decrease pitch by five degrees"
-                  title="Pitch left"
+                    {
+                      guide: "Guide",
+                      manual: "Manual",
+                      prograde: "Prograde",
+                      retrograde: "Retrograde",
+                    }[s.mode]
+                  }
+                </span>
+                <select
+                  aria-label="Attitude"
                   disabled={pilotDisabled}
-                  onClick={() => pitch(s.pitch - 5)}
+                  value={s.mode}
+                  onChange={(e) => flightMode(e.target.value as Mode)}
                 >
-                  <ChevronLeft />
-                </button>
-                <button
-                  aria-label="Increase pitch by five degrees"
-                  title="Pitch right"
-                  disabled={pilotDisabled}
-                  onClick={() => pitch(s.pitch + 5)}
-                >
-                  <ChevronRight />
-                </button>
+                  <option value="guide">Ascent guide</option>
+                  <option value="manual">Manual pitch</option>
+                  <option value="prograde">Prograde hold</option>
+                  <option value="retrograde">Retrograde hold</option>
+                </select>
+              </label>
+              <div className="pitch">
+                <span className="control-label">
+                  Pitch <b>{Math.round(s.pitch)}°</b>
+                </span>
+                <div className="pitch-pair">
+                  <button
+                    aria-label="Decrease pitch by five degrees"
+                    title="Pitch left"
+                    disabled={pilotDisabled}
+                    onClick={() => pitch(s.pitch - 5)}
+                  >
+                    <ChevronLeft />
+                  </button>
+                  <button
+                    aria-label="Increase pitch by five degrees"
+                    title="Pitch right"
+                    disabled={pilotDisabled}
+                    onClick={() => pitch(s.pitch + 5)}
+                  >
+                    <ChevronRight />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
           <label className="thrust">
             <span className="control-label">Thrust</span>
             <b>{Math.round(s.throttle * 100)}%</b>
@@ -406,7 +406,8 @@ export default function App() {
               onChange={(e) => throttle(+e.target.value / 100)}
             />
           </label>
-          <div className="command">
+
+          <div className={"command" + (pad ? " command-pad" : "")}>
             <span
               role="status"
               className={
@@ -416,6 +417,20 @@ export default function App() {
               <i />
               {flightStatus()}
             </span>
+
+            {pad && launchQuote && (
+              <div className="launch-costs" aria-label="Launch cost">
+                <span>
+                  <Coins size={12} />
+                  {launchQuote.hardwareCost.toLocaleString("en-US")} C
+                </span>
+                <span>
+                  <Flame size={12} />
+                  {launchQuote.propellantCost.toLocaleString("en-US")} Prop
+                </span>
+              </div>
+            )}
+
             <button
               className="primary"
               aria-label={primaryLabel()}
@@ -435,14 +450,31 @@ export default function App() {
               )}
               {actionText}
             </button>
-            <div className="fuel-label">
-              <span>S{s.stage + 1} FUEL</span>
-              <b>{Math.ceil(fuelPct)}%</b>
-            </div>
-            <div className="fuel-track">
-              <i style={{ width: fuelPct + "%" }} />
-            </div>
+
+            {pad && isRealContract && (
+              <button
+                className="sim-free-btn"
+                aria-label="Simulate Free"
+                disabled={!m.loaded || lowThrust}
+                onClick={m.launchFreeSim}
+              >
+                Simulate Free · 0 Cost
+              </button>
+            )}
+
+            {!pad && (
+              <>
+                <div className="fuel-label">
+                  <span>S{s.stage + 1} FUEL</span>
+                  <b>{Math.ceil(fuelPct)}%</b>
+                </div>
+                <div className="fuel-track">
+                  <i style={{ width: fuelPct + "%" }} />
+                </div>
+              </>
+            )}
           </div>
+
           {(!active || m.rate > 1) && (
             <button
               className="warp-toggle"
@@ -455,6 +487,7 @@ export default function App() {
             </button>
           )}
         </div>
+
         {m.notice && (
           <div className="notice" role="alert">
             <TriangleAlert size={16} />
@@ -468,6 +501,7 @@ export default function App() {
           </div>
         )}
       </main>
+
       {dialog && (
         <Dialog
           title={
@@ -515,10 +549,7 @@ export default function App() {
               <div className="details">
                 <span>{m.saveStatus}</span>
                 <span>
-                  {m.mission.program.sortie === "practice"
-                    ? "Simulation"
-                    : m.mission.program.inclination + "° plane"}{" "}
-                  · TWR {twr.toFixed(2)} · Δv{" "}
+                  TWR {twr.toFixed(2)} · Δv{" "}
                   {Math.round(deltaV(s)).toLocaleString("en-US")} m/s
                 </span>
               </div>
@@ -527,26 +558,16 @@ export default function App() {
           {dialog === "plan" && (
             <>
               <h3>
-                {m.mission.program.sortie === "practice"
-                  ? "First orbit"
-                  : CONTRACTS[m.mission.program.sortie].name}
+                {isRealContract ? CONTRACTS[sortie].name : "Free simulation"}
               </h3>
-              {m.mission.program.sortie !== "practice" && (
+              {isRealContract && launchQuote && (
                 <p>
-                  {CONTRACTS[m.mission.program.sortie].goal}{" "}
+                  {CONTRACTS[sortie].goal}{" "}
                   {m.mission.program.rewarded
                     ? "Reward collected."
                     : pad
-                      ? "Ignition fee: " +
-                        quote(m.mission.program, m.mission.program.sortie).fee +
-                        " cr."
+                      ? `Cost: ${launchQuote.hardwareCost} C + ${launchQuote.propellantCost} Prop.`
                       : ""}
-                </p>
-              )}
-              {m.mission.program.sortie === "polar" && (
-                <p>
-                  Latitude {latitude(m.mission.program, s).toFixed(1)}° · 90°
-                  orbital plane
                 </p>
               )}
               <p>{guidance}</p>
@@ -604,49 +625,28 @@ export default function App() {
               <ol>
                 <li>
                   <b>Launch.</b> Leave Ascent guide selected and throttle at
-                  100%. The guide steers the rocket from vertical ascent into
-                  its gravity turn.
+                  100%.
                 </li>
                 <li>
-                  <b>Stage.</b> At about T+02:10 the booster runs dry. Tap
-                  Stage. The upper engine uses your current throttle setting.
+                  <b>Stage.</b> Tap Stage when the booster runs dry (~T+02:10).
                 </li>
                 <li>
-                  <b>Reach orbit.</b> With prompt staging, insertion takes about
-                  five minutes from liftoff. The guide cuts the engine once
-                  periapsis clears 100 km and apoapsis is below 2,000 km.
+                  <b>Reach orbit.</b> The guide cuts thrust once periapsis
+                  clears 100 km.
                 </li>
               </ol>
-              <h3>Fly the map</h3>
-              <p>
-                Ap marks the highest point of your current ballistic path. Pe
-                marks the lowest. A negative Pe passes through Earth. Drag to
-                pan, pinch or scroll to zoom, or track the craft for a closer
-                view.
-              </p>
-              <p>
-                After insertion, select prograde to burn along your velocity or
-                retrograde to slow down. Burning prograde near Ap lifts Pe.
-                Manual pitch is measured clockwise from local vertical in the
-                flight view.
-              </p>
-              <p>
-                Set throttle to zero to coast. Warp unlocks above 101 km and
-                drops to 1× before atmospheric entry. Closing the game suspends
-                flight. A restored flight opens paused.
-              </p>
               <h3>Keyboard</h3>
               <p>
-                <kbd>M</kbd> switch view · <kbd>P</kbd> pause · <kbd>Space</kbd>{" "}
-                primary action · <kbd>← →</kbd> pitch · <kbd>↑ ↓</kbd> throttle
+                <kbd>M</kbd> map · <kbd>P</kbd> pause · <kbd>Space</kbd> action
+                · <kbd>← →</kbd> pitch · <kbd>↑ ↓</kbd> throttle
               </p>
             </>
           )}
           {dialog === "data" && (
             <>
               <p>
-                Back up this mission or move it to another browser. Flight state
-                and event history travel together.
+                Back up your program and active flight as JSON or restore a
+                previous save.
               </p>
               <div className="dialog-actions">
                 <button disabled={!m.loaded} onClick={exportSave}>
@@ -688,7 +688,7 @@ export default function App() {
               <div className="reset-row">
                 <div>
                   <h3>New flight</h3>
-                  <p>Return Pioneer 01 to the launchpad.</p>
+                  <p>Return to the launchpad.</p>
                 </div>
                 <button disabled={!m.loaded} onClick={() => D("reset")}>
                   <RotateCcw size={15} />
@@ -717,8 +717,8 @@ export default function App() {
           {dialog === "reset" && (
             <>
               <p>
-                Return to the pad for a free simulation. Site buildings and
-                earned rewards are kept. This retires the current vehicle.
+                Return to the pad for a free simulation. Base facilities and
+                resources are kept.
               </p>
               <button
                 className="primary"
@@ -734,7 +734,7 @@ export default function App() {
           {dialog === "import" && backup.current && (
             <>
               <p>
-                Replace this mission with the saved Pioneer 01 flight at T+{" "}
+                Replace this mission with the saved flight at T+{" "}
                 {clock(backup.current.flight.t)}?
               </p>
               <button
