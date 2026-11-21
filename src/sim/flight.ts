@@ -1,8 +1,11 @@
 // SI throughout. All coordinates and velocities use an Earth-centred inertial frame.
-export const R = 6371000;
-export const MU = 3.986004418e14;
+// Spaceflight Simulator-inspired 1:20 scaled Earth: R = 315 km, 30 km atmosphere, 9.81 m/s^2 surface gravity.
+export const R = 315000;
 export const G0 = 9.80665;
-export const AIR = 100000;
+export const MU = G0 * R * R;
+export const AIR = 30000;
+export const SCALE_HEIGHT = 3200;
+export const MAX_ORBIT_AP = 600000;
 export const STEP = 1 / 20;
 
 export interface StageSpec {
@@ -17,26 +20,38 @@ export interface StageSpec {
 export const STAGES: readonly [StageSpec, StageSpec] = [
   {
     name: "Booster",
-    dry: 16000,
-    fuel: 238000,
-    thrust: 5700000,
-    isp: 318,
-    area: 16,
+    dry: 3200,
+    fuel: 10500,
+    thrust: 360000,
+    isp: 285,
+    area: 8,
   },
   {
     name: "Orbital stage",
-    dry: 3200,
-    fuel: 50500,
-    thrust: 920000,
-    isp: 367,
-    area: 10,
+    dry: 1400,
+    fuel: 3600,
+    thrust: 95000,
+    isp: 345,
+    area: 5,
   },
 ] as const;
 
-const DEFAULT_PAYLOAD = 2400;
+const DEFAULT_PAYLOAD = 1200;
 
 export type Mode = "manual" | "guide" | "prograde" | "retrograde";
 export type Status = "pad" | "flying" | "landed" | "lost";
+
+export interface Debris {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  angle: number;
+  omega: number;
+  mass: number;
+  area: number;
+  age: number;
+}
 
 export interface Flight {
   x: number;
@@ -53,6 +68,8 @@ export interface Flight {
   status: Status;
   orbitEarned: boolean;
   maxAlt: number;
+  /** Real simulated detached stages falling under gravity & drag. */
+  debris?: Debris[];
   /** Optional custom stage specs constructed from a Rocket Workshop blueprint. */
   customStages?: [StageSpec, StageSpec];
   customPayload?: number;
@@ -97,8 +114,19 @@ export function initial(
 
 export const clamp = (v: number, min: number, max: number) =>
   Math.min(max, Math.max(min, v));
-export const radius = (s: Flight) => Math.hypot(s.x, s.y);
-export const speed = (s: Flight) => Math.hypot(s.vx, s.vy);
+export const radius = (s: { x: number; y: number }) => Math.hypot(s.x, s.y);
+export const speed = (s: { vx: number; vy: number }) => Math.hypot(s.vx, s.vy);
+
+/** World-space thrust unit vector (tx, ty) in inertial frame (+x north, +y east). */
+export function headingVector(s: Flight) {
+  const r = radius(s) || R;
+  const nx = s.x / r,
+    ny = s.y / r;
+  const theta = (s.pitch * Math.PI) / 180;
+  const tx = nx * Math.cos(theta) - ny * Math.sin(theta);
+  const ty = ny * Math.cos(theta) + nx * Math.sin(theta);
+  return { tx, ty, angle: Math.atan2(ty, tx) };
+}
 
 export function mass(s: Flight) {
   const st = stagesOf(s);
@@ -155,18 +183,34 @@ export function orbit(s: Flight) {
 
 export function stable(s: Flight) {
   const o = orbit(s);
-  return o.pe >= AIR && o.ap <= 2000000;
+  return o.pe >= AIR && o.ap <= MAX_ORBIT_AP;
 }
 
 export function stage(s: Flight) {
   if (s.status !== "flying" || s.stage !== 0) return false;
+  const st = stagesOf(s);
+  const { tx, ty, angle } = headingVector(s);
+  const sepSpeed = 5.5;
+  const boosterMass = Math.max(200, st[0].dry + s.fuel[0]);
+  const piece: Debris = {
+    x: s.x - tx * 14,
+    y: s.y - ty * 14,
+    vx: s.vx - tx * sepSpeed - ty * 0.45,
+    vy: s.vy - ty * sepSpeed + tx * 0.45,
+    angle,
+    omega: 0.32,
+    mass: boosterMass,
+    area: st[0].area,
+    age: 0,
+  };
+  s.debris = [...(s.debris ?? []), piece].slice(-4);
   s.stage = 1;
   s.fuel[0] = 0;
   return true;
 }
 
 export function density(alt: number) {
-  return alt >= AIR ? 0 : 1.225 * Math.exp(-Math.max(0, alt) / 8500);
+  return alt >= AIR ? 0 : 1.225 * Math.exp(-Math.max(0, alt) / SCALE_HEIGHT);
 }
 
 export function burning(s: Flight) {
@@ -180,7 +224,7 @@ export function burning(s: Flight) {
 }
 
 export function canWarp(s: Flight) {
-  return s.status === "flying" && !burning(s) && radius(s) > R + AIR + 1000;
+  return s.status === "flying" && !burning(s) && radius(s) > R + AIR + 500;
 }
 
 export function alignToVelocity(s: Flight) {
@@ -192,6 +236,31 @@ export function alignToVelocity(s: Flight) {
     (Math.atan2(tangent, radial) * 180) / Math.PI +
     (s.mode === "retrograde" ? 180 : 0);
   s.pitch = angle > 180 ? angle - 360 : angle;
+}
+
+export function stepDebris(s: Flight, dt: number) {
+  if (!s.debris || !s.debris.length || dt <= 0) return;
+  const keep: Debris[] = [];
+  for (const d of s.debris) {
+    const r = radius(d);
+    if (r <= R || d.age > 3600) continue;
+    const alt = r - R;
+    const v = speed(d);
+    const nx = d.x / r,
+      ny = d.y / r;
+    const grav = MU / (r * r);
+    const drag = (0.5 * density(alt) * 0.42 * d.area * v) / Math.max(100, d.mass);
+    const ax = -nx * grav - drag * d.vx;
+    const ay = -ny * grav - drag * d.vy;
+    d.x += d.vx * dt + (ax * dt * dt) / 2;
+    d.y += d.vy * dt + (ay * dt * dt) / 2;
+    d.vx += ax * dt;
+    d.vy += ay * dt;
+    d.angle += d.omega * dt;
+    d.age += dt;
+    if (radius(d) > R) keep.push(d);
+  }
+  s.debris = keep.length ? keep : undefined;
 }
 
 export function step(s: Flight, dt = STEP) {
@@ -211,11 +280,12 @@ export function step(s: Flight, dt = STEP) {
     s.fuel[s.stage] > 0 &&
     engine.thrust > 0
   ) {
-    const targetClimb = clamp((154000 - alt) / 55, -130, 540);
+    // SFS-scale gravity turn: climb above 30 km atmosphere before circularizing at ~45 km
+    const targetClimb = clamp((48000 - alt) / 14, -70, 420);
     const acc = (engine.thrust * s.throttle) / mass(s);
-    const radial = (targetClimb - vr) / 14 + MU / (r * r) - (vt * vt) / r;
+    const radial = (targetClimb - vr) / 8 + MU / (r * r) - (vt * vt) / r;
     const tilt = (Math.acos(clamp(radial / acc, -1, 1)) * 180) / Math.PI;
-    s.pitch = clamp(tilt, 0, Math.min(115, Math.max(0, alt / 530)));
+    s.pitch = clamp(tilt, 0, Math.min(115, Math.max(0, alt / 260)));
     if (stable(s)) {
       s.throttle = 0;
       s.mode = "prograde";
@@ -252,7 +322,7 @@ export function step(s: Flight, dt = STEP) {
   s.maxAlt = Math.max(s.maxAlt, nextR - R);
   if (nextR <= R) {
     s.status =
-      Math.abs(vr) < 4 && Math.abs(vt) < 2 && Math.abs(s.pitch) < 12
+      Math.abs(vr) < 5 && Math.abs(vt) < 3 && Math.abs(s.pitch) < 15
         ? "landed"
         : "lost";
     s.x *= R / nextR;
@@ -262,4 +332,5 @@ export function step(s: Flight, dt = STEP) {
     s.throttle = 0;
   }
   if (!s.orbitEarned && stable(s)) s.orbitEarned = true;
+  stepDebris(s, dt);
 }

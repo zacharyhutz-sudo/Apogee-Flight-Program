@@ -121,7 +121,7 @@ test("anti-softlock guarantee: zero credits and zero propellant can still fly At
   assert.equal(check.emergencyFuelUsed, 150);
 
   const f = fly(p, "sounding");
-  assert.ok(f.maxAlt >= 45000);
+  assert.ok(f.maxAlt >= 15000);
   assert.equal(p.credits, 450);
   assert.equal(p.propellant, 0);
   assert.equal(p.research, 5);

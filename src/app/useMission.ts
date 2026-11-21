@@ -369,7 +369,7 @@ export function useMission() {
           event = true;
         }
         if (wasAlt < AIR && s.maxAlt >= AIR) {
-          log("Crossed the 100 km atmospheric boundary.");
+          log("Crossed the 30 km atmospheric boundary.");
           event = true;
         }
         if (!wasOrbit && s.orbitEarned) {

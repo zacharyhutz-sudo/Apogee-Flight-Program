@@ -181,7 +181,7 @@ export const CONTRACTS = {
     name: "Atmospheric Sounding",
     tier: 0,
     tierLabel: "Recovery",
-    goal: "Reach Ap ≥ 45 km (sponsor-funded light vehicle).",
+    goal: "Reach Ap ≥ 15 km (sponsor-funded light vehicle).",
     hardwareCost: 0,
     propellantCost: 150,
     credits: 450,
@@ -196,7 +196,7 @@ export const CONTRACTS = {
     name: "Kármán Line Hop",
     tier: 1,
     tierLabel: "Tier 1",
-    goal: "Reach Ap ≥ 100 km and stage cleanly.",
+    goal: "Reach Ap ≥ 30 km and stage cleanly.",
     hardwareCost: 300,
     propellantCost: 400,
     credits: 950,
@@ -210,7 +210,7 @@ export const CONTRACTS = {
     name: "First Stable Orbit",
     tier: 1,
     tierLabel: "Tier 1",
-    goal: "Achieve Pe ≥ 100 km and Ap ≥ 120 km.",
+    goal: "Achieve Pe ≥ 30 km and Ap ≥ 38 km.",
     hardwareCost: 500,
     propellantCost: 750,
     credits: 1800,
@@ -224,7 +224,7 @@ export const CONTRACTS = {
     name: "High Elliptical Relay",
     tier: 2,
     tierLabel: "Tier 2",
-    goal: "Reach Ap ≥ 800 km with Pe ≥ 120 km.",
+    goal: "Reach Ap ≥ 250 km with Pe ≥ 35 km.",
     hardwareCost: 900,
     propellantCost: 1400,
     credits: 3200,
@@ -238,7 +238,7 @@ export const CONTRACTS = {
     name: "Precision Circular LEO",
     tier: 2,
     tierLabel: "Tier 2",
-    goal: "Maintain 200 km ± 15 km circular orbit for 1 full pass.",
+    goal: "Maintain 60 km ± 6 km circular orbit for 1 full pass.",
     hardwareCost: 850,
     propellantCost: 1250,
     credits: 3600,
@@ -903,24 +903,24 @@ export function contractConditionMet(p: Program, f: Flight): boolean {
   const o = orbit(f);
   switch (job) {
     case "sounding":
-      return f.maxAlt >= 45000;
+      return f.maxAlt >= 15000;
     case "hop":
       return f.maxAlt >= AIR && f.stage >= 1;
     case "orbit":
-      return f.orbitEarned && o.pe >= AIR && o.ap >= 120000;
+      return f.orbitEarned && o.pe >= AIR && o.ap >= 38000;
     case "relay":
       return (
         f.status === "flying" &&
-        o.pe >= 120000 &&
+        o.pe >= 35000 &&
         Number.isFinite(o.ap) &&
-        o.ap >= 800000
+        o.ap >= 250000
       );
     case "leo": {
       const inBand =
         f.status === "flying" &&
         stable(f) &&
-        o.pe >= 185000 &&
-        o.ap <= 215000;
+        o.pe >= 54000 &&
+        o.ap <= 66000;
       if (!inBand) {
         p.leoPassStartSec = null;
         return false;
@@ -929,7 +929,7 @@ export function contractConditionMet(p: Program, f: Flight): boolean {
         p.leoPassStartSec = f.t;
         return false;
       }
-      return f.t - p.leoPassStartSec >= 5200;
+      return f.t - p.leoPassStartSec >= 1300;
     }
   }
 }

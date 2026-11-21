@@ -1,145 +1,295 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import Phaser from "phaser";
-import { R, radius, burning, type Flight } from "../../sim/flight";
+import {
+  AIR,
+  R,
+  burning,
+  clamp,
+  headingVector,
+  radius,
+  type Flight,
+} from "../../sim/flight";
 
 export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
   const host = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const parent = host.current!;
+    // Smooth zoom factor: 1.0 = close-up rocket view (~1.45 px/m), down to 0.00045 = whole planet view
+    let zoom = 1;
+    const pointers = new Map<number, { x: number; y: number }>();
+    let lastSpan = 0;
+
+    function zoomBy(factor: number) {
+      zoom = clamp(zoom * factor, 0.00045, 2.2);
+    }
+
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      zoomBy(Math.exp(-e.deltaY * 0.0018));
+    }
+
+    function onPointerDown(e: PointerEvent) {
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      lastSpan = 0;
+    }
+
+    function onPointerMove(e: PointerEvent) {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        const span = Math.hypot(a.x - b.x, a.y - b.y);
+        if (lastSpan > 0 && span > 0) zoomBy(span / lastSpan);
+        lastSpan = span;
+      }
+    }
+
+    function onPointerUp(e: PointerEvent) {
+      pointers.delete(e.pointerId);
+      lastSpan = 0;
+    }
+
+    // Deterministic procedural starfield
+    const stars = Array.from({ length: 90 }, (_, i) => ({
+      u: ((i * 73 + 19) % 1000) / 1000,
+      v: ((i * 197 + 41) % 1000) / 1000,
+      a: 0.28 + ((i * 31) % 70) / 100,
+      r: i % 5 === 0 ? 1.4 : 0.9,
+    }));
+
     class Range extends Phaser.Scene {
-      sky!: Phaser.GameObjects.Image;
-      space!: Phaser.GameObjects.Image;
-      ground!: Phaser.GameObjects.Image;
+      bg!: Phaser.GameObjects.Graphics;
+      world!: Phaser.GameObjects.Graphics;
       tower!: Phaser.GameObjects.Image;
-      ship!: Phaser.GameObjects.Image;
-      detail!: Phaser.GameObjects.Graphics;
+      debrisSprites: Phaser.GameObjects.Image[] = [];
       flame!: Phaser.GameObjects.Graphics;
-      debris!: Phaser.GameObjects.Image;
-      lastStage = 0;
-      separated = -100;
-      sepX = 0;
-      sepY = 0;
+      ship!: Phaser.GameObjects.Image;
+      marker!: Phaser.GameObjects.Graphics;
+
       preload() {
-        for (const key of [
-          "dusk",
-          "space",
-          "range",
-          "tower",
-          "vehicle",
-          "upper",
-        ])
+        for (const key of ["tower", "vehicle", "upper"])
           this.load.image(
             key,
             import.meta.env.BASE_URL + "art/" + key + ".png",
           );
       }
+
       create() {
-        this.sky = this.add.image(0, 0, "dusk").setOrigin(0.5, 0);
-        this.space = this.add.image(0, 0, "space").setOrigin(0.5, 0);
-        this.ground = this.add.image(0, 0, "range").setOrigin(0.5, 0);
-        this.detail = this.add.graphics();
+        this.bg = this.add.graphics();
+        this.world = this.add.graphics();
         this.tower = this.add.image(0, 0, "tower").setOrigin(1, 1);
-        this.debris = this.add.image(0, 0, "vehicle").setCrop(0, 39, 28, 37);
+        for (let i = 0; i < 4; i++) {
+          const d = this.add
+            .image(0, 0, "vehicle")
+            .setCrop(0, 39, 28, 37)
+            .setVisible(false);
+          this.debrisSprites.push(d);
+        }
         this.flame = this.add.graphics();
         this.ship = this.add.image(0, 0, "vehicle");
-        this.lastStage = vessel.current.stage;
+        this.marker = this.add.graphics();
       }
-      update() {
-        const s = vessel.current,
-          w = this.scale.width,
-          h = this.scale.height,
-          alt = Math.max(0, radius(s) - R);
-        const groundY = Math.min(340, alt * 0.1),
-          fade = Phaser.Math.Clamp((alt - 4800) / 64000, 0, 1);
-        // Keep sprites square in either orientation. Anchor the camera above the pilot controls.
-        const padY = Math.round(h * 0.73);
-        const scale = Math.max(w / 600, h / 380);
-        const worldWidth = 600 * scale,
-          horizonHeight = 260 * scale;
-        this.sky
-          .setPosition(
-            Math.max(
-              w - worldWidth / 2,
-              w / 2 - Math.max(0, worldWidth - w) * 0.18,
-            ),
-            0,
-          )
-          .setDisplaySize(worldWidth, (padY * 260) / 237);
-        this.space.setPosition(w / 2, 0).setDisplaySize(Math.max(w, 600), h);
-        this.ground
-          .setPosition(w / 2, padY - 237 * scale + groundY)
-          .setDisplaySize(worldWidth, horizonHeight);
-        this.space.setAlpha(fade);
 
-        const cx = Math.round(w * 0.5),
-          towerX = cx + 5;
-        this.tower.setPosition(towerX, padY + groundY);
-        this.detail.clear();
-        if (this.ground.y + horizonHeight < h)
-          this.detail
-            .fillStyle(0x202c3a, 1 - fade)
-            .fillRect(0, this.ground.y + horizonHeight - 1, w, h);
-        if (groundY < 150) {
-          const g = this.detail,
-            y = padY + groundY;
-          g.fillStyle(0x293744)
-            .fillRect(cx - 61, y - 1, 123, 6)
-            .fillStyle(0x9f9a89)
-            .fillRect(cx - 64, y - 3, 128, 2);
-          for (let i = -56; i <= 55; i += 14)
-            g.fillStyle(0xc98e5b).fillRect(cx + i, y - 2, 5, 1);
+      update() {
+        const s = vessel.current;
+        const w = this.scale.width;
+        const h = this.scale.height;
+        const r = radius(s) || R;
+        const alt = Math.max(0, r - R);
+
+        // World-fixed north-up inertial camera centered on the rocket.
+        // Screen X = +y (East), Screen Y = -x (North is up, South Pole puts Earth ABOVE rocket!)
+        const cx = Math.round(w * 0.5);
+        const cy = Math.round(h * 0.5);
+        const basePpm = Math.min(w, h) / 245;
+        const ppm = basePpm * zoom;
+
+        const worldToScreen = (wx: number, wy: number) => ({
+          x: cx + (wy - s.y) * ppm,
+          y: cy - (wx - s.x) * ppm,
+        });
+
+        // 1. Sky / Space background gradient based on altitude (30 km SFS atmosphere)
+        const atmoFrac = clamp(1 - alt / AIR, 0, 1);
+        const bg = this.bg;
+        bg.clear();
+        const skyR = Math.round(13 + 38 * atmoFrac * atmoFrac);
+        const skyG = Math.round(23 + 66 * atmoFrac);
+        const skyB = Math.round(34 + 92 * atmoFrac);
+        const skyColor = (skyR << 16) | (skyG << 8) | skyB;
+        bg.fillStyle(skyColor, 1).fillRect(0, 0, w, h);
+
+        // Stars fade in smoothly as atmosphere thins
+        const starAlpha = clamp(1 - atmoFrac * 1.15, 0, 1);
+        if (starAlpha > 0.02) {
+          for (const st of stars) {
+            bg.fillStyle(0xeaf2f6, st.a * starAlpha).fillCircle(
+              st.u * w,
+              st.v * h,
+              st.r,
+            );
+          }
         }
-        if (fade > 0) {
-          const g = this.detail,
-            rr = Math.max(w * 1.5, 680),
-            top = h - Math.round(35 * fade);
-          const centerY = top + rr;
-          g.fillStyle(0x427795, fade * 0.65).fillCircle(
-            w * 0.38,
-            centerY,
-            rr + 4,
+
+        // 2. Physical curved Earth + 30 km atmosphere halo (accurate at ALL zooms!)
+        const g = this.world;
+        g.clear();
+
+        const planetScreenR = R * ppm;
+        const atmoScreenR = (R + AIR) * ppm;
+        const earthCenter = worldToScreen(0, 0);
+
+        if (planetScreenR < 2600) {
+          // Medium-to-far zoom: draw full circular planet + atmosphere glow directly
+          g.fillStyle(0x4b87a6, 0.24).fillCircle(
+            earthCenter.x,
+            earthCenter.y,
+            atmoScreenR,
           );
-          g.fillStyle(0x93bbb8, fade).fillCircle(w * 0.38, centerY, rr + 1);
-          g.fillStyle(0x22425a, fade).fillCircle(w * 0.38, centerY, rr);
-          g.fillStyle(0x1d344b, fade).fillCircle(w * 0.38, centerY + 6, rr);
+          g.lineStyle(1.2, 0x87c8d6, 0.45).strokeCircle(
+            earthCenter.x,
+            earthCenter.y,
+            atmoScreenR,
+          );
+          g.fillStyle(0x1f435a, 1).fillCircle(
+            earthCenter.x,
+            earthCenter.y,
+            planetScreenR,
+          );
+          // Surface biosphere rim + ocean/continent accents
+          g.lineStyle(Math.max(1.5, Math.min(5, planetScreenR * 0.018)), 0x5c8b76, 1).strokeCircle(
+            earthCenter.x,
+            earthCenter.y,
+            planetScreenR,
+          );
+          // North-pole launch complex beacon on the physical surface
+          const padPt = worldToScreen(R, 0);
+          g.fillStyle(0xf3a953, 0.9).fillCircle(padPt.x, padPt.y, Math.max(2, Math.min(4, 1800 * ppm)));
+        } else {
+          // Close-up zoom: sample the true curved horizon arc around the rocket's radial angle
+          // (avoids Canvas floating-point jitter when radius is 100,000+ px)
+          const centerAngle = Math.atan2(s.y, s.x);
+          const halfSpan = clamp((Math.max(w, h) * 1.1) / planetScreenR, 0.0005, Math.PI * 0.45);
+          const steps = 48;
+
+          const drawArcBand = (
+            outerR: number,
+            innerR: number,
+            color: number,
+            alpha: number,
+          ) => {
+            const pts: Array<{ x: number; y: number }> = [];
+            for (let i = 0; i <= steps; i++) {
+              const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
+              pts.push(worldToScreen(outerR * Math.cos(a), outerR * Math.sin(a)));
+            }
+            for (let i = steps; i >= 0; i--) {
+              const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
+              pts.push(worldToScreen(innerR * Math.cos(a), innerR * Math.sin(a)));
+            }
+            g.fillStyle(color, alpha).fillPoints(pts, true);
+          };
+
+          // Thin upper atmosphere glow band
+          if (alt < AIR * 1.8) {
+            drawArcBand(R + AIR, R, 0x4b87a6, 0.22 * (0.4 + 0.6 * atmoFrac));
+          }
+          // Deep planet body below surface
+          const depth = Math.min(R * 0.6, (Math.max(w, h) * 1.4) / ppm);
+          drawArcBand(R, Math.max(0, R - depth), 0x1d3544, 1);
+          // Green coastal terrain crust band (~45 m thick at close range)
+          const crust = Math.max(12, 8 / ppm);
+          drawArcBand(R, Math.max(0, R - crust), 0x4f7865, 1);
+
+          // Crisp horizon rim line
+          const rimPts: Array<{ x: number; y: number }> = [];
+          for (let i = 0; i <= steps; i++) {
+            const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
+            rimPts.push(worldToScreen(R * Math.cos(a), R * Math.sin(a)));
+          }
+          g.lineStyle(1.5, 0x89b39d, 0.95).strokePoints(rimPts, false);
         }
-        const upper = s.stage === 1,
-          shipH = upper ? 42 : 76,
-          bodyY = padY - 3 - shipH / 2;
-        const cy = Math.round(bodyY - Math.min(57, alt * 0.18)),
-          angle = (s.pitch * Math.PI) / 180;
+
+        // 3. Physical Launchpad slab & gantry tower anchored at North Pole (x = R, y = 0)
+        const padScreen = worldToScreen(R, 0);
+        const padVisible =
+          ppm > 0.08 &&
+          padScreen.x > -200 &&
+          padScreen.x < w + 200 &&
+          padScreen.y > -200 &&
+          padScreen.y < h + 200;
+
+        if (padVisible) {
+          const padW = 72 * ppm;
+          const padH = 5 * ppm;
+          g.fillStyle(0x2a3845, 1).fillRect(
+            padScreen.x - padW / 2,
+            padScreen.y - 1,
+            padW,
+            Math.max(3, padH),
+          );
+          g.fillStyle(0xb5b09f, 1).fillRect(
+            padScreen.x - padW / 2 - 2,
+            padScreen.y - 2,
+            padW + 4,
+            Math.max(2, 2 * ppm),
+          );
+          this.tower
+            .setVisible(true)
+            .setPosition(padScreen.x - 4 * ppm, padScreen.y)
+            .setScale(clamp(ppm / 1.45, 0.08, 2.5));
+        } else {
+          this.tower.setVisible(false);
+        }
+
+        // 4. Real simulated detached stages (falling under gravity + drag + tumble)
+        const debrisList = s.debris ?? [];
+        const shipScale = clamp(ppm / 1.45, 0.16, 2.2);
+        for (let i = 0; i < this.debrisSprites.length; i++) {
+          const spr = this.debrisSprites[i];
+          const d = debrisList[i];
+          if (!d || ppm < 0.05) {
+            spr.setVisible(false);
+            continue;
+          }
+          const pt = worldToScreen(d.x, d.y);
+          spr
+            .setVisible(true)
+            .setPosition(pt.x, pt.y)
+            .setRotation(d.angle)
+            .setScale(shipScale);
+        }
+
+        // 5. Rocket sprite in exact world-space north-up orientation
+        const upper = s.stage === 1;
+        const { angle } = headingVector(s);
+        const spriteVisible = s.status !== "lost" && ppm >= 0.06;
+        const shipH = (upper ? 42 : 76) * shipScale;
+
         this.ship
           .setTexture(upper ? "upper" : "vehicle")
           .setPosition(cx, cy)
-          .setRotation(angle);
-        this.ship.setVisible(s.status !== "lost");
-        if (s.stage !== this.lastStage && upper) {
-          this.separated = s.t;
-          this.sepX = cx;
-          this.sepY = cy + 13;
-        }
-        this.lastStage = s.stage;
-        const age = s.t - this.separated;
-        this.debris.setVisible(upper && age >= 0 && age < 4);
-        if (this.debris.visible)
-          this.debris
-            .setPosition(this.sepX - age * 8, this.sepY + age * age * 8)
-            .setRotation(age * 0.35);
-        const fx = cx - Math.sin(angle) * (shipH / 2 - 2),
-          fy = cy + Math.cos(angle) * (shipH / 2 - 2);
-        const g = this.flame;
-        g.clear();
-        if (burning(s)) {
-          const wave = Math.sin(s.t * 44) * 3;
+          .setRotation(angle)
+          .setScale(shipScale)
+          .setVisible(spriteVisible);
+
+        // Exhaust plume along exact world-space tail vector
+        const flame = this.flame;
+        flame.clear();
+        if (burning(s) && spriteVisible) {
+          const fx = cx - Math.sin(angle) * (shipH / 2 - 2 * shipScale);
+          const fy = cy + Math.cos(angle) * (shipH / 2 - 2 * shipScale);
+          const wave = Math.sin(s.t * 44) * 3 * shipScale;
           for (const [width, length, color] of [
-            [6, 22 + wave, 0xd86c45],
-            [4, 15 + wave, 0xffb258],
-            [2, 9, 0xffefd0],
+            [6 * shipScale, 24 * shipScale + wave, 0xd86c45],
+            [4 * shipScale, 16 * shipScale + wave, 0xf3a953],
+            [2 * shipScale, 10 * shipScale, 0xffefd0],
           ]) {
-            const len = length * (0.35 + 0.65 * s.throttle),
-              dx = Math.cos(angle) * width,
-              dy = Math.sin(angle) * width;
-            g.fillStyle(color).fillTriangle(
+            const len = length * (0.35 + 0.65 * s.throttle);
+            const dx = Math.cos(angle) * width;
+            const dy = Math.sin(angle) * width;
+            flame.fillStyle(color).fillTriangle(
               fx - dx,
               fy - dy,
               fx + dx,
@@ -148,22 +298,26 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
               fy + Math.cos(angle) * len,
             );
           }
-          if (alt < 270)
-            for (let i = 0; i < 20; i++) {
-              const k = (s.t * 1.4 + i * 0.37) % 1,
-                dir = i % 2 ? 1 : -1;
-              g.fillStyle(i % 3 ? 0x9e9790 : 0x696d73, (1 - k) * 0.85).fillRect(
-                cx + dir * k * 53,
-                padY + groundY - 5 - k * 7,
-                4 + k * 6,
-                3 + k * 4,
-              );
-            }
         }
-        if (s.status === "lost")
-          g.fillStyle(0x6f625c).fillRect(cx - 10, padY - 7, 20, 4);
+
+        // 6. Far-zoom spacecraft reticle so you never lose sight of your ship when viewing whole Earth
+        const m = this.marker;
+        m.clear();
+        if (s.status !== "lost" && ppm < 0.08) {
+          m.fillStyle(0x13222e, 0.9).fillCircle(cx, cy, 6);
+          m.lineStyle(1.5, 0xf3a953, 1).strokeCircle(cx, cy, 6);
+          m.fillStyle(0xf3a953, 1).fillCircle(
+            cx + Math.sin(angle) * 4,
+            cy - Math.cos(angle) * 4,
+            1.8,
+          );
+        }
+        if (s.status === "lost") {
+          m.fillStyle(0xf07c6b, 0.9).fillCircle(cx, cy, 5);
+        }
       }
     }
+
     function dims() {
       const height = parent.clientWidth < parent.clientHeight ? 390 : 290;
       return {
@@ -176,6 +330,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         height,
       };
     }
+
     let game: Phaser.Game | undefined;
     function resize() {
       if (!parent.clientWidth || !parent.clientHeight) {
@@ -190,7 +345,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           width: dims().width,
           height: dims().height,
           scene: Range,
-          backgroundColor: "#142133",
+          backgroundColor: "#0d1722",
           pixelArt: true,
           roundPixels: true,
           banner: false,
@@ -201,20 +356,34 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         });
       else game.scale.resize(dims().width, dims().height);
     }
+
     const obs = new ResizeObserver(resize);
     obs.observe(parent);
     resize();
+
+    parent.addEventListener("wheel", onWheel, { passive: false });
+    parent.addEventListener("pointerdown", onPointerDown);
+    parent.addEventListener("pointermove", onPointerMove);
+    parent.addEventListener("pointerup", onPointerUp);
+    parent.addEventListener("pointercancel", onPointerUp);
+
     return () => {
       obs.disconnect();
+      parent.removeEventListener("wheel", onWheel);
+      parent.removeEventListener("pointerdown", onPointerDown);
+      parent.removeEventListener("pointermove", onPointerMove);
+      parent.removeEventListener("pointerup", onPointerUp);
+      parent.removeEventListener("pointercancel", onPointerUp);
       game?.destroy(true);
     };
   }, [vessel]);
+
   return (
     <div
-      role="img"
-      aria-label="Live pixel-art side view of the launch vehicle"
-      className="flight-scene"
       ref={host}
+      className="flight-scene"
+      role="img"
+      aria-label="Live world-fixed flight view of Earth and launch vehicle"
     />
   );
 }

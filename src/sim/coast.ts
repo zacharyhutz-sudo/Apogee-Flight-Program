@@ -9,8 +9,10 @@ import {
   orbit,
   radius,
   step,
+  stepDebris,
   type Flight,
 } from "./flight.ts";
+
 const tau = 2 * Math.PI;
 const positive = (angle: number) => ((angle % tau) + tau) % tau;
 
@@ -20,7 +22,7 @@ export function coast(s: Flight, seconds: number): boolean {
   if (!canWarp(s) || seconds <= 0) return false;
   const o = orbit(s),
     r = radius(s),
-    limit = R + AIR + 1000;
+    limit = R + AIR + 500;
   if (o.e >= 0.999999 || Math.abs(o.h) < 1 || o.a <= 0) {
     let left = seconds;
     while (left > 1e-8 && canWarp(s)) {
@@ -39,7 +41,7 @@ export function coast(s: Flight, seconds: number): boolean {
   );
   const M = E - o.e * Math.sin(E);
   let safe = true;
-  if (o.pe <= AIR + 1000 && o.e > 1e-12) {
+  if (o.pe <= AIR + 500 && o.e > 1e-12) {
     const crossE = -Math.acos(clamp((1 - limit / o.a) / o.e, -1, 1));
     const until = positive(crossE - o.e * Math.sin(crossE) - M) / n;
     if (until <= seconds + 0.25) {
@@ -78,5 +80,11 @@ export function coast(s: Flight, seconds: number): boolean {
   );
   alignToVelocity(s);
   s.t += seconds;
+  // Advance any active detached stages in small substeps during coast
+  if (s.debris && s.debris.length) {
+    const sub = Math.min(20, Math.max(1, Math.ceil(seconds / 0.5)));
+    const dt = seconds / sub;
+    for (let i = 0; i < sub; i++) stepDebris(s, dt);
+  }
   return safe;
 }

@@ -232,6 +232,19 @@ export function OrbitalMap({
             (R + o.pe) * Math.cos(o.arg),
             (R + o.pe) * Math.sin(o.arg),
           )}
+        {(s.debris ?? []).map((d, idx) => {
+          const [dx, dy] = point(d.x, d.y);
+          return (
+            <circle
+              key={idx}
+              cx={dx}
+              cy={dy}
+              r="2.4"
+              fill="#9eb9c2"
+              opacity="0.75"
+            />
+          );
+        })}
         <g transform={`translate(${cx} ${cy})`}>
           <circle r="7" fill="#1e2732" stroke="#f3b67f" />
           <path

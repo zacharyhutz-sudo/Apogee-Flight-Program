@@ -215,9 +215,9 @@ export default function App() {
     { name: "Lift off", done: !pad },
     { name: "Separate booster", done: !booster },
     ...(sortie === "sounding"
-      ? [{ name: "Reach 45 km", done: s.maxAlt >= 45000 }]
+      ? [{ name: "Reach 15 km", done: s.maxAlt >= 15000 }]
       : sortie === "hop"
-        ? [{ name: "Reach 100 km", done: s.maxAlt >= AIR }]
+        ? [{ name: "Reach 30 km", done: s.maxAlt >= AIR }]
         : [{ name: "Establish orbit", done: s.orbitEarned }]),
   ];
   const current = objectives.findIndex((t) => !t.done);
@@ -638,7 +638,7 @@ export default function App() {
               </div>
               {(!canWarp(s) || m.paused) && (
                 <p>
-                  Warp is available while coasting above 101 km with flight
+                  Warp is available while coasting above 30.5 km with flight
                   running.
                 </p>
               )}
@@ -657,7 +657,7 @@ export default function App() {
                 </li>
                 <li>
                   <b>Reach orbit.</b> The guide cuts thrust once periapsis
-                  clears 100 km.
+                  clears 30 km.
                 </li>
               </ol>
               <h3>Keyboard</h3>
