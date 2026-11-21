@@ -28,7 +28,7 @@ export interface PartDef {
   /** Propellant load cost in Earth Propellant units. */
   propellantCost: number;
   /** Supports 2x mirror radial symmetry. */
-  symmetric?: boolean;
+  symmetric: boolean;
   /** Required Research Lab level (0 = available from start). */
   requiredLabLevel: number;
   /** Short technical note for part tray. */
@@ -51,6 +51,7 @@ export const PARTS = {
     areaM2: 4,
     hardwareCost: 120,
     propellantCost: 0,
+    symmetric: false,
     requiredLabLevel: 0,
     note: "Avionics & guidance core",
   },
@@ -69,6 +70,7 @@ export const PARTS = {
     areaM2: 3,
     hardwareCost: 90,
     propellantCost: 0,
+    symmetric: false,
     requiredLabLevel: 0,
     note: "Lightweight uncrewed core",
   },
@@ -87,6 +89,7 @@ export const PARTS = {
     areaM2: 5,
     hardwareCost: 70,
     propellantCost: 180,
+    symmetric: false,
     requiredLabLevel: 0,
     note: "6.5 t kerolox upper tank",
   },
@@ -105,6 +108,7 @@ export const PARTS = {
     areaM2: 7,
     hardwareCost: 140,
     propellantCost: 360,
+    symmetric: false,
     requiredLabLevel: 0,
     note: "16.5 t core booster tank",
   },
@@ -123,6 +127,7 @@ export const PARTS = {
     areaM2: 10,
     hardwareCost: 260,
     propellantCost: 680,
+    symmetric: false,
     requiredLabLevel: 1,
     note: "36 t heavy orbital tank",
   },
@@ -141,6 +146,7 @@ export const PARTS = {
     areaM2: 5,
     hardwareCost: 140,
     propellantCost: 0,
+    symmetric: false,
     requiredLabLevel: 0,
     note: "520 kN sea-level workhorse",
   },
@@ -159,6 +165,7 @@ export const PARTS = {
     areaM2: 4,
     hardwareCost: 110,
     propellantCost: 0,
+    symmetric: false,
     requiredLabLevel: 0,
     note: "High-Isp orbital upper engine",
   },
@@ -177,6 +184,7 @@ export const PARTS = {
     areaM2: 8,
     hardwareCost: 320,
     propellantCost: 0,
+    symmetric: false,
     requiredLabLevel: 1,
     note: "1,350 kN heavy-lift cluster",
   },
@@ -195,6 +203,7 @@ export const PARTS = {
     areaM2: 4,
     hardwareCost: 40,
     propellantCost: 0,
+    symmetric: false,
     requiredLabLevel: 0,
     note: "Separates upper & lower stages",
   },
@@ -251,6 +260,7 @@ export const PARTS = {
     areaM2: 6,
     hardwareCost: 650,
     propellantCost: 0,
+    symmetric: false,
     requiredLabLevel: 2,
     note: "Lunar Hub + Solar payload (v0.5)",
   },
