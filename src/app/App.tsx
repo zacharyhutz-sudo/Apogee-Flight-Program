@@ -1,27 +1,24 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  Activity,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
+  FastForward,
+  Gauge,
   ArrowDownToLine,
   ArrowUpFromLine,
   BookOpen,
   Check,
-  ChevronDown,
-  Clock3,
   Database,
   Flag,
-  Focus,
   Layers2,
   List,
-  Minus,
-  Navigation2,
   Orbit,
   Pause,
   Play,
-  Plus,
   Radio,
   RotateCcw,
   Rocket,
-  SlidersHorizontal,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -71,6 +68,7 @@ function Dialog({
   return (
     <dialog
       ref={ref}
+      aria-label={title}
       onCancel={close}
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
@@ -92,8 +90,7 @@ export default function App() {
     active = m.mission.view === "flight",
     o = orbit(s);
   const [dialog, D] = useState(""),
-    [error, E] = useState(""),
-    [allLog, L] = useState(false);
+    [error, E] = useState("");
   const upload = useRef<HTMLInputElement>(null),
     backup = useRef<ReturnType<typeof validate> | null>(null);
   const pad = s.status === "pad",
@@ -240,363 +237,331 @@ export default function App() {
     m.change((f) => {
       f.mode = mode;
     });
-  const visibleLog = [...m.mission.log].reverse().slice(0, allLog ? 64 : 3);
+  const pilotDisabled = !m.loaded || ended;
+  const actionText = lowThrust
+    ? "Thrust too low"
+    : pad
+      ? "Launch"
+      : ended
+        ? "Restart"
+        : booster
+          ? "Stage"
+          : primaryLabel();
+  const instrument = (label: string, value: string, unit: string) => (
+    <div className="meter" key={label}>
+      <span>{label}</span>
+      <strong>
+        {value}
+        <small>{unit}</small>
+      </strong>
+    </div>
+  );
   return (
     <>
-      <header>
-        <div className="bar wrap">
-          <div className="brand">
-            <span className="brand-icon">
-              <Orbit size={27} />
-            </span>
-            APOGEE<span className="brand-sub">Flight program</span>
-          </div>
-          <div className="header-actions">
-            <button
-              className="compact-guide"
-              onClick={() => open("guide")}
-              aria-label="Open flight guide"
-            >
-              <BookOpen size={16} />
-            </button>
-            <span className="saved">
-              <i />
-              {m.saveStatus}
-            </span>
-            <button
-              className="data-btn"
-              onClick={() => open("data")}
-              aria-label="Mission data"
-            >
-              <Database size={15} />
-              <span>Mission data</span>
-            </button>
-          </div>
+      <main
+        className={"game " + (active ? "range-view" : "map-view")}
+        aria-label="Pioneer 01 flight simulator"
+      >
+        <div className="scene-wrap" hidden={!active}>
+          <FlightScene vessel={m.vessel} />
         </div>
-      </header>
-      <main className="wrap">
-        <div className="heading">
-          <div>
-            <div className="location">
-              <span className="locator" />
-              Earth <b>/</b> Launch complex 01
+        {!active && <OrbitalMap s={s} />}
+        <div className="shade" aria-hidden="true" />
+        <div className="hud">
+          <header className="topline">
+            <div className="identity">
+              <span className="insignia">
+                <Orbit />
+              </span>
+              <div>
+                <strong>Pioneer 01</strong>
+                <span className="timer">T+ {clock(s.t)}</span>
+              </div>
             </div>
-            <h1>Launch operations</h1>
+            <nav aria-label="Flight views and tools">
+              <button
+                className={!active ? "selected" : ""}
+                aria-label={active ? "Orbital map" : "Flight view"}
+                title={active ? "Orbital map" : "Flight view"}
+                onClick={() => toggleView(active)}
+              >
+                {active ? <Orbit /> : <Rocket />}
+              </button>
+              <button
+                aria-label={m.paused ? "Resume" : "Pause"}
+                title={m.paused ? "Resume" : "Pause"}
+                disabled={!flying}
+                onClick={m.togglePause}
+              >
+                {m.paused ? <Play /> : <Pause />}
+              </button>
+              <button
+                aria-label="Mission menu"
+                title="Mission menu"
+                onClick={() => open("menu")}
+              >
+                <Menu />
+              </button>
+            </nav>
+          </header>
+          <div className="telemetry">
+            {instrument("ALT", distance(m.alt), "km")}
+            {instrument(
+              "VEL",
+              Math.round(speed(s)).toLocaleString("en-US"),
+              "m/s",
+            )}
+            {!active && (
+              <>
+                {instrument(
+                  "Ap",
+                  pad ? "—" : distance(Math.max(0, o.ap)),
+                  pad || !Number.isFinite(o.ap) ? "" : "km",
+                )}
+                {instrument("Pe", pad ? "—" : distance(o.pe), pad ? "" : "km")}
+              </>
+            )}
           </div>
-          <button className="guide-btn" onClick={() => open("guide")}>
-            <BookOpen size={16} />
-            <span>Flight guide</span>
-          </button>
+          <div className="quick">
+            <button
+              title="Flight plan"
+              aria-label="Flight plan"
+              onClick={() => open("plan")}
+            >
+              <Flag />
+            </button>
+            <button
+              title="Event log"
+              aria-label="Event log"
+              onClick={() => open("log")}
+            >
+              <List />
+            </button>
+          </div>
+          <div className="pilot-left">
+            <label className="assist">
+              <Gauge size={15} />
+              <span>
+                {
+                  {
+                    guide: "Guide",
+                    manual: "Manual",
+                    prograde: "Prograde",
+                    retrograde: "Retrograde",
+                  }[s.mode]
+                }
+              </span>
+              <select
+                aria-label="Attitude"
+                disabled={pilotDisabled}
+                value={s.mode}
+                onChange={(e) => flightMode(e.target.value as Mode)}
+              >
+                <option value="guide">Ascent guide</option>
+                <option value="manual">Manual pitch</option>
+                <option value="prograde">Prograde hold</option>
+                <option value="retrograde">Retrograde hold</option>
+              </select>
+            </label>
+            <div className="pitch">
+              <span className="control-label">
+                Pitch <b>{Math.round(s.pitch)}°</b>
+              </span>
+              <div className="pitch-pair">
+                <button
+                  aria-label="Decrease pitch by five degrees"
+                  title="Pitch left"
+                  disabled={pilotDisabled}
+                  onClick={() => pitch(s.pitch - 5)}
+                >
+                  <ChevronLeft />
+                </button>
+                <button
+                  aria-label="Increase pitch by five degrees"
+                  title="Pitch right"
+                  disabled={pilotDisabled}
+                  onClick={() => pitch(s.pitch + 5)}
+                >
+                  <ChevronRight />
+                </button>
+              </div>
+            </div>
+          </div>
+          <label className="thrust">
+            <span className="control-label">Thrust</span>
+            <b>{Math.round(s.throttle * 100)}%</b>
+            <input
+              aria-label="Throttle"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value={Math.round(s.throttle * 100)}
+              disabled={pilotDisabled}
+              style={
+                { "--fill": s.throttle * 100 + "%" } as React.CSSProperties
+              }
+              onChange={(e) => throttle(+e.target.value / 100)}
+            />
+          </label>
+          <div className="command">
+            <span
+              role="status"
+              className={
+                "state" + (booster && flying && !fuelPct ? " alert" : "")
+              }
+            >
+              <i />
+              {flightStatus()}
+            </span>
+            <button
+              className="primary"
+              aria-label={primaryLabel()}
+              disabled={
+                !m.loaded || lowThrust || (flying && !booster && !fuelPct)
+              }
+              onClick={primary}
+            >
+              {pad ? (
+                <Rocket />
+              ) : ended ? (
+                <RotateCcw />
+              ) : booster ? (
+                <Layers2 />
+              ) : (
+                <Radio />
+              )}
+              {actionText}
+            </button>
+            <div className="fuel-label">
+              <span>S{s.stage + 1} FUEL</span>
+              <b>{Math.ceil(fuelPct)}%</b>
+            </div>
+            <div className="fuel-track">
+              <i style={{ width: fuelPct + "%" }} />
+            </div>
+          </div>
+          {(!active || m.rate > 1) && (
+            <button
+              className="warp-toggle"
+              title="Time warp"
+              aria-label="Time warp"
+              onClick={() => D("warp")}
+            >
+              <FastForward />
+              {m.rate}×
+            </button>
+          )}
         </div>
         {m.notice && (
-          <div className="notice" role="status">
+          <div className="notice" role="alert">
             <TriangleAlert size={16} />
             {m.notice}
             <button
               aria-label="Dismiss message"
               onClick={() => m.setNotice("")}
             >
-              <X size={16} />
+              <X />
             </button>
           </div>
         )}
-        <div className="dashboard">
-          <section className="view-panel panel" aria-label="Flight monitor">
-            <div className="view-toolbar">
-              <div className="tabs">
-                <button aria-pressed={active} onClick={() => toggleView(false)}>
-                  <Rocket /> Flight view
-                </button>
-                <button aria-pressed={!active} onClick={() => toggleView(true)}>
-                  <Orbit /> Orbital map
-                </button>
+      </main>
+      {dialog && (
+        <Dialog
+          title={
+            {
+              menu: "Mission menu",
+              plan: "Flight plan",
+              log: "Event log",
+              warp: "Time warp",
+              guide: "Flight guide",
+              data: "Mission data",
+              stage: "Separate booster?",
+              import: "Restore this flight?",
+              reset: "Start a new flight?",
+            }[dialog] || "Mission"
+          }
+          close={() => D("")}
+        >
+          {dialog === "menu" && (
+            <>
+              <div className="menu-grid">
+                {[
+                  [Flag, "Flight plan", "plan"],
+                  [List, "Event log", "log"],
+                  [BookOpen, "Flight guide", "guide"],
+                  [Database, "Mission data", "data"],
+                ].map(([Icon, label, key]) => {
+                  const Glyph = Icon as typeof Flag;
+                  return (
+                    <button key={String(key)} onClick={() => D(String(key))}>
+                      <Glyph size={19} />
+                      {String(label)}
+                    </button>
+                  );
+                })}
               </div>
-              <div className="met" title="Mission elapsed time">
-                <Clock3 size={14} />
-                <span>T+ {clock(s.t)}</span>
-              </div>
-            </div>
-            <div className="viewport">
-              <div className="scene-wrap" hidden={!active}>
-                <FlightScene vessel={m.vessel} />
-              </div>
-              {!active && <OrbitalMap s={s} />}
-              {booster && flying && !fuelPct && (
-                <div className="stage-alert" role="status">
-                  <Layers2 size={14} />
-                  Booster empty · Separate stage
-                </div>
-              )}
-              {active && (
-                <>
-                  <div className="feed">
-                    <Radio size={12} /> Range camera
-                  </div>
-                  <div className="cam-label">
-                    <span className="corner" /> Pioneer 01{" "}
-                    <span className="cam-divider">/</span>{" "}
-                    {m.alt < 1000
-                      ? "Launch pad"
-                      : m.alt < AIR
-                        ? "Ascent camera"
-                        : "Orbital camera"}
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="telemetry">
-              {[
-                [<Navigation2 />, "Altitude", distance(m.alt), "km"],
-                [
-                  <Activity />,
-                  "Velocity",
-                  Math.round(speed(s)).toLocaleString("en-US"),
-                  "m/s",
-                ],
-                [
-                  <Orbit />,
-                  "Apoapsis",
-                  pad ? "—" : distance(Math.max(0, o.ap)),
-                  pad || !Number.isFinite(o.ap) ? "" : "km",
-                ],
-                [
-                  <Focus />,
-                  "Periapsis",
-                  pad ? "—" : distance(o.pe),
-                  pad ? "" : "km",
-                ],
-              ].map(([icon, label, num, unit]) => (
-                <div key={String(label)}>
-                  <span className="small-label">
-                    {icon}
-                    {label}
-                  </span>
-                  <div className="readout">
-                    {num}
-                    <small>{unit}</small>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="warp">
-              <div className="small-label">
-                <Clock3 />
-                Time warp
-              </div>
-              <div className="pills">
-                {[1, 5, 20].map((n) => (
-                  <button
-                    key={n}
-                    aria-pressed={m.rate === n}
-                    disabled={!m.loaded || (n > 1 && (!canWarp(s) || m.paused))}
-                    onClick={() => m.warp(n)}
-                  >
-                    {n}×
-                  </button>
-                ))}
-              </div>
-              <button
-                className="pause"
-                disabled={!flying}
-                onClick={m.togglePause}
-              >
-                {m.paused ? <Play size={14} /> : <Pause size={14} />}{" "}
-                {m.paused ? "Resume" : "Pause"}
-              </button>
-            </div>
-          </section>
-          <section className="control panel">
-            <div className="panel-title">
-              <h2>
-                <SlidersHorizontal />
-                Flight controls
-              </h2>
-              <span className={"status " + (ended ? "terminal" : "")}>
-                <i />
-                {flightStatus()}
-              </span>
-            </div>
-            <div className="vehicle">
-              <div className="vehicle-icon">
-                <Rocket size={23} />
-              </div>
-              <div>
-                <h3>Pioneer 01</h3>
-                <p>Two-stage launch vehicle</p>
-              </div>
-            </div>
-            <fieldset disabled={!m.loaded || ended}>
-              <div className="row">
-                <label htmlFor="throttle" className="small-label">
-                  Throttle
-                </label>
-                <span className="twr" title="Thrust-to-weight ratio">
-                  TWR {twr.toFixed(2)}
-                </span>
-                <strong>
-                  {Math.round(s.throttle * 100)}
-                  <em>%</em>
-                </strong>
-              </div>
-              <input
-                id="throttle"
-                className="slider"
-                style={
-                  { "--level": s.throttle * 100 + "%" } as React.CSSProperties
-                }
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={Math.round(s.throttle * 100)}
-                onChange={(e) => throttle(+e.target.value / 100)}
-              />
-              <div className="attitude">
-                <label className="small-label" htmlFor="attitude">
-                  Attitude
-                </label>
-                <div className="select">
-                  <select
-                    id="attitude"
-                    value={s.mode}
-                    onChange={(e) => flightMode(e.target.value as Mode)}
-                  >
-                    <option value="guide">Ascent guide</option>
-                    <option value="manual">Manual pitch</option>
-                    <option value="prograde">Prograde hold</option>
-                    <option value="retrograde">Retrograde hold</option>
-                  </select>
-                  <ChevronDown size={13} />
-                </div>
-              </div>
-              <div className="pitch">
-                <span className="small-label">Pitch</span>
-                <div className="stepper">
-                  <button
-                    aria-label="Decrease pitch by five degrees"
-                    onClick={() => pitch(s.pitch - 5)}
-                  >
-                    <Minus size={14} />
-                  </button>
-                  <output>{Math.round(s.pitch)}°</output>
-                  <button
-                    aria-label="Increase pitch by five degrees"
-                    onClick={() => pitch(s.pitch + 5)}
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-              </div>
-            </fieldset>
-            <div className="engine">
-              <div className="row">
-                <span className="small-label">
-                  <Layers2 />
-                  Stage {s.stage + 1} / 2
-                </span>
-                <span>{STAGES[s.stage].name}</span>
-              </div>
-              <div className="fuel">
-                <span style={{ width: fuelPct + "%" }} />
-              </div>
-              <div className="fuel-row">
+              <div className="details">
+                <span>{m.saveStatus}</span>
                 <span>
-                  Propellant <b>{Math.ceil(fuelPct)}%</b>
-                </span>
-                <span>
-                  Δv <b>{Math.round(deltaV(s)).toLocaleString("en-US")} m/s</b>
+                  TWR {twr.toFixed(2)} · Δv{" "}
+                  {Math.round(deltaV(s)).toLocaleString("en-US")} m/s
                 </span>
               </div>
-            </div>
-            <button
-              className="primary"
-              onClick={primary}
-              disabled={
-                !m.loaded || lowThrust || (flying && !booster && !fuelPct)
-              }
-            >
-              {pad ? (
-                <Rocket size={17} />
-              ) : ended ? (
-                <RotateCcw size={17} />
-              ) : booster ? (
-                <Layers2 size={17} />
-              ) : (
-                <Radio size={17} />
-              )}{" "}
-              {primaryLabel()}
-            </button>
-          </section>
-          <section className="mission panel">
-            <div className="panel-title">
-              <h2>
-                <Flag />
-                Flight plan
-              </h2>
-              <span className="counter">
-                {objectives.filter((t) => t.done).length} / 3
-              </span>
-            </div>
-            <div className="mission-inner">
+            </>
+          )}
+          {dialog === "plan" && (
+            <>
               <h3>First orbit</h3>
               <p>{guidance}</p>
-              <div className="steps">
+              <ol className="steps">
                 {objectives.map((t, i) => (
-                  <span
+                  <li
                     key={t.name}
                     className={t.done ? "done" : i === current ? "next" : ""}
                   >
-                    <i>{t.done ? <Check size={11} /> : i + 1}</i>
+                    <i>{t.done ? <Check size={13} /> : i + 1}</i>
                     {t.name}
-                  </span>
+                  </li>
                 ))}
-              </div>
-            </div>
-          </section>
-          <section className="log panel">
-            <div className="panel-title">
-              <h2>
-                <List />
-                Event log
-              </h2>
-              {m.mission.log.length > 3 && (
-                <button className="text-btn" onClick={() => L(!allLog)}>
-                  {allLog ? "Show less" : "Show all"}
-                </button>
-              )}
-            </div>
-            <ul>
-              {visibleLog.map((e, i) => (
+              </ol>
+            </>
+          )}
+          {dialog === "log" && (
+            <ul className="events">
+              {[...m.mission.log].reverse().map((e, i) => (
                 <li key={i}>
                   <time>{clock(e.t)}</time>
                   <span>{e.text}</span>
                 </li>
               ))}
             </ul>
-          </section>
-        </div>
-        <footer>
-          <span>Apogee Flight Program</span>
-          <span>
-            Flight build <b>0.1.0</b>
-          </span>
-        </footer>
-      </main>
-      {dialog && (
-        <Dialog
-          title={
-            dialog === "guide"
-              ? "Flight guide"
-              : dialog === "data"
-                ? "Mission data"
-                : dialog === "stage"
-                  ? "Separate booster?"
-                  : dialog === "import"
-                    ? "Restore this flight?"
-                    : "Start a new flight?"
-          }
-          close={() => D("")}
-        >
+          )}
+          {dialog === "warp" && (
+            <>
+              <div className="rates">
+                {[1, 5, 20].map((n) => (
+                  <button
+                    key={n}
+                    aria-pressed={n === m.rate}
+                    disabled={!m.loaded || (n > 1 && (!canWarp(s) || m.paused))}
+                    onClick={() => {
+                      m.warp(n);
+                      D("");
+                    }}
+                  >
+                    {n}×
+                  </button>
+                ))}
+              </div>
+              {(!canWarp(s) || m.paused) && (
+                <p>
+                  Warp is available while coasting above 101 km with flight
+                  running.
+                </p>
+              )}
+            </>
+          )}
           {dialog === "guide" && (
             <>
               <h3>Your first orbit</h3>
@@ -607,9 +572,8 @@ export default function App() {
                   its gravity turn.
                 </li>
                 <li>
-                  <b>Stage.</b> At about T+02:10 the booster runs dry. Select
-                  Separate stage. The upper engine uses your current throttle
-                  setting.
+                  <b>Stage.</b> At about T+02:10 the booster runs dry. Tap
+                  Stage. The upper engine uses your current throttle setting.
                 </li>
                 <li>
                   <b>Reach orbit.</b> With prompt staging, insertion takes about
@@ -750,9 +714,7 @@ export default function App() {
             </>
           )}
           {flying && m.paused && (
-            <p className="pause-note">
-              Flight paused. Select Resume on the console to continue.
-            </p>
+            <p className="pause-note">Flight paused. Tap ▶ to resume.</p>
           )}
           {error && (
             <p role="alert" className="error">
@@ -760,7 +722,7 @@ export default function App() {
             </p>
           )}
           <button className="close-bottom" onClick={() => D("")}>
-            {dialog === "guide" || dialog === "data" ? "Close" : "Cancel"}
+            {["stage", "reset", "import"].includes(dialog) ? "Cancel" : "Close"}
           </button>
         </Dialog>
       )}

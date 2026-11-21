@@ -14,34 +14,34 @@ For automatic builds after source changes, include `.github/workflows/pages.yml`
 
 ## Fly the first mission
 
-1. Leave **Ascent guide** selected, set throttle to **100%**, and press **Launch vehicle**. The guide adjusts attitude in response to altitude and velocity. You control staging and can take over pitch at any time.
-2. At approximately **T+02:10**, the booster empties. Press **Separate stage**. The upper engine inherits your throttle. Early separation discards remaining booster propellant and asks for confirmation.
+1. Leave **Ascent guide** selected, set throttle to **100%**, and tap **Launch**. The guide adjusts attitude in response to altitude and velocity. You control staging and can take over pitch at any time.
+2. At approximately **T+02:10**, the booster empties. Tap **Stage**. The upper engine inherits your throttle. Early separation discards remaining booster propellant and asks for confirmation.
 3. Open **Orbital map** while the engine runs. The solid line is the current thrust-free trajectory. **Ap** is the highest altitude. **Pe** is the lowest. A negative Pe intersects Earth. Subsurface portions of a path are hidden.
 4. With prompt staging, the guided flight takes about **4 minutes 53 seconds** to enter low Earth orbit. The guide cuts thrust and switches to prograde hold once Pe reaches 100 km and Ap is at or below 2,000 km. The exact orbit depends on how you fly.
-5. Select **5×** or **20×** to coast above 101 km. Try a short prograde burn near Ap and watch Pe rise. Choose retrograde to slow down. The flight plan records your first successful insertion, even if you later deorbit.
+5. In map view, tap the fast-forward icon and select **5×** or **20×** to coast above 101 km. Try a short prograde burn near Ap and watch Pe rise. Choose retrograde to slow down. The flight plan records your first successful insertion, even if you later deorbit.
 
-The game starts on the pad. A fresh launch costs nothing in this release. **Mission data → Restart** returns the vehicle to the pad and replaces the active flight after confirmation.
+The game starts on the pad. A fresh launch costs nothing in this release. **Menu → Mission data → Restart** returns the vehicle to the pad and replaces the active flight after confirmation.
 
 ## Flight controls
 
 | Action | Touch or mouse | Keyboard |
 | --- | --- | --- |
 | Launch, stage, or toggle upper engine | Amber action button | Space |
-| Switch between flight and orbital map | View tabs | M |
+| Switch between flight and orbital map | Orbit / rocket button at upper right | M |
 | Pause or resume flight | Pause / Resume | P |
-| Set manual pitch | Minus / plus in Flight controls | Left / right arrows |
-| Adjust throttle | Throttle slider | Up / down arrows |
+| Set manual pitch | Left / right pitch buttons | Left / right arrows |
+| Adjust throttle | Vertical thrust slider | Up / down arrows |
 | Hold prograde or retrograde | Attitude selector | Tab to selector |
 | Explore the map | Drag to pan, pinch or scroll to zoom, or use zoom buttons | Tab to map controls |
 | Focus the camera | Track craft / Fit Earth | Tab to camera button |
 
-Pitch is local to the vehicle. Zero points up, and +90° points along the local horizontal in the initial downrange direction. The keyboard shortcuts apply when focus is on the flight console background. Focused buttons, sliders, and selectors retain their native keyboard behavior. Opening the guide or mission data pauses an active flight. Use **Resume** when ready.
+Pitch is local to the vehicle. Zero points up, and +90° points along the local horizontal in the initial downrange direction. The keyboard shortcuts apply when focus is on the flight console background. Focused buttons, sliders, and selectors retain their native keyboard behavior. The flag opens the flight plan and the list opens the event log. Opening a mission panel pauses an active flight. Use **Resume** when ready.
 
 ## Saves and offline play
 
 Flight state, propellant, attitude, stage, event log, selected view, and the milestone are written to IndexedDB at launch, staging, pilot input, and mission events. Active flight also checkpoints about every 1.5 seconds. A synchronous local checkpoint covers suspension or tab close. Reloading an active flight restores it paused at 1×.
 
-Use **Mission data → Export JSON** for a portable backup. Import validates the file and asks before replacing your mission. The save belongs to the browser and site path. A different device, private browsing session, or new Pages URL has its own save. Browsers supporting Web Locks allow one active flight tab per project.
+Use **Menu → Mission data → Export JSON** for a portable backup. Import validates the file and asks before replacing your mission. The save belongs to the browser and site path. A different device, private browsing session, or new Pages URL has its own save. Browsers supporting Web Locks allow one active flight tab per project.
 
 Open the deployed site online once so the service worker can finish caching its assets. It can then reopen offline from the same URL. On an iPhone, the hosted game can also be added to the Home Screen. Localhost and HTTPS support the offline worker. A local HTTP server is required to preview the compiled files.
 

@@ -51,15 +51,34 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           alt = Math.max(0, radius(s) - R);
         const groundY = Math.min(340, alt * 0.1),
           fade = Phaser.Math.Clamp((alt - 4800) / 64000, 0, 1);
-        for (const img of [this.sky, this.space, this.ground])
-          img.setPosition(w / 2, 0).setDisplaySize(Math.max(600, w), h);
+        // Keep sprites square in either orientation. Anchor the camera above the pilot controls.
+        const padY = Math.round(h * 0.73);
+        const scale = Math.max(w / 600, h / 380);
+        const worldWidth = 600 * scale,
+          horizonHeight = 260 * scale;
+        this.sky
+          .setPosition(
+            Math.max(
+              w - worldWidth / 2,
+              w / 2 - Math.max(0, worldWidth - w) * 0.18,
+            ),
+            0,
+          )
+          .setDisplaySize(worldWidth, (padY * 260) / 237);
+        this.space.setPosition(w / 2, 0).setDisplaySize(Math.max(w, 600), h);
+        this.ground
+          .setPosition(w / 2, padY - 237 * scale + groundY)
+          .setDisplaySize(worldWidth, horizonHeight);
         this.space.setAlpha(fade);
-        this.ground.y = groundY;
+
         const cx = Math.round(w * 0.5),
-          padY = Math.round(h * 0.91),
           towerX = cx + 5;
         this.tower.setPosition(towerX, padY + groundY);
         this.detail.clear();
+        if (this.ground.y + horizonHeight < h)
+          this.detail
+            .fillStyle(0x202c3a, 1 - fade)
+            .fillRect(0, this.ground.y + horizonHeight - 1, w, h);
         if (groundY < 150) {
           const g = this.detail,
             y = padY + groundY;
@@ -146,14 +165,15 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
       }
     }
     function dims() {
+      const height = parent.clientWidth < parent.clientHeight ? 390 : 290;
       return {
         width: Math.max(
-          180,
+          1,
           Math.round(
-            (parent.clientWidth / Math.max(1, parent.clientHeight)) * 260,
+            (parent.clientWidth / Math.max(1, parent.clientHeight)) * height,
           ),
         ),
-        height: 260,
+        height,
       };
     }
     let game: Phaser.Game | undefined;
@@ -168,7 +188,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           type: Phaser.CANVAS,
           parent,
           width: dims().width,
-          height: 260,
+          height: dims().height,
           scene: Range,
           backgroundColor: "#142133",
           pixelArt: true,
@@ -179,7 +199,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           scale: { mode: Phaser.Scale.NONE },
           input: { keyboard: false, mouse: false, touch: false },
         });
-      else game.scale.resize(dims().width, 260);
+      else game.scale.resize(dims().width, dims().height);
     }
     const obs = new ResizeObserver(resize);
     obs.observe(parent);

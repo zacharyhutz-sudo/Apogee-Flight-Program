@@ -8,29 +8,38 @@ import {
   speed,
   type Flight,
 } from "../../sim/flight";
-const D = 110;
+import { Plus, Minus, LocateFixed, Globe } from "lucide-react";
 export function OrbitalMap({ s }: { s: Flight }) {
   const [zoom, Z] = useState(1),
     [pan, P] = useState([0, 0]),
     [track, T] = useState(false),
     [selected, select] = useState("Earth");
+  const [size, setSize] = useState({ w: 520, h: 286 });
+  const D = Math.min(size.w * 0.32, size.h * 0.29);
   const svg = useRef<SVGSVGElement>(null),
     fingers = useRef(new Map<number, number[]>());
   const lastSpan = useRef(0),
     moved = useRef(false);
   useEffect(() => {
     const el = svg.current!;
+    const observer = new ResizeObserver(() =>
+      setSize({ w: el.clientWidth, h: el.clientHeight }),
+    );
+    observer.observe(el);
     function wheel(e: WheelEvent) {
       e.preventDefault();
       Z((z) => clamp(z * Math.exp(-e.deltaY * 0.002), 0.25, 64));
     }
     el.addEventListener("wheel", wheel, { passive: false });
-    return () => el.removeEventListener("wheel", wheel);
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("wheel", wheel);
+    };
   }, []);
   const o = orbit(s),
     scale = (D * zoom) / R;
-  const ox = 260 + pan[0] - (track ? s.y * scale : 0),
-    oy = 149 + pan[1] + (track ? s.x * scale : 0);
+  const ox = size.w / 2 + pan[0] - (track ? s.y * scale : 0),
+    oy = size.h * 0.49 + pan[1] + (track ? s.x * scale : 0);
   const point = (x: number, y: number) => [ox + y * scale, oy - x * scale];
   const pts: string[] = [];
   let previousVisible = false;
@@ -101,7 +110,7 @@ export function OrbitalMap({ s }: { s: Flight }) {
     <div className="orbital">
       <svg
         ref={svg}
-        viewBox="0 0 520 286"
+        viewBox={`0 0 ${size.w} ${size.h}`}
         aria-label="Live Earth orbital map"
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -218,23 +227,22 @@ export function OrbitalMap({ s }: { s: Flight }) {
           />
         </g>
       </svg>
-      <div className="map-legend">
-        <i /> Ballistic path <b>◆</b> Pioneer 01
-      </div>
       <div className="map-tools">
         <button
           aria-label="Zoom in"
           onClick={() => Z((z) => clamp(z * 1.6, 0.25, 64))}
         >
-          +
+          <Plus />
         </button>
         <button
           aria-label="Zoom out"
           onClick={() => Z((z) => clamp(z / 1.6, 0.25, 64))}
         >
-          −
+          <Minus />
         </button>
         <button
+          title={track ? "Fit Earth" : "Track craft"}
+          aria-label={track ? "Fit Earth" : "Track craft"}
           onClick={() => {
             T(!track);
             P([0, 0]);
@@ -242,7 +250,7 @@ export function OrbitalMap({ s }: { s: Flight }) {
             select(track ? "Earth" : "Pioneer 01");
           }}
         >
-          {track ? "Fit Earth" : "Track craft"}
+          {track ? <Globe /> : <LocateFixed />}
         </button>
       </div>
       <span className="map-selection">

@@ -39,6 +39,7 @@ async function useFlightClock(page) {
   });
 }
 async function downloadSave(page) {
+  await page.getByRole("button", { name: "Mission menu" }).click();
   await page.getByRole("button", { name: "Mission data" }).click();
   const waiting = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export JSON" }).click();
@@ -54,25 +55,25 @@ test("launch, stage, insert, warp, reload and exchange a flight save", async ({
   await useFlightClock(page);
   await page.goto("./");
   await expect(page.locator(".flight-scene canvas")).toBeVisible();
+  await page.getByRole("button", { name: "Orbital map", exact: true }).click();
+  await page.getByRole("button", { name: "Time warp" }).click();
   await expect(page.getByRole("button", { name: "20×" })).toBeDisabled();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Flight view", exact: true }).click();
   await page.getByRole("button", { name: "Launch vehicle" }).click();
   await page.evaluate(() => window.advanceFlight(131));
-  await expect(
-    page.getByText("Booster depleted. Separate stage to continue."),
-  ).toBeVisible();
+  await expect(page.getByText("Stage ready", { exact: true })).toBeVisible();
   await page
     .getByRole("button", { name: "Separate stage", exact: true })
     .click();
   await page.getByRole("button", { name: "Orbital map", exact: true }).click();
   await expect(page.getByLabel("Live Earth orbital map")).toBeVisible();
   await page.evaluate(() => window.advanceFlight(170));
-  await expect(
-    page.getByText("Low Earth orbit achieved.", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("In orbit", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Time warp" }).click();
   await page.getByRole("button", { name: "20×" }).click();
-  await expect(page.getByRole("button", { name: "20×" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  await expect(page.getByRole("button", { name: "Time warp" })).toHaveText(
+    "20×",
   );
   await page.evaluate(() => window.advanceFlight(3));
   await page.getByRole("button", { name: "Pause", exact: true }).click();
@@ -84,12 +85,14 @@ test("launch, stage, insert, warp, reload and exchange a flight save", async ({
     page.getByRole("button", { name: "Resume", exact: true }),
   ).toBeEnabled();
   expect((await downloadSave(page)).flight).toEqual(snapshot.flight);
+  await page.getByRole("button", { name: "Mission menu" }).click();
   await page.getByRole("button", { name: "Mission data" }).click();
   await page.getByRole("button", { name: "Restart", exact: true }).click();
   await page.getByRole("button", { name: "Start new flight" }).click();
   await expect(
     page.getByRole("button", { name: "Launch vehicle" }),
   ).toBeEnabled();
+  await page.getByRole("button", { name: "Mission menu" }).click();
   await page.getByRole("button", { name: "Mission data" }).click();
   const input = page.locator("input[type=file]");
   await input.setInputFiles({
@@ -185,4 +188,55 @@ test("pilot inputs, map camera, stage confirmation and touch controls", async ({
         .map((el) => el.getAttribute("aria-label") || el.textContent),
     );
   expect(small).toEqual([]);
+});
+test("both worlds fill the viewport and mission text stays in overlays", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await expect(
+    page.getByRole("button", { name: "Launch vehicle" }),
+  ).toBeEnabled();
+  for (const [mode, selector] of [
+    ["flight", ".scene-wrap canvas"],
+    ["map", ".orbital>svg"],
+  ]) {
+    if (mode === "map")
+      await page.getByLabel("Orbital map", { exact: true }).click();
+    const size = await page.locator(selector).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return [
+        r.x,
+        r.y,
+        Math.abs(r.width - innerWidth),
+        Math.abs(r.height - innerHeight),
+      ];
+    });
+    expect(size.every((n) => Math.abs(n) < 2)).toBe(true);
+    const scroll = await page.evaluate(
+      () => document.documentElement.scrollHeight - innerHeight,
+    );
+    expect(scroll).toBeLessThanOrEqual(1);
+    await expect(page.getByText("First orbit", { exact: true })).toHaveCount(0);
+    for (const [button, content] of [
+      ["Flight plan", "First orbit"],
+      ["Event log", "Pioneer 01 cleared for flight."],
+    ]) {
+      await page.getByRole("button", { name: button, exact: true }).click();
+      await expect(
+        page.getByRole("dialog").getByText(content, { exact: true }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "Close dialog" }).click();
+    }
+  }
+});
+test("moving the thrust lever up increases throttle", async ({ page }) => {
+  await page.goto("./");
+  const lever = page.getByLabel("Throttle", { exact: true });
+  await expect(lever).toBeEnabled();
+  const box = await lever.boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.8);
+  const low = Number(await lever.inputValue());
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.2);
+  expect(low).toBeLessThan(45);
+  expect(Number(await lever.inputValue())).toBeGreaterThan(55);
 });
