@@ -50,8 +50,7 @@ button:enabled:active {
 }
 button:focus-visible,
 select:focus-visible,
-input:focus-visible,
-.assist:focus-within {
+input:focus-visible {
   outline: 2px solid var(--amber-bright);
   outline-offset: 2px;
 }
@@ -76,7 +75,7 @@ button svg {
   height: 100dvh;
   overflow: hidden;
   isolation: isolate;
-  --gap: clamp(10px, 2.2vmin, 22px);
+  --gap: clamp(10px, 2.2vmin, 20px);
   --l: calc(var(--gap) + env(safe-area-inset-left));
   --r: calc(var(--gap) + env(safe-area-inset-right));
   --t: calc(var(--gap) + env(safe-area-inset-top));
@@ -111,7 +110,11 @@ button svg {
 .hud nav {
   pointer-events: auto;
 }
+
+/* Top bar */
 .topline {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -120,7 +123,8 @@ button svg {
 .identity {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 .insignia {
   width: 44px;
@@ -137,23 +141,35 @@ button svg {
   font: 700 11px var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
-  padding: 6px 10px;
+  padding: 6px 9px;
   border-radius: var(--radius-sm);
   background: var(--panel);
   border: 2px solid var(--edge-dark);
   box-shadow: inset 0 1px 0 var(--edge-light);
   letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.warp-toggle {
+  min-height: 36px;
+  min-width: 44px;
+  padding: 0 8px;
+  font: 700 11px var(--font-mono);
+  gap: 4px;
+  background: var(--panel);
+}
+.warp-toggle.warp-active {
+  background: var(--teal);
+  color: #0b1b16;
+  border-bottom-color: var(--teal-deep);
 }
 nav,
 .map-tools,
-.pitch-pair,
 .landing-toggles {
   display: flex;
   gap: 6px;
 }
 nav button,
-.map-tools button,
-.pitch-pair button {
+.map-tools button {
   width: 44px;
   height: 44px;
   padding: 0;
@@ -162,133 +178,160 @@ nav button,
   color: var(--teal);
   border-color: var(--teal-deep);
 }
+
+/* Unified compact telemetry strip */
 .telemetry {
-  position: absolute;
-  top: 54px;
-  left: 0;
-  display: flex;
+  position: relative;
+  z-index: 2;
+  margin-top: 6px;
+  display: inline-flex;
   align-items: stretch;
-  gap: 4px;
   max-width: 100%;
-}
-.meter {
-  padding: 5px 9px;
   background: var(--panel);
   border: 2px solid var(--edge-dark);
   border-radius: var(--radius-sm);
   box-shadow: inset 0 1px 0 var(--edge-light);
+  overflow: hidden;
+}
+.meter {
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.meter + .meter {
+  border-left: 1px solid var(--line);
 }
 .meter span,
 .control-label,
 .fuel-label {
   font: 700 9px var(--font-ui);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--ink-muted);
 }
 .meter strong {
   display: block;
-  font: 700 clamp(14px, 2.3vmin, 20px) var(--font-mono);
+  font: 700 clamp(13px, 3.4vw, 17px) var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
 }
 .meter small {
   font: 700 9px var(--font-mono);
   color: var(--ink-muted);
   margin-left: 2px;
 }
-.pilot-left,
-.command,
-.thrust {
+
+/* Touch-hold left/right screen steering zones */
+.steer-zone {
   position: absolute;
-  bottom: 0;
-}
-.pilot-left {
-  left: 0;
-  display: grid;
-  justify-items: start;
-  gap: 6px;
-}
-.landing-toggles button {
-  padding: 0 9px;
-  font-size: 11px;
-  min-height: 44px;
-  background: var(--panel);
-}
-.landing-toggles button.active-gear {
-  background: var(--teal);
-  color: #0b1b16;
-  border-bottom-color: var(--teal-deep);
-}
-.assist {
-  width: max-content;
-  max-width: 120px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--teal);
+  z-index: 1;
+  top: 96px;
+  bottom: 176px;
+  width: 30%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   border-radius: var(--radius-md);
-  background: var(--panel);
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 14px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: background 100ms ease;
+}
+.steer-zone:enabled:active {
+  transform: none;
+  border-bottom-width: 0;
+  background: transparent;
+}
+.steer-zone.steer-left {
+  left: 0;
+  justify-content: flex-start;
+  padding-left: 2px;
+}
+.steer-zone.steer-right {
+  right: 0;
+  justify-content: flex-end;
+  padding-right: 2px;
+}
+.steer-pill {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: rgba(20, 31, 44, 0.72);
   border: 2px solid var(--edge-dark);
-  border-bottom-width: 4px;
-  box-shadow: inset 0 1px 0 var(--edge-light);
-  padding: 0 10px;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: background 80ms ease, color 80ms ease, transform 80ms ease;
+}
+.steer-zone.steering.steer-left {
+  background: linear-gradient(90deg, rgba(242, 169, 59, 0.18), transparent);
+}
+.steer-zone.steering.steer-right {
+  background: linear-gradient(270deg, rgba(242, 169, 59, 0.18), transparent);
+}
+.steer-zone.steering .steer-pill {
+  background: var(--amber);
+  color: #1a1106;
+  border-color: var(--amber-deep);
+  transform: scale(0.95);
+}
+.steer-zone.steer-locked {
+  opacity: 0.25;
+}
+/* In Map View, shrink steer zones to compact edge buttons so map panning stays free */
+.map-view .steer-zone {
+  top: auto;
+  bottom: 186px;
+  width: 44px;
   height: 44px;
-  cursor: pointer;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
 }
-.assist select {
+
+/* Zero-overlap SFS-style bottom dock */
+.hud-bottom {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  pointer-events: none;
 }
-.pitch,
+
+/* Bottom-left vertical throttle rail */
 .thrust {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 7px 4px 6px;
+  width: 54px;
+  gap: 3px;
   border-radius: var(--radius-md);
   background: var(--panel);
   border: 2px solid var(--edge-dark);
   box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-panel);
 }
-.pitch {
-  padding: 6px 5px 5px;
-  text-align: center;
-}
-.control-label b,
-.fuel-label b {
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.pitch-pair {
-  margin-top: 4px;
-  gap: 4px;
-}
-.pitch-pair button {
-  background: var(--panel-alt);
-}
-.pitch-pair svg {
-  width: 22px;
-  height: 22px;
-}
-.thrust {
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 4px 6px;
-  width: 56px;
-  gap: 4px;
-}
 .thrust > b {
-  font: 700 12px var(--font-mono);
+  font: 700 11px var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--amber-bright);
 }
@@ -298,7 +341,7 @@ nav button,
   appearance: none;
   display: block;
   width: 44px;
-  height: clamp(80px, 16dvh, 150px);
+  height: clamp(92px, 18dvh, 148px);
   margin: 2px 0;
   background: transparent;
   touch-action: none;
@@ -340,16 +383,54 @@ nav button,
   background: var(--ink);
   border: 2px solid var(--edge-dark);
 }
-.command {
-  left: 50%;
-  transform: translateX(-50%);
-  width: clamp(148px, 28vw, 224px);
+
+/* Bottom-right flight action stack */
+.flight-actions {
+  flex: 1;
+  max-width: 236px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  pointer-events: none;
+}
+.flight-actions.actions-pad {
+  max-width: 256px;
+}
+.landing-toggles {
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.landing-toggles button {
+  flex: 1;
+  padding: 0 8px;
+  font-size: 11px;
+  min-height: 40px;
+  background: var(--panel);
+}
+.landing-toggles button.active-gear {
+  background: var(--teal);
+  color: #0b1b16;
+  border-bottom-color: var(--teal-deep);
+}
+.landing-toggles button.ripped-gear {
+  background: #2b171b;
+  color: var(--coral);
+  border-bottom-color: var(--coral-deep);
+}
+.command-card {
   display: grid;
   justify-items: stretch;
   gap: 6px;
+  pointer-events: none;
 }
-.command-pad {
-  width: clamp(192px, 52vw, 246px);
+.control-label b,
+.fuel-label b {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .launch-costs {
   display: flex;
@@ -375,15 +456,15 @@ nav button,
   color: var(--teal);
 }
 .sim-free-btn {
-  min-height: 44px;
-  font-size: 12px;
+  min-height: 40px;
+  font-size: 11px;
   color: var(--teal);
   background: var(--panel);
   border-bottom-color: var(--teal-deep);
 }
 .state {
-  justify-self: center;
-  display: flex;
+  justify-self: end;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   font: 700 10px var(--font-ui);
@@ -392,7 +473,7 @@ nav button,
   background: var(--panel);
   border: 2px solid var(--edge-dark);
   border-radius: var(--radius-sm);
-  padding: 4px 10px;
+  padding: 3px 9px;
   white-space: nowrap;
 }
 .state i {
@@ -418,25 +499,33 @@ button.primary:enabled:active {
   background: var(--amber-bright);
   border-bottom-width: 2px;
 }
+.fuel-bar-wrap {
+  display: grid;
+  gap: 4px;
+  background: var(--panel);
+  border: 2px solid var(--edge-dark);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+}
 .fuel-label {
   display: flex;
   justify-content: space-between;
   font-size: 9px;
-  text-shadow: 0 1px 0 #000;
 }
 .fuel-track {
-  height: 7px;
+  height: 6px;
   background: var(--panel-deep);
-  border: 2px solid var(--edge-dark);
+  border: 1px solid var(--edge-dark);
   border-radius: 2px;
   overflow: hidden;
-  margin-top: -3px;
 }
 .fuel-track i {
   height: 100%;
   display: block;
   background: var(--teal);
 }
+
+/* Orbital Map overlays */
 .orbital {
   background: radial-gradient(ellipse at center, #142230, #0b121b);
 }
@@ -459,53 +548,45 @@ button.primary:enabled:active {
 .map-tools {
   position: absolute;
   right: var(--r);
-  top: calc(var(--t) + 56px);
+  top: calc(var(--t) + 98px);
   z-index: 1;
 }
 .map-selection {
   position: absolute;
   right: var(--r);
-  top: calc(var(--t) + 108px);
+  top: calc(var(--t) + 148px);
   color: var(--ink-muted);
   font: 700 10px var(--font-mono);
   text-align: right;
+  pointer-events: none;
 }
 .tracking-slot {
   position: absolute;
   left: var(--l);
-  top: calc(var(--t) + 114px);
+  top: calc(var(--t) + 98px);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font: 700 10px var(--font-ui);
-  letter-spacing: 0.06em;
+  gap: 5px;
+  font: 700 9px var(--font-ui);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ink-muted);
   background: var(--panel);
   border: 2px solid var(--edge-dark);
   border-radius: var(--radius-sm);
-  padding: 5px 9px;
+  padding: 4px 8px;
   z-index: 1;
 }
 .tracking-slot.unlocked {
   color: var(--teal);
 }
-.warp-toggle {
-  position: absolute;
-  bottom: 0;
-  right: 66px;
-  min-height: 44px;
-  padding: 0 10px;
-  font: 700 12px var(--font-mono);
-}
-.warp-toggle svg {
-  width: 15px;
-}
+
+/* Notices & Dialogs */
 .notice {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  top: calc(var(--t) + 56px);
+  top: calc(var(--t) + 96px);
   width: max-content;
   max-width: min(88%, 420px);
   display: flex;
@@ -671,84 +752,54 @@ dialog ol {
   font: 700 10px var(--font-mono);
   color: var(--teal);
 }
+
+/* Mobile portrait refinements */
 @media (max-width: 620px) {
-  .map-tools {
-    top: calc(var(--t) + 114px);
-  }
-  .map-selection {
-    top: calc(var(--t) + 166px);
-  }
-  .tracking-slot {
-    top: calc(var(--t) + 166px);
-  }
-  .warp-toggle {
-    bottom: 112px;
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
+  .telemetry {
+    display: flex;
+    width: 100%;
   }
   .meter {
-    padding: 4px 7px;
+    flex: 1;
+    padding: 4px 6px;
   }
-  .meter strong {
-    font-size: clamp(13px, 3.8vw, 17px);
-  }
-}
-@media (max-width: 365px) {
-  .command {
-    left: 50%;
-    width: 140px;
-  }
-  .thrust {
-    width: 48px;
-  }
-}
-@media (max-height: 475px) and (orientation: landscape) {
-  .telemetry {
-    top: 48px;
+  .map-zoom-btn {
+    display: none;
   }
   .map-tools {
-    top: calc(var(--t) + 50px);
+    top: calc(var(--t) + 94px);
   }
   .map-selection {
-    top: calc(var(--t) + 100px);
+    top: calc(var(--t) + 144px);
   }
   .tracking-slot {
-    top: calc(var(--t) + 100px);
-  }
-  .thrust input {
-    height: 70px;
-  }
-  .pilot-left {
-    display: flex;
-    align-items: flex-end;
-  }
-  .warp-toggle {
-    right: 66px;
-    bottom: 0;
-    left: auto;
-    transform: none;
+    top: calc(var(--t) + 94px);
+    max-width: calc(100vw - 88px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
-.pitch {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 146px;
-  padding: 7px 9px;
+@media (max-width: 365px) {
+  .thrust {
+    width: 48px;
+  }
+  .flight-actions {
+    max-width: 210px;
+  }
 }
-.pitch-locked {
-  opacity: 0.62;
-}
-.pitch-slider {
-  width: 100%;
-  min-height: 28px;
-  accent-color: var(--amber);
-  cursor: pointer;
-}
-.landing-toggles button.ripped-gear {
-  background: #2b171b;
-  color: var(--coral);
-  border-bottom-color: var(--coral-deep);
+
+@media (max-height: 475px) and (orientation: landscape) {
+  .thrust input {
+    height: 76px;
+  }
+  .steer-zone {
+    top: 86px;
+    bottom: 136px;
+    width: 24%;
+  }
+  .map-view .steer-zone {
+    bottom: 140px;
+  }
 }

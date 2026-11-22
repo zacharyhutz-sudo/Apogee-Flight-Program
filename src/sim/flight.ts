@@ -145,7 +145,7 @@ export function initial(
     fuel: [st[0].fuel, st[1].fuel],
     throttle: 1,
     pitch: 0,
-    mode: "guide",
+    mode: "manual",
     status: "pad",
     orbitEarned: false,
     maxAlt: 0,
@@ -315,15 +315,8 @@ export function canWarp(s: Flight) {
   return s.status === "flying" && !burning(s) && radius(s) > bp.R + bp.AIR + 500;
 }
 
-export function alignToVelocity(s: Flight) {
-  if ((s.mode !== "prograde" && s.mode !== "retrograde") || speed(s) <= 0.1)
-    return;
-  const radial = s.x * s.vx + s.y * s.vy,
-    tangent = s.x * s.vy - s.y * s.vx;
-  const angle =
-    (Math.atan2(tangent, radial) * 180) / Math.PI +
-    (s.mode === "retrograde" ? 180 : 0);
-  s.pitch = angle > 180 ? angle - 360 : angle;
+export function alignToVelocity(_s: Flight) {
+  // All flight attitude controls are strictly manual.
 }
 
 export function stepDebris(s: Flight, dt: number) {
@@ -399,24 +392,8 @@ export function step(s: Flight, dt = STEP) {
       s.pitch = 0;
     }
   }
-  if (
-    !s.chuteDeployed &&
-    s.mode === "guide" &&
-    s.throttle > 0 &&
-    s.fuel[s.stage] > 0 &&
-    engine.thrust > 0
-  ) {
-    // SFS-scale gravity turn: climb above 30 km atmosphere before circularizing at ~45 km
-    const targetClimb = clamp((48000 - alt) / 14, -70, 420);
-    const acc = (engine.thrust * s.throttle) / mass(s);
-    const radial = (targetClimb - vr) / 8 + bp.MU / (r * r) - (vt * vt) / r;
-    const tilt = (Math.acos(clamp(radial / acc, -1, 1)) * 180) / Math.PI;
-    s.pitch = clamp(tilt, 0, Math.min(115, Math.max(0, alt / 260)));
-    if (stable(s)) {
-      s.throttle = 0;
-      s.mode = "prograde";
-    }
-  } else if (!s.chuteDeployed) alignToVelocity(s);
+  // All launch and flight controls are strictly manual
+  s.mode = "manual";
   const used =
     engine.thrust > 0
       ? Math.min(

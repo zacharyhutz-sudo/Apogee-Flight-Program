@@ -297,24 +297,26 @@ export function OrbitalMap({
 
       <div
         className={"tracking-slot" + (hasManeuverSlot ? " unlocked" : "")}
-        aria-label="Tracking Station maneuver node status"
+        aria-label="Tracking Station status"
       >
-        {hasManeuverSlot ? <Radar size={13} /> : <Lock size={13} />}
+        {hasManeuverSlot ? <Radar size={12} /> : <Lock size={12} />}
         <span>
           {hasManeuverSlot
-            ? "Moon Transfer · SOI Active"
-            : "Maneuver Nodes · Tracking Lv 2"}
+            ? "SOI Tracking Active"
+            : "Tracking Lv 2"}
         </span>
       </div>
 
       <div className="map-tools">
         <button
+          className="map-zoom-btn"
           aria-label="Zoom in"
           onClick={() => Z((z) => clamp(z * 1.6, 0.25, 64))}
         >
           <Plus />
         </button>
         <button
+          className="map-zoom-btn"
           aria-label="Zoom out"
           onClick={() => Z((z) => clamp(z / 1.6, 0.25, 64))}
         >

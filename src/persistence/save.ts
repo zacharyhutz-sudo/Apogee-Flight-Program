@@ -229,6 +229,8 @@ export function validate(raw: unknown): Snapshot {
   )
     return invalid();
 
+  f.mode = "manual";
+
   if (
     f.status === "pad" &&
     (f.t !== 0 ||

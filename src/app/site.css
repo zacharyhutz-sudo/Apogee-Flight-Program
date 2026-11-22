@@ -397,3 +397,21 @@ button.insignia {
 .upgrade-delta strong {
   color: var(--ink);
 }
+
+.facilities-groups {
+  display: grid;
+  gap: 14px;
+}
+.build-group {
+  display: grid;
+  gap: 8px;
+}
+.build-group-title {
+  margin: 0;
+  padding: 0 0 4px;
+  font: 700 11px var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--teal);
+  border-bottom: 2px solid var(--edge-dark);
+}

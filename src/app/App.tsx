@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Menu,
   FastForward,
-  Gauge,
   Landmark,
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -47,7 +46,6 @@ import {
   deltaV,
   orbit,
   speed,
-  type Mode,
 } from "../sim/flight";
 import { validate } from "../persistence/save";
 import { useMission } from "./useMission";
@@ -66,6 +64,11 @@ const distance = (n: number) =>
       })
     : "Escape";
 
+const wrapPitch = (deg: number) => {
+  const p = ((((deg + 180) % 360) + 360) % 360) - 180;
+  return p === -180 && deg > 0 ? 180 : p;
+};
+
 export default function App() {
   const m = useMission(),
     s = m.vessel.current,
@@ -73,6 +76,9 @@ export default function App() {
     o = orbit(s);
   const [dialog, D] = useState(""),
     [error, E] = useState("");
+  const [steerDir, setSteerDir] = useState<-1 | 0 | 1>(0);
+  const steerDirRef = useRef<-1 | 0 | 1>(0);
+  const steerPointerId = useRef<number | null>(null);
   const upload = useRef<HTMLInputElement>(null),
     backup = useRef<ReturnType<typeof validate> | null>(null);
 
@@ -143,15 +149,77 @@ export default function App() {
       );
   }
 
-  const canSteer = m.loaded && !ended && burning(s) && !s.chuteDeployed;
+  const canSteer = m.loaded && !m.paused && flying && burning(s) && !s.chuteDeployed;
 
   function pitch(value: number) {
     if (!canSteer) return;
     m.change((f) => {
       f.mode = "manual";
-      f.pitch = clamp(value, -180, 180);
+      f.pitch = wrapPitch(value);
     });
   }
+
+  function startSteer(dir: -1 | 1, e: React.PointerEvent<HTMLButtonElement>) {
+    if (!canSteer) return;
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore if pointer capture is unavailable
+    }
+    steerPointerId.current = e.pointerId;
+    steerDirRef.current = dir;
+    setSteerDir(dir);
+  }
+
+  function stopSteer(e?: React.PointerEvent<HTMLButtonElement>) {
+    if (
+      e &&
+      steerPointerId.current !== null &&
+      e.pointerId !== steerPointerId.current
+    ) {
+      return;
+    }
+    if (steerDirRef.current !== 0) {
+      steerDirRef.current = 0;
+      steerPointerId.current = null;
+      setSteerDir(0);
+      m.save();
+    }
+  }
+
+  useEffect(() => {
+    if (steerDir === 0) return;
+    let rafId = 0;
+    let lastTime = performance.now();
+    const RATE_DEG_PER_SEC = 52;
+    const tick = (now: number) => {
+      const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
+      lastTime = now;
+      const cur = m.vessel.current;
+      if (
+        steerDirRef.current !== 0 &&
+        m.loaded &&
+        !m.paused &&
+        cur.status === "flying" &&
+        burning(cur) &&
+        !cur.chuteDeployed
+      ) {
+        cur.mode = "manual";
+        cur.pitch = wrapPitch(
+          cur.pitch + steerDirRef.current * RATE_DEG_PER_SEC * dt,
+        );
+      } else {
+        steerDirRef.current = 0;
+        steerPointerId.current = null;
+        setSteerDir(0);
+        return;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [steerDir, m.loaded, m.paused]);
 
   function handleChuteToggle() {
     if (!m.loaded || !flying || s.chuteRipped) return;
@@ -201,20 +269,31 @@ export default function App() {
           if (!e.repeat) primary();
           break;
         case "ArrowLeft":
-          if (canSteer) pitch(s.pitch - 1);
+        case "KeyA":
+          if (canSteer) pitch(s.pitch - 2);
           break;
         case "ArrowRight":
-          if (canSteer) pitch(s.pitch + 1);
+        case "KeyD":
+          if (canSteer) pitch(s.pitch + 2);
           break;
         case "ArrowUp":
+        case "KeyW":
           if (!ended) throttle(s.throttle + 0.05);
           break;
         case "ArrowDown":
+        case "KeyS":
           if (!ended) throttle(s.throttle - 0.05);
           break;
         case "KeyL":
           if (flying && s.hasLegs !== false)
-            m.change((f) => { toggleLegs(f); }, s.legsDeployed ? "Landing legs retracted." : "Landing legs deployed.");
+            m.change(
+              (f) => {
+                toggleLegs(f);
+              },
+              s.legsDeployed
+                ? "Landing legs retracted."
+                : "Landing legs deployed.",
+            );
           break;
         case "KeyC":
           handleChuteToggle();
@@ -278,12 +357,7 @@ export default function App() {
           ? "Booster empty. Tap Stage."
           : s.orbitEarned
             ? "Orbit reached. Open Map to coast at 5× or 20×."
-            : "Hold throttle for guided ascent.";
-
-  const flightMode = (mode: Mode) =>
-    m.change((f) => {
-      f.mode = mode;
-    });
+            : "Hold left or right screen edges while thrusting to pitch.";
 
   const pilotDisabled = !m.loaded || ended;
   const actionText = lowThrust
@@ -301,7 +375,7 @@ export default function App() {
       <span>{label}</span>
       <strong>
         {value}
-        <small>{unit}</small>
+        {unit && <small>{unit}</small>}
       </strong>
     </div>
   );
@@ -334,6 +408,47 @@ export default function App() {
         )}
         <div className="shade" aria-hidden="true" />
         <div className="hud">
+          {flying && (
+            <>
+              <button
+                type="button"
+                className={
+                  "steer-zone steer-left" +
+                  (steerDir === -1 ? " steering" : "") +
+                  (!canSteer ? " steer-locked" : "")
+                }
+                aria-label="Hold to pitch left"
+                disabled={!canSteer}
+                onPointerDown={(e) => startSteer(-1, e)}
+                onPointerUp={stopSteer}
+                onPointerCancel={stopSteer}
+                onLostPointerCapture={() => stopSteer()}
+              >
+                <span className="steer-pill">
+                  <ChevronLeft size={20} />
+                </span>
+              </button>
+              <button
+                type="button"
+                className={
+                  "steer-zone steer-right" +
+                  (steerDir === 1 ? " steering" : "") +
+                  (!canSteer ? " steer-locked" : "")
+                }
+                aria-label="Hold to pitch right"
+                disabled={!canSteer}
+                onPointerDown={(e) => startSteer(1, e)}
+                onPointerUp={stopSteer}
+                onPointerCancel={stopSteer}
+                onLostPointerCapture={() => stopSteer()}
+              >
+                <span className="steer-pill">
+                  <ChevronRight size={20} />
+                </span>
+              </button>
+            </>
+          )}
+
           <header className="topline">
             <div className="identity">
               <button
@@ -345,6 +460,19 @@ export default function App() {
                 <Landmark />
               </button>
               <span className="timer">T+ {clock(s.t)}</span>
+              {(!active || m.rate > 1) && (
+                <button
+                  className={
+                    "warp-toggle" + (m.rate > 1 ? " warp-active" : "")
+                  }
+                  title="Time warp"
+                  aria-label="Time warp"
+                  onClick={() => D("warp")}
+                >
+                  <FastForward size={14} />
+                  {m.rate}×
+                </button>
+              )}
             </div>
             <nav aria-label="Flight views and tools">
               <button
@@ -382,15 +510,21 @@ export default function App() {
                 Math.round(speed(s)).toLocaleString("en-US"),
                 "m/s",
               )}
-              {!active && (
+              {active ? (
+                instrument(
+                  s.chuteDeployed ? "CHUTE" : "PITCH",
+                  s.chuteDeployed ? "LOCK" : `${Math.round(s.pitch)}°`,
+                  "",
+                )
+              ) : (
                 <>
                   {instrument(
-                    "Ap",
+                    "AP",
                     pad ? "—" : distance(Math.max(0, o.ap)),
                     pad || !Number.isFinite(o.ap) ? "" : "km",
                   )}
                   {instrument(
-                    "Pe",
+                    "PE",
                     pad ? "—" : distance(o.pe),
                     pad ? "" : "km",
                   )}
@@ -399,8 +533,26 @@ export default function App() {
             </div>
           )}
 
-          {!pad && (
-            <div className="pilot-left">
+          <div className="hud-bottom">
+            <label className="thrust">
+              <span className="control-label">Thr</span>
+              <b>{Math.round(s.throttle * 100)}%</b>
+              <input
+                aria-label="Throttle"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={Math.round(s.throttle * 100)}
+                disabled={pilotDisabled}
+                style={
+                  { "--fill": s.throttle * 100 + "%" } as React.CSSProperties
+                }
+                onChange={(e) => throttle(+e.target.value / 100)}
+              />
+            </label>
+
+            <div className={"flight-actions" + (pad ? " actions-pad" : "")}>
               {flying && (s.hasLegs !== false || s.hasChute !== false) && (
                 <div className="landing-toggles">
                   {s.hasLegs !== false && (
@@ -418,7 +570,7 @@ export default function App() {
                         )
                       }
                     >
-                      <ArrowDownToLine size={15} />
+                      <ArrowDownToLine size={14} />
                       Legs
                     </button>
                   )}
@@ -438,157 +590,82 @@ export default function App() {
                       }
                       onClick={handleChuteToggle}
                     >
-                      <Wind size={15} />
+                      <Wind size={14} />
                       {s.chuteRipped ? "Ripped" : "Chute"}
                     </button>
                   )}
                 </div>
               )}
-              <label className="assist">
-                <Gauge size={15} />
-                <span>
-                  {
-                    {
-                      guide: "Guide",
-                      manual: "Manual",
-                      prograde: "Prograde",
-                      retrograde: "Retrograde",
-                    }[s.mode]
+
+              <div className="command-card">
+                <span
+                  role="status"
+                  className={
+                    "state" + (booster && flying && !fuelPct ? " alert" : "")
                   }
-                </span>
-                <select
-                  aria-label="Attitude"
-                  disabled={pilotDisabled || Boolean(s.chuteDeployed)}
-                  value={s.mode}
-                  onChange={(e) => flightMode(e.target.value as Mode)}
                 >
-                  <option value="guide">Ascent guide</option>
-                  <option value="manual">Manual pitch</option>
-                  <option value="prograde">Prograde hold</option>
-                  <option value="retrograde">Retrograde hold</option>
-                </select>
-              </label>
-              <label className={"pitch" + (!canSteer ? " pitch-locked" : "")}>
-                <span className="control-label">
-                  {s.chuteDeployed
-                    ? "Chute Locked"
-                    : !burning(s)
-                      ? "Ignite to Steer"
-                      : "Pitch"}{" "}
-                  <b>{Math.round(s.pitch)}°</b>
+                  <i />
+                  {flightStatus()}
                 </span>
-                <input
-                  className="pitch-slider"
-                  aria-label="Pitch angle"
-                  type="range"
-                  min="-180"
-                  max="180"
-                  step="1"
-                  value={Math.round(s.pitch)}
-                  disabled={!canSteer}
-                  onChange={(e) => pitch(+e.target.value)}
-                />
-              </label>
-            </div>
-          )}
 
-          <label className="thrust">
-            <span className="control-label">Thrust</span>
-            <b>{Math.round(s.throttle * 100)}%</b>
-            <input
-              aria-label="Throttle"
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value={Math.round(s.throttle * 100)}
-              disabled={pilotDisabled}
-              style={
-                { "--fill": s.throttle * 100 + "%" } as React.CSSProperties
-              }
-              onChange={(e) => throttle(+e.target.value / 100)}
-            />
-          </label>
+                {pad && launchQuote && (
+                  <div className="launch-costs" aria-label="Launch cost">
+                    <span>
+                      <Coins size={12} />
+                      {launchQuote.hardwareCost.toLocaleString("en-US")} C
+                    </span>
+                    <span>
+                      <Flame size={12} />
+                      {launchQuote.propellantCost.toLocaleString("en-US")} Prop
+                    </span>
+                  </div>
+                )}
 
-          <div className={"command" + (pad ? " command-pad" : "")}>
-            <span
-              role="status"
-              className={
-                "state" + (booster && flying && !fuelPct ? " alert" : "")
-              }
-            >
-              <i />
-              {flightStatus()}
-            </span>
+                <button
+                  className="primary"
+                  aria-label={primaryLabel()}
+                  disabled={
+                    !m.loaded || lowThrust || (flying && !booster && !fuelPct)
+                  }
+                  onClick={primary}
+                >
+                  {pad ? (
+                    <Rocket />
+                  ) : ended ? (
+                    <RotateCcw />
+                  ) : booster ? (
+                    <Layers2 />
+                  ) : (
+                    <Radio />
+                  )}
+                  {actionText}
+                </button>
 
-            {pad && launchQuote && (
-              <div className="launch-costs" aria-label="Launch cost">
-                <span>
-                  <Coins size={12} />
-                  {launchQuote.hardwareCost.toLocaleString("en-US")} C
-                </span>
-                <span>
-                  <Flame size={12} />
-                  {launchQuote.propellantCost.toLocaleString("en-US")} Prop
-                </span>
+                {pad && isRealContract && (
+                  <button
+                    className="sim-free-btn"
+                    aria-label="Simulate Free"
+                    disabled={!m.loaded || lowThrust}
+                    onClick={m.launchFreeSim}
+                  >
+                    Simulate Free · 0 Cost
+                  </button>
+                )}
+
+                {!pad && (
+                  <div className="fuel-bar-wrap">
+                    <div className="fuel-label">
+                      <span>S{s.stage + 1} FUEL</span>
+                      <b>{Math.ceil(fuelPct)}%</b>
+                    </div>
+                    <div className="fuel-track">
+                      <i style={{ width: fuelPct + "%" }} />
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-
-            <button
-              className="primary"
-              aria-label={primaryLabel()}
-              disabled={
-                !m.loaded || lowThrust || (flying && !booster && !fuelPct)
-              }
-              onClick={primary}
-            >
-              {pad ? (
-                <Rocket />
-              ) : ended ? (
-                <RotateCcw />
-              ) : booster ? (
-                <Layers2 />
-              ) : (
-                <Radio />
-              )}
-              {actionText}
-            </button>
-
-            {pad && isRealContract && (
-              <button
-                className="sim-free-btn"
-                aria-label="Simulate Free"
-                disabled={!m.loaded || lowThrust}
-                onClick={m.launchFreeSim}
-              >
-                Simulate Free · 0 Cost
-              </button>
-            )}
-
-            {!pad && (
-              <>
-                <div className="fuel-label">
-                  <span>S{s.stage + 1} FUEL</span>
-                  <b>{Math.ceil(fuelPct)}%</b>
-                </div>
-                <div className="fuel-track">
-                  <i style={{ width: fuelPct + "%" }} />
-                </div>
-              </>
-            )}
+            </div>
           </div>
-
-          {(!active || m.rate > 1) && (
-            <button
-              className="warp-toggle"
-              title="Time warp"
-              aria-label="Time warp"
-              onClick={() => D("warp")}
-            >
-              <FastForward />
-              {m.rate}×
-            </button>
-          )}
         </div>
 
         {m.notice && (
@@ -733,24 +810,31 @@ export default function App() {
           )}
           {dialog === "guide" && (
             <>
-              <h3>Your first orbit</h3>
+              <h3>Manual flight controls</h3>
               <ol>
                 <li>
-                  <b>Launch.</b> Leave Ascent guide selected and throttle at
-                  100%.
+                  <b>Launch.</b> Set throttle with the left slider and tap
+                  Launch.
                 </li>
                 <li>
-                  <b>Stage.</b> Tap Stage when the booster runs dry (~T+02:10).
+                  <b>Steer pitch.</b> Tap and hold the left or right side of the
+                  screen while thrusting to turn east into your gravity turn.
                 </li>
                 <li>
-                  <b>Reach orbit.</b> The guide cuts thrust once periapsis
-                  clears 30 km.
+                  <b>Stage & orbit.</b> Tap Stage when the booster runs dry,
+                  then burn horizontally near apoapsis until periapsis clears 30
+                  km.
+                </li>
+                <li>
+                  <b>Safe landing.</b> Slow below 200 m/s in atmosphere before
+                  deploying Chute, and extend Legs before touchdown.
                 </li>
               </ol>
               <h3>Keyboard</h3>
               <p>
                 <kbd>M</kbd> map · <kbd>P</kbd> pause · <kbd>Space</kbd> action
-                · <kbd>← →</kbd> pitch · <kbd>↑ ↓</kbd> throttle
+                · <kbd>← → / A D</kbd> pitch · <kbd>↑ ↓ / W S</kbd> throttle ·{" "}
+                <kbd>L</kbd> legs · <kbd>C</kbd> chute
               </p>
             </>
           )}

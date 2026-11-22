@@ -58,6 +58,12 @@ import type { useMission } from "./useMission";
 import { Dialog } from "./Dialog";
 import "./site.css";
 
+const BUILD_GROUPS: { title: string; kinds: Kind[] }[] = [
+  { title: "Resources & Storage", kinds: ["foundry", "refinery", "tanks"] },
+  { title: "Command & Launch", kinds: ["command", "pad", "office"] },
+  { title: "Engineering & Tech", kinds: ["vab", "tracking", "lab"] },
+];
+
 const glyph: Record<Kind, typeof Landmark> = {
   command: Landmark,
   pad: Rocket,
@@ -600,64 +606,71 @@ export function LaunchSite({
           )}
 
           {panel === "build" && (
-            <div className="facilities-list">
-              {FACILITY_KINDS.map((k) => {
-                const builtList = p.buildings.filter((b) => b.kind === k),
-                  built = builtList[0],
-                  builtNum = countBuilt(p, k),
-                  maxNum = maxBuildingCount(p, k),
-                  canBuildExtra = builtNum > 0 && builtNum < maxNum,
-                  Icon = glyph[k],
-                  check = canAffordUpgrade(p, k, 0),
-                  locked =
-                    !built &&
-                    !check.ok &&
-                    check.reason.includes("Mission Control");
-                return (
-                  <button
-                    key={k}
-                    aria-label={
-                      canBuildExtra
-                        ? `Build 2nd ${FACILITIES[k].name}`
-                        : built
-                          ? "Inspect " + FACILITIES[k].name
-                          : "Build " + FACILITIES[k].name
-                    }
-                    onClick={() => {
-                      if (canBuildExtra) {
-                        startPlace(k);
-                        return;
-                      }
-                      const pos = built
-                        ? { x: built.x, y: built.y }
-                        : FACILITIES[k].defaultPos;
-                      S(pos);
-                      setInspectLocked(built ? null : k);
-                      G(null);
-                      setMovingFrom(null);
-                      P(null);
-                    }}
-                  >
-                    <Icon />
-                    <span>
-                      <strong>
-                        {FACILITIES[k].name}
-                        {maxNum > 1 ? ` (${builtNum}/${maxNum})` : ""}
-                      </strong>
-                      <small>{facilityBenefit(k, built?.level ?? 1)}</small>
-                    </span>
-                    <b className={locked ? "locked-badge" : ""}>
-                      {canBuildExtra
-                        ? `+${extraBuildCost(k).credits} C`
-                        : built
-                          ? `Lv ${built.level}`
-                          : locked
-                            ? "MC Lv 2"
-                            : `${FACILITIES[k].costs[0].credits.toLocaleString("en-US")} C`}
-                    </b>
-                  </button>
-                );
-              })}
+            <div className="facilities-groups">
+              {BUILD_GROUPS.map((group) => (
+                <section className="build-group" key={group.title}>
+                  <h3 className="build-group-title">{group.title}</h3>
+                  <div className="facilities-list">
+                    {group.kinds.map((k) => {
+                      const builtList = p.buildings.filter((b) => b.kind === k),
+                        built = builtList[0],
+                        builtNum = countBuilt(p, k),
+                        maxNum = maxBuildingCount(p, k),
+                        canBuildExtra = builtNum > 0 && builtNum < maxNum,
+                        Icon = glyph[k],
+                        check = canAffordUpgrade(p, k, 0),
+                        locked =
+                          !built &&
+                          !check.ok &&
+                          check.reason.includes("Mission Control");
+                      return (
+                        <button
+                          key={k}
+                          aria-label={
+                            canBuildExtra
+                              ? `Build 2nd ${FACILITIES[k].name}`
+                              : built
+                                ? "Inspect " + FACILITIES[k].name
+                                : "Build " + FACILITIES[k].name
+                          }
+                          onClick={() => {
+                            if (canBuildExtra) {
+                              startPlace(k);
+                              return;
+                            }
+                            const pos = built
+                              ? { x: built.x, y: built.y }
+                              : FACILITIES[k].defaultPos;
+                            S(pos);
+                            setInspectLocked(built ? null : k);
+                            G(null);
+                            setMovingFrom(null);
+                            P(null);
+                          }}
+                        >
+                          <Icon />
+                          <span>
+                            <strong>
+                              {FACILITIES[k].name}
+                              {maxNum > 1 ? ` (${builtNum}/${maxNum})` : ""}
+                            </strong>
+                            <small>{facilityBenefit(k, built?.level ?? 1)}</small>
+                          </span>
+                          <b className={locked ? "locked-badge" : ""}>
+                            {canBuildExtra
+                              ? `+${extraBuildCost(k).credits} C`
+                              : built
+                                ? `Lv ${built.level}`
+                                : locked
+                                  ? "MC Lv 2"
+                                  : `${FACILITIES[k].costs[0].credits.toLocaleString("en-US")} C`}
+                          </b>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
 
