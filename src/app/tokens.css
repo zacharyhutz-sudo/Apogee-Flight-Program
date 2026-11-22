@@ -1,37 +1,42 @@
-@import "@fontsource/barlow/latin-500.css";
-@import "@fontsource/barlow/latin-600.css";
-@import "@fontsource/barlow/latin-700.css";
 @import "@fontsource/ibm-plex-mono/latin-500.css";
 
 :root {
   color-scheme: dark;
-  --font-ui: "Barlow", system-ui, -apple-system, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-ui: "Chakra Petch", system-ui, -apple-system, sans-serif;
+  --font-mono: "Space Mono", "IBM Plex Mono", ui-monospace, monospace;
   --mono: var(--font-mono);
 
-  /* Clean Retro-Aerospace Palette */
-  --bg-void: #0d1722;
-  --surface: #13222ee8;
-  --surface-solid: #172734;
-  --surface-raised: #1e3140;
-  --glass: var(--surface);
+  /* Handcrafted Retro-Indie Aerospace Palette (Solid Matte Hardware, Zero Glassmorphism) */
+  --bg-void: #0e151f;
+  --panel: #192431;
+  --panel-alt: #233142;
+  --panel-deep: #111923;
+  --surface: var(--panel);
+  --surface-solid: var(--panel);
+  --surface-raised: var(--panel-alt);
+  --glass: var(--panel);
 
-  --ink: #f2ede2;
-  --ink-muted: #a6bac0;
-  --amber: #f3a953;
-  --amber-bright: #ffd298;
-  --teal: #72d6c6;
+  --ink: #f6f1e3;
+  --ink-muted: #9eb2be;
+  --amber: #f28c28;
+  --amber-bright: #ffae52;
+  --amber-deep: #9c4f0d;
+  --teal: #4fd1a5;
+  --teal-deep: #217358;
   --mint: var(--teal);
-  --violet: #b6b0ff;
-  --coral: #f07c6b;
+  --violet: #a79cf5;
+  --coral: #e85d56;
+  --coral-deep: #8f2d28;
 
-  --line: #9eb9c242;
-  --line-strong: #9eb9c278;
+  --edge-dark: #090e14;
+  --edge-light: #ffffff1f;
+  --line: #36495e;
+  --line-strong: #4d6580;
 
-  --radius-sm: 10px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --shadow-panel: 0 8px 28px #050d157a;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --shadow-panel: 0 5px 0 #090e14cc;
 
   font-family: var(--font-ui);
   color: var(--ink);

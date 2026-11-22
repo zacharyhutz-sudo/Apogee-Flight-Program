@@ -481,6 +481,56 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
             .setVisible(spriteVisible);
         }
 
+        // 5b. Deployable Landing Legs & Parachute Canopy visuals
+        if (spriteVisible) {
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          const localPt = (lx: number, ly: number) => ({
+            x: cx + lx * cosA - ly * sinA,
+            y: cy + lx * sinA + ly * cosA,
+          });
+          if (s.legsDeployed) {
+            for (const side of [-1, 1] as const) {
+              const hip = localPt(side * 6 * shipScale, -8 * shipScale);
+              const foot = localPt(side * 16 * shipScale, 2 * shipScale);
+              const brace = localPt(side * 5 * shipScale, -2 * shipScale);
+              const padL = localPt(side * 13 * shipScale, 2 * shipScale);
+              const padR = localPt(side * 19 * shipScale, 2 * shipScale);
+              customGfx
+                .lineStyle(Math.max(1.5, 2.2 * shipScale), 0xe6e0d2, 1)
+                .lineBetween(hip.x, hip.y, foot.x, foot.y)
+                .lineStyle(Math.max(1, 1.4 * shipScale), 0x8ea3ac, 1)
+                .lineBetween(brace.x, brace.y, foot.x, foot.y)
+                .lineStyle(Math.max(2, 2.6 * shipScale), 0xf28c28, 1)
+                .lineBetween(padL.x, padL.y, padR.x, padR.y);
+            }
+          }
+          if (s.chuteDeployed && alt < AIR) {
+            const noseH = (upper ? 42 : 76) * shipScale;
+            const sway = Math.sin(s.t * 4.5) * 4 * shipScale;
+            const nose = localPt(0, -noseH);
+            const canopyY = -noseH - 46 * shipScale;
+            const leftRim = localPt(-24 * shipScale + sway, canopyY);
+            const rightRim = localPt(24 * shipScale + sway, canopyY);
+            const midL = localPt(-12 * shipScale + sway, canopyY - 12 * shipScale);
+            const apex = localPt(sway, canopyY - 16 * shipScale);
+            const midR = localPt(12 * shipScale + sway, canopyY - 12 * shipScale);
+            customGfx
+              .lineStyle(1, 0xd8d2c5, 0.8)
+              .lineBetween(nose.x, nose.y, leftRim.x, leftRim.y)
+              .lineBetween(nose.x, nose.y, rightRim.x, rightRim.y)
+              .lineBetween(nose.x, nose.y, midL.x, midL.y)
+              .lineBetween(nose.x, nose.y, midR.x, midR.y);
+            customGfx
+              .fillStyle(0xf28c28, 0.96)
+              .fillPoints([leftRim, midL, apex, midR, rightRim], true)
+              .fillStyle(0xf6f1e3, 0.96)
+              .fillPoints([midL, apex, midR, localPt(sway, canopyY)], true)
+              .lineStyle(1.4, 0x090e14, 0.9)
+              .strokePoints([leftRim, midL, apex, midR, rightRim], true);
+          }
+        }
+
         // 6. Exhaust plume anchored right at the engine bells (cx, cy) + pad liftoff smoke
         const flame = this.flame;
         flame.clear();

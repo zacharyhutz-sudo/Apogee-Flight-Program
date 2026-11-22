@@ -27,6 +27,7 @@ import {
   RotateCcw,
   Rocket,
   TriangleAlert,
+  Wind,
   Wrench,
   X,
 } from "lucide-react";
@@ -36,6 +37,8 @@ import {
   AIR,
   stagesOf,
   thrustToWeight,
+  toggleChute,
+  toggleLegs,
   canWarp,
   clamp,
   deltaV,
@@ -188,6 +191,14 @@ export default function App() {
           break;
         case "ArrowDown":
           if (!ended) throttle(s.throttle - 0.05);
+          break;
+        case "KeyL":
+          if (flying && s.hasLegs !== false)
+            m.change((f) => { toggleLegs(f); }, s.legsDeployed ? "Landing legs retracted." : "Landing legs deployed.");
+          break;
+        case "KeyC":
+          if (flying && s.hasChute !== false && m.alt < AIR)
+            m.change((f) => { toggleChute(f); }, s.chuteDeployed ? "Parachute cut." : "Parachute deployed.");
           break;
         default:
           return;
@@ -355,6 +366,49 @@ export default function App() {
 
           {!pad && (
             <div className="pilot-left">
+              {flying && (s.hasLegs !== false || s.hasChute !== false) && (
+                <div className="landing-toggles">
+                  {s.hasLegs !== false && (
+                    <button
+                      className={s.legsDeployed ? "active-gear" : ""}
+                      aria-label="Toggle landing legs"
+                      onClick={() =>
+                        m.change(
+                          (f) => {
+                            toggleLegs(f);
+                          },
+                          s.legsDeployed
+                            ? "Landing legs retracted."
+                            : "Landing legs deployed.",
+                        )
+                      }
+                    >
+                      <ArrowDownToLine size={15} />
+                      Legs
+                    </button>
+                  )}
+                  {s.hasChute !== false && (
+                    <button
+                      className={s.chuteDeployed ? "active-gear" : ""}
+                      aria-label="Toggle parachute"
+                      disabled={!s.chuteDeployed && m.alt >= AIR}
+                      onClick={() =>
+                        m.change(
+                          (f) => {
+                            toggleChute(f);
+                          },
+                          s.chuteDeployed
+                            ? "Parachute cut."
+                            : "Parachute deployed.",
+                        )
+                      }
+                    >
+                      <Wind size={15} />
+                      Chute
+                    </button>
+                  )}
+                </div>
+              )}
               <label className="assist">
                 <Gauge size={15} />
                 <span>

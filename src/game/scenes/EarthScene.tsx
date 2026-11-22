@@ -171,6 +171,18 @@ export function EarthScene(props: Props) {
       ghost!: Phaser.GameObjects.Image;
       buildings!: Phaser.GameObjects.Container;
       fx!: Phaser.GameObjects.Container;
+      crewGfx!: Phaser.GameObjects.Graphics;
+      crew: Array<{
+        x: number;
+        y: number;
+        tx: number;
+        ty: number;
+        speed: number;
+        pause: number;
+        suit: number;
+        helmet: boolean;
+        phase: number;
+      }> = [];
       lastBurstSeq = 0;
       signature = "";
       ready = false;
@@ -245,6 +257,27 @@ export function EarthScene(props: Props) {
         this.board.add(this.overlay);
         this.fx = this.add.container(0, 0);
         this.board.add(this.fx);
+        this.crewGfx = this.add.graphics();
+        this.board.add(this.crewGfx);
+        const starts: Array<[number, number, number, boolean]> = [
+          [1.2, 4.0, 0xf6f1e3, true],
+          [3.1, 4.0, 0x4fd1a5, false],
+          [4.8, 3.8, 0xf6f1e3, true],
+          [2.4, 3.6, 0xf28c28, false],
+          [3.8, 4.2, 0x6ea6c9, false],
+          [5.6, 4.0, 0xf6f1e3, true],
+        ];
+        this.crew = starts.map(([x, y, suit, helmet], i) => ({
+          x,
+          y,
+          tx: x,
+          ty: y,
+          speed: 0.42 + (i % 3) * 0.1,
+          pause: 0.4 + i * 0.5,
+          suit,
+          helmet,
+          phase: i * 1.3,
+        }));
         this.ghost = this.add
           .image(0, 0, "terrain", 8)
           .setOrigin(0.5, 80 / 104)
@@ -354,6 +387,49 @@ export function EarthScene(props: Props) {
             ease: "Cubic.easeOut",
             onComplete: () => txt.destroy(),
           });
+        }
+
+        // Animated pixel base crew strolling along roads and between facilities
+        this.crewGfx.clear();
+        const dtCrew = 1 / 30;
+        for (const c of this.crew) {
+          if (c.pause > 0) {
+            c.pause -= dtCrew;
+            if (c.pause <= 0) {
+              const blds = p.program.buildings;
+              if (blds.length && Math.random() < 0.55) {
+                const targetB = blds[Math.floor(Math.random() * blds.length)];
+                c.tx = Phaser.Math.Clamp(targetB.x + (Math.random() - 0.5) * 0.7, 0.8, 6.4);
+                c.ty = Phaser.Math.Clamp(targetB.y + 0.45 + (Math.random() - 0.5) * 0.35, 1.2, 5.6);
+              } else {
+                c.tx = 1.0 + Math.random() * 5.2;
+                c.ty = 3.85 + (Math.random() - 0.5) * 0.3;
+              }
+            }
+          } else {
+            const dx = c.tx - c.x;
+            const dy = c.ty - c.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < 0.06) {
+              c.pause = 1.4 + Math.random() * 2.8;
+            } else {
+              const stepDist = Math.min(dist, c.speed * dtCrew);
+              c.x += (dx / dist) * stepDist;
+              c.y += (dy / dist) * stepDist;
+              c.phase += dtCrew * 11;
+            }
+          }
+          const pt = project(c.x, c.y);
+          const bobPx = c.pause > 0 ? 0 : Math.abs(Math.sin(c.phase)) * 1.4;
+          const sx = Math.round(pt.x);
+          const sy = Math.round(pt.y - bobPx);
+          this.crewGfx.fillStyle(0x090e14, 0.45).fillEllipse(sx, Math.round(pt.y) + 1, 5, 2.5);
+          this.crewGfx.fillStyle(0x1b2633, 1).fillRect(sx - 1, sy - 2, 1, 2).fillRect(sx + 1, sy - 2, 1, 2);
+          this.crewGfx.fillStyle(c.suit, 1).fillRect(sx - 1, sy - 5, 3, 3);
+          this.crewGfx.fillStyle(c.helmet ? 0xf6f1e3 : 0xe5b895, 1).fillRect(sx - 1, sy - 7, 3, 2);
+          if (c.helmet) {
+            this.crewGfx.fillStyle(0xf28c28, 1).fillRect(sx, sy - 7, 2, 1);
+          }
         }
 
         // Overlays: Cryo Tank fill gauge + Clash-of-Clans bobbing collect bubbles

@@ -75,6 +75,10 @@ export interface Flight {
   status: Status;
   orbitEarned: boolean;
   maxAlt: number;
+  hasLegs?: boolean;
+  hasChute?: boolean;
+  legsDeployed?: boolean;
+  chuteDeployed?: boolean;
   /** Real simulated detached stages falling under gravity & drag. */
   debris?: Debris[];
   /** Optional custom stage specs constructed from a Rocket Workshop blueprint. */
@@ -114,11 +118,19 @@ export function initial(
     status: "pad",
     orbitEarned: false,
     maxAlt: 0,
+    hasLegs: true,
+    hasChute: true,
+    legsDeployed: false,
+    chuteDeployed: false,
   };
   if (customStages) f.customStages = customStages;
   if (customPayload !== undefined) f.customPayload = customPayload;
   if (vehicleName) f.vehicleName = vehicleName;
-  if (blueprintParts) f.blueprintParts = blueprintParts.map((p) => ({ partId: p.partId, stage: p.stage, symmetry: p.symmetry }));
+  if (blueprintParts) {
+    f.blueprintParts = blueprintParts.map((p) => ({ partId: p.partId, stage: p.stage, symmetry: p.symmetry }));
+    f.hasLegs = blueprintParts.some((p) => p.partId === "legs_mk1");
+    f.hasChute = blueprintParts.some((p) => p.partId === "chute_mk1");
+  }
   return f;
 }
 
@@ -220,6 +232,21 @@ export function stage(s: Flight) {
   return true;
 }
 
+export function toggleLegs(s: Flight) {
+  if (!s.hasLegs && s.hasLegs !== undefined) return false;
+  s.legsDeployed = !s.legsDeployed;
+  return true;
+}
+
+export function toggleChute(s: Flight) {
+  if (!s.hasChute && s.hasChute !== undefined) return false;
+  if (s.status !== "flying") return false;
+  const alt = radius(s) - R;
+  if (!s.chuteDeployed && alt >= AIR) return false;
+  s.chuteDeployed = !s.chuteDeployed;
+  return true;
+}
+
 export function density(alt: number) {
   return alt >= AIR ? 0 : 1.225 * Math.exp(-Math.max(0, alt) / SCALE_HEIGHT);
 }
@@ -314,7 +341,8 @@ export function step(s: Flight, dt = STEP) {
     used > 0 ? (used * engine.isp * G0) / (dt * midMass) : 0;
   const theta = (s.pitch * Math.PI) / 180,
     grav = MU / (r * r);
-  const drag = (0.5 * density(alt) * 0.32 * engine.area * v) / midMass;
+  const chuteArea = s.chuteDeployed && alt < AIR ? 145 : 0;
+  const drag = (0.5 * density(alt) * (0.32 * engine.area + 1.35 * chuteArea) * v) / midMass;
   const ax =
     (nx * Math.cos(theta) - ny * Math.sin(theta)) * thrustAcc -
     nx * grav -
@@ -332,8 +360,11 @@ export function step(s: Flight, dt = STEP) {
   const nextR = radius(s);
   s.maxAlt = Math.max(s.maxAlt, nextR - R);
   if (nextR <= R) {
+    const maxVr = s.legsDeployed ? 13 : 5.5;
+    const maxVt = s.legsDeployed ? 6.5 : 3;
+    const maxTilt = s.legsDeployed ? 24 : 15;
     s.status =
-      Math.abs(vr) < 5 && Math.abs(vt) < 3 && Math.abs(s.pitch) < 15
+      Math.abs(vr) < maxVr && Math.abs(vt) < maxVt && Math.abs(s.pitch) < maxTilt
         ? "landed"
         : "lost";
     s.x *= R / nextR;
@@ -341,6 +372,7 @@ export function step(s: Flight, dt = STEP) {
     s.vx = 0;
     s.vy = 0;
     s.throttle = 0;
+    s.chuteDeployed = false;
   }
   if (!s.orbitEarned && stable(s)) s.orbitEarned = true;
   stepDebris(s, dt);
