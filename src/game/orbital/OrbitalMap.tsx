@@ -3,9 +3,9 @@ import {
   AIR,
   R,
   clamp,
+  headingVector,
   orbit,
   radius,
-  speed,
   type Flight,
 } from "../../sim/flight";
 import { Plus, Minus, LocateFixed, Globe, Lock, Radar } from "lucide-react";
@@ -250,7 +250,7 @@ export function OrbitalMap({
           <path
             d="M0 -5 L3.4 3 L0 2 L-3.4 3Z"
             fill="#ffc287"
-            transform={`rotate(${speed(s) > 0.5 ? (Math.atan2(s.vy, s.vx) * 180) / Math.PI : 0})`}
+            transform={`rotate(${((headingVector(s).angle * 180) / Math.PI).toFixed(2)})`}
           />
         </g>
       </svg>

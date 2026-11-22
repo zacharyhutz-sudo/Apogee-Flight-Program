@@ -1022,7 +1022,7 @@ export function prepareBlueprintFlight(
   p.rewarded = false;
   p.inclination = 0;
   p.leoPassStartSec = null;
-  const flight = initial(instance.stages, instance.payloadDryKg, instance.name);
+  const flight = initial(instance.stages, instance.payloadDryKg, instance.name, bp.parts);
   return {
     flight,
     error: "",

@@ -41,6 +41,12 @@ const DEFAULT_PAYLOAD = 1200;
 export type Mode = "manual" | "guide" | "prograde" | "retrograde";
 export type Status = "pad" | "flying" | "landed" | "lost";
 
+export interface FlightVisualPart {
+  partId: string;
+  stage: number;
+  symmetry: 1 | 2;
+}
+
 export interface Debris {
   x: number;
   y: number;
@@ -51,6 +57,7 @@ export interface Debris {
   mass: number;
   area: number;
   age: number;
+  parts?: FlightVisualPart[];
 }
 
 export interface Flight {
@@ -74,6 +81,7 @@ export interface Flight {
   customStages?: [StageSpec, StageSpec];
   customPayload?: number;
   vehicleName?: string;
+  blueprintParts?: FlightVisualPart[];
 }
 
 export function stagesOf(s: Flight): readonly [StageSpec, StageSpec] {
@@ -88,6 +96,7 @@ export function initial(
   customStages?: [StageSpec, StageSpec],
   customPayload?: number,
   vehicleName?: string,
+  blueprintParts?: FlightVisualPart[],
 ): Flight {
   const st = customStages ?? STAGES;
   const f: Flight = {
@@ -109,6 +118,7 @@ export function initial(
   if (customStages) f.customStages = customStages;
   if (customPayload !== undefined) f.customPayload = customPayload;
   if (vehicleName) f.vehicleName = vehicleName;
+  if (blueprintParts) f.blueprintParts = blueprintParts.map((p) => ({ partId: p.partId, stage: p.stage, symmetry: p.symmetry }));
   return f;
 }
 
@@ -202,6 +212,7 @@ export function stage(s: Flight) {
     mass: boosterMass,
     area: st[0].area,
     age: 0,
+    parts: s.blueprintParts?.filter((p) => p.stage === 0),
   };
   s.debris = [...(s.debris ?? []), piece].slice(-4);
   s.stage = 1;

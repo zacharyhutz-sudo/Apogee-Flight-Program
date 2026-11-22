@@ -8,17 +8,185 @@ import {
   headingVector,
   radius,
   type Flight,
+  type FlightVisualPart,
 } from "../../sim/flight";
+import { PARTS, type PartId } from "../../program/workshop";
+
+interface RenderedPart {
+  def: (typeof PARTS)[PartId];
+  symmetry: 1 | 2;
+}
+
+function resolveParts(list: FlightVisualPart[] | undefined, minStage: number) {
+  if (!list || !list.length) return null;
+  const active = list
+    .filter((p) => p.stage >= minStage && Object.hasOwn(PARTS, p.partId))
+    .map((p) => ({
+      def: PARTS[p.partId as PartId],
+      symmetry: p.symmetry,
+    }));
+  return active.length ? active : null;
+}
+
+/** Draws a custom VAB rocket or detached booster stack anchored so its bottom sits at local y = 0. */
+function drawCustomStack(
+  g: Phaser.GameObjects.Graphics,
+  parts: RenderedPart[],
+  cx: number,
+  cy: number,
+  angle: number,
+  pxPerMeter: number,
+) {
+  const center = parts.filter((p) => !(p.def.symmetric && p.symmetry === 2));
+  const radial = parts.filter((p) => p.def.symmetric && p.symmetry === 2);
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const toScreen = (lx: number, ly: number) => ({
+    x: cx + lx * cos - ly * sin,
+    y: cy + lx * sin + ly * cos,
+  });
+
+  const fillPoly = (
+    pts: Array<[number, number]>,
+    color: number,
+    stroke?: number,
+  ) => {
+    const world = pts.map(([lx, ly]) => toScreen(lx, ly));
+    g.fillStyle(color, 1).fillPoints(world, true);
+    if (stroke !== undefined) {
+      g.lineStyle(1, stroke, 0.9).strokePoints(world, true);
+    }
+  };
+
+  // Stack bottom-to-top from local y = 0 upward (negative local y is nose direction)
+  let totalH = 0;
+  for (const p of center) totalH += Math.max(4, p.def.heightM * pxPerMeter);
+
+  let yTop = -totalH;
+  let coreHalfW = 5 * pxPerMeter * 0.25;
+
+  for (const { def } of center) {
+    const h = Math.max(4, def.heightM * pxPerMeter);
+    const w = Math.max(6, def.widthM * pxPerMeter * 1.15);
+    const hw = w / 2;
+    coreHalfW = Math.max(coreHalfW, hw);
+    const yBot = yTop + h;
+
+    if (def.category === "pod") {
+      fillPoly(
+        [
+          [0, yTop],
+          [hw, yBot],
+          [-hw, yBot],
+        ],
+        0xe8e2d5,
+        0x7f959c,
+      );
+      // Retro capsule window band
+      fillPoly(
+        [
+          [-hw * 0.35, yTop + h * 0.52],
+          [hw * 0.35, yTop + h * 0.52],
+          [hw * 0.45, yTop + h * 0.72],
+          [-hw * 0.45, yTop + h * 0.72],
+        ],
+        0x223847,
+      );
+    } else if (def.category === "engine") {
+      fillPoly(
+        [
+          [-hw * 0.45, yTop],
+          [hw * 0.45, yTop],
+          [hw * 0.85, yBot],
+          [-hw * 0.85, yBot],
+        ],
+        0x495b69,
+        0x8ea3ac,
+      );
+    } else if (def.category === "stage") {
+      fillPoly(
+        [
+          [-hw, yTop],
+          [hw, yTop],
+          [hw, yBot],
+          [-hw, yBot],
+        ],
+        0xd98d4c,
+        0x6e4724,
+      );
+    } else if (def.category === "utility") {
+      fillPoly(
+        [
+          [-hw, yTop],
+          [hw, yTop],
+          [hw, yBot],
+          [-hw, yBot],
+        ],
+        0x7ea8ab,
+        0x3e5c63,
+      );
+    } else {
+      // Cryo tank with retro-aerospace amber roll stripe
+      fillPoly(
+        [
+          [-hw, yTop],
+          [hw, yTop],
+          [hw, yBot],
+          [-hw, yBot],
+        ],
+        0xd5dcd7,
+        0x7e9499,
+      );
+      fillPoly(
+        [
+          [-hw, yTop + h * 0.44],
+          [hw, yTop + h * 0.44],
+          [hw, yTop + h * 0.58],
+          [-hw, yTop + h * 0.58],
+        ],
+        0xf3a953,
+      );
+    }
+    yTop = yBot;
+  }
+
+  // Draw 2x mirror radial boosters / legs symmetrically on left & right sides
+  for (const { def } of radial) {
+    const h = Math.max(6, def.heightM * pxPerMeter);
+    const w = Math.max(4, def.widthM * pxPerMeter * 1.15);
+    const yBot = 0;
+    const yTopR = -h;
+    for (const side of [-1, 1] as const) {
+      const xIn = side * (coreHalfW + 1);
+      const xOut = side * (coreHalfW + 1 + w);
+      const xMin = Math.min(xIn, xOut);
+      const xMax = Math.max(xIn, xOut);
+      fillPoly(
+        [
+          [(xMin + xMax) / 2, yTopR - w * 0.55],
+          [xMax, yTopR],
+          [xMax, yBot],
+          [xMin, yBot],
+          [xMin, yTopR],
+        ],
+        def.category === "utility" ? 0x8ea3ac : 0xcbd4cf,
+        0x6f858d,
+      );
+    }
+  }
+
+  return totalH;
+}
 
 export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const parent = host.current!;
-    // Smooth zoom factor: 1.0 = close-up rocket view (~1.45 px/m), down to 0.00045 = whole planet view
     let zoom = 1;
     const pointers = new Map<number, { x: number; y: number }>();
     let lastSpan = 0;
+    let lastTapAt = 0;
 
     function zoomBy(factor: number) {
       zoom = clamp(zoom * factor, 0.00045, 2.2);
@@ -32,6 +200,16 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
     function onPointerDown(e: PointerEvent) {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       lastSpan = 0;
+      // Double-tap resets zoom smoothly back to close-up rocket view
+      if (pointers.size === 1) {
+        const now = performance.now();
+        if (now - lastTapAt < 280) {
+          zoom = 1;
+          lastTapAt = 0;
+        } else {
+          lastTapAt = now;
+        }
+      }
     }
 
     function onPointerMove(e: PointerEvent) {
@@ -50,7 +228,6 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
       lastSpan = 0;
     }
 
-    // Deterministic procedural starfield
     const stars = Array.from({ length: 90 }, (_, i) => ({
       u: ((i * 73 + 19) % 1000) / 1000,
       v: ((i * 197 + 41) % 1000) / 1000,
@@ -63,6 +240,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
       world!: Phaser.GameObjects.Graphics;
       tower!: Phaser.GameObjects.Image;
       debrisSprites: Phaser.GameObjects.Image[] = [];
+      customGfx!: Phaser.GameObjects.Graphics;
       flame!: Phaser.GameObjects.Graphics;
       ship!: Phaser.GameObjects.Image;
       marker!: Phaser.GameObjects.Graphics;
@@ -83,11 +261,14 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           const d = this.add
             .image(0, 0, "vehicle")
             .setCrop(0, 39, 28, 37)
+            .setOrigin(0.5, 1)
             .setVisible(false);
           this.debrisSprites.push(d);
         }
         this.flame = this.add.graphics();
-        this.ship = this.add.image(0, 0, "vehicle");
+        this.customGfx = this.add.graphics();
+        // Anchor ship sprite at its bottom center (engine bells) so alt = 0 sits flush on the pad!
+        this.ship = this.add.image(0, 0, "vehicle").setOrigin(0.5, 1);
         this.marker = this.add.graphics();
       }
 
@@ -99,10 +280,10 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         const alt = Math.max(0, r - R);
 
         // World-fixed north-up inertial camera centered on the rocket.
-        // Screen X = +y (East), Screen Y = -x (North is up, South Pole puts Earth ABOVE rocket!)
+        // Anchor slightly below center on the pad so the full rocket + tower frame cleanly above controls.
         const cx = Math.round(w * 0.5);
-        const cy = Math.round(h * 0.5);
-        const basePpm = Math.min(w, h) / 245;
+        const cy = Math.round(h * (s.status === "pad" ? 0.62 : 0.52));
+        const basePpm = Math.min(w, h) / 215;
         const ppm = basePpm * zoom;
 
         const worldToScreen = (wx: number, wy: number) => ({
@@ -110,7 +291,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           y: cy - (wx - s.x) * ppm,
         });
 
-        // 1. Sky / Space background gradient based on altitude (30 km SFS atmosphere)
+        // 1. Sky / Space background based on 30 km SFS atmosphere
         const atmoFrac = clamp(1 - alt / AIR, 0, 1);
         const bg = this.bg;
         bg.clear();
@@ -120,7 +301,6 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         const skyColor = (skyR << 16) | (skyG << 8) | skyB;
         bg.fillStyle(skyColor, 1).fillRect(0, 0, w, h);
 
-        // Stars fade in smoothly as atmosphere thins
         const starAlpha = clamp(1 - atmoFrac * 1.15, 0, 1);
         if (starAlpha > 0.02) {
           for (const st of stars) {
@@ -132,7 +312,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           }
         }
 
-        // 2. Physical curved Earth + 30 km atmosphere halo (accurate at ALL zooms!)
+        // 2. Physical curved Earth + 30 km atmosphere halo
         const g = this.world;
         g.clear();
 
@@ -141,7 +321,6 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         const earthCenter = worldToScreen(0, 0);
 
         if (planetScreenR < 2600) {
-          // Medium-to-far zoom: draw full circular planet + atmosphere glow directly
           g.fillStyle(0x4b87a6, 0.24).fillCircle(
             earthCenter.x,
             earthCenter.y,
@@ -157,20 +336,24 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
             earthCenter.y,
             planetScreenR,
           );
-          // Surface biosphere rim + ocean/continent accents
-          g.lineStyle(Math.max(1.5, Math.min(5, planetScreenR * 0.018)), 0x5c8b76, 1).strokeCircle(
-            earthCenter.x,
-            earthCenter.y,
-            planetScreenR,
-          );
-          // North-pole launch complex beacon on the physical surface
+          g.lineStyle(
+            Math.max(1.5, Math.min(5, planetScreenR * 0.018)),
+            0x5c8b76,
+            1,
+          ).strokeCircle(earthCenter.x, earthCenter.y, planetScreenR);
           const padPt = worldToScreen(R, 0);
-          g.fillStyle(0xf3a953, 0.9).fillCircle(padPt.x, padPt.y, Math.max(2, Math.min(4, 1800 * ppm)));
+          g.fillStyle(0xf3a953, 0.9).fillCircle(
+            padPt.x,
+            padPt.y,
+            Math.max(2, Math.min(4, 1800 * ppm)),
+          );
         } else {
-          // Close-up zoom: sample the true curved horizon arc around the rocket's radial angle
-          // (avoids Canvas floating-point jitter when radius is 100,000+ px)
           const centerAngle = Math.atan2(s.y, s.x);
-          const halfSpan = clamp((Math.max(w, h) * 1.1) / planetScreenR, 0.0005, Math.PI * 0.45);
+          const halfSpan = clamp(
+            (Math.max(w, h) * 1.1) / planetScreenR,
+            0.0005,
+            Math.PI * 0.45,
+          );
           const steps = 48;
 
           const drawArcBand = (
@@ -182,27 +365,27 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
             const pts: Array<{ x: number; y: number }> = [];
             for (let i = 0; i <= steps; i++) {
               const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
-              pts.push(worldToScreen(outerR * Math.cos(a), outerR * Math.sin(a)));
+              pts.push(
+                worldToScreen(outerR * Math.cos(a), outerR * Math.sin(a)),
+              );
             }
             for (let i = steps; i >= 0; i--) {
               const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
-              pts.push(worldToScreen(innerR * Math.cos(a), innerR * Math.sin(a)));
+              pts.push(
+                worldToScreen(innerR * Math.cos(a), innerR * Math.sin(a)),
+              );
             }
             g.fillStyle(color, alpha).fillPoints(pts, true);
           };
 
-          // Thin upper atmosphere glow band
           if (alt < AIR * 1.8) {
             drawArcBand(R + AIR, R, 0x4b87a6, 0.22 * (0.4 + 0.6 * atmoFrac));
           }
-          // Deep planet body below surface
           const depth = Math.min(R * 0.6, (Math.max(w, h) * 1.4) / ppm);
           drawArcBand(R, Math.max(0, R - depth), 0x1d3544, 1);
-          // Green coastal terrain crust band (~45 m thick at close range)
           const crust = Math.max(12, 8 / ppm);
           drawArcBand(R, Math.max(0, R - crust), 0x4f7865, 1);
 
-          // Crisp horizon rim line
           const rimPts: Array<{ x: number; y: number }> = [];
           for (let i = 0; i <= steps; i++) {
             const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
@@ -211,7 +394,8 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           g.lineStyle(1.5, 0x89b39d, 0.95).strokePoints(rimPts, false);
         }
 
-        // 3. Physical Launchpad slab & gantry tower anchored at North Pole (x = R, y = 0)
+        // 3. Launchpad slab & gantry tower flush with surface at North Pole (R, 0)
+        // Because rocket origin is bottom-center (0.5, 1) at (s.x, s.y), at alt=0 its bells rest right on padScreen.y!
         const padScreen = worldToScreen(R, 0);
         const padVisible =
           ppm > 0.08 &&
@@ -220,32 +404,44 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           padScreen.y > -200 &&
           padScreen.y < h + 200;
 
+        const shipScale = clamp(ppm / 1.35, 0.16, 2.2);
         if (padVisible) {
-          const padW = 72 * ppm;
-          const padH = 5 * ppm;
-          g.fillStyle(0x2a3845, 1).fillRect(
+          const padW = 84 * shipScale;
+          const padH = 6 * shipScale;
+          g.fillStyle(0x283643, 1).fillRect(
             padScreen.x - padW / 2,
-            padScreen.y - 1,
+            padScreen.y,
             padW,
             Math.max(3, padH),
           );
-          g.fillStyle(0xb5b09f, 1).fillRect(
+          g.fillStyle(0xb8b2a1, 1).fillRect(
             padScreen.x - padW / 2 - 2,
-            padScreen.y - 2,
+            padScreen.y - 1,
             padW + 4,
-            Math.max(2, 2 * ppm),
+            Math.max(2, 2 * shipScale),
           );
+          for (let i = -3; i <= 3; i++) {
+            g.fillStyle(0xd99357, 1).fillRect(
+              padScreen.x + i * 11 * shipScale - 2,
+              padScreen.y,
+              4 * shipScale,
+              1.5,
+            );
+          }
+          // Tower stands cleanly on the left side of the pad with umbilical arms aligned to the hull
           this.tower
             .setVisible(true)
-            .setPosition(padScreen.x - 4 * ppm, padScreen.y)
-            .setScale(clamp(ppm / 1.45, 0.08, 2.5));
+            .setPosition(padScreen.x + 5 * shipScale, padScreen.y)
+            .setScale(shipScale);
         } else {
           this.tower.setVisible(false);
         }
 
-        // 4. Real simulated detached stages (falling under gravity + drag + tumble)
+        // 4. Custom VAB rocket & real simulated detached stages
+        const customGfx = this.customGfx;
+        customGfx.clear();
+
         const debrisList = s.debris ?? [];
-        const shipScale = clamp(ppm / 1.45, 0.16, 2.2);
         for (let i = 0; i < this.debrisSprites.length; i++) {
           const spr = this.debrisSprites[i];
           const d = debrisList[i];
@@ -254,32 +450,43 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
             continue;
           }
           const pt = worldToScreen(d.x, d.y);
-          spr
-            .setVisible(true)
-            .setPosition(pt.x, pt.y)
-            .setRotation(d.angle)
-            .setScale(shipScale);
+          const customDebris = resolveParts(d.parts, 0);
+          if (customDebris) {
+            spr.setVisible(false);
+            drawCustomStack(customGfx, customDebris, pt.x, pt.y, d.angle, ppm * 2.1);
+          } else {
+            spr
+              .setVisible(true)
+              .setPosition(pt.x, pt.y)
+              .setRotation(d.angle)
+              .setScale(shipScale);
+          }
         }
 
-        // 5. Rocket sprite in exact world-space north-up orientation
+        // 5. Active Rocket (Custom VAB procedural render OR Pioneer pixel sprite), bottom-anchored at (cx, cy)
         const upper = s.stage === 1;
         const { angle } = headingVector(s);
         const spriteVisible = s.status !== "lost" && ppm >= 0.06;
-        const shipH = (upper ? 42 : 76) * shipScale;
+        const customParts = resolveParts(s.blueprintParts, s.stage);
 
-        this.ship
-          .setTexture(upper ? "upper" : "vehicle")
-          .setPosition(cx, cy)
-          .setRotation(angle)
-          .setScale(shipScale)
-          .setVisible(spriteVisible);
+        if (customParts && spriteVisible) {
+          this.ship.setVisible(false);
+          drawCustomStack(customGfx, customParts, cx, cy, angle, ppm * 2.1);
+        } else {
+          this.ship
+            .setTexture(upper ? "upper" : "vehicle")
+            .setPosition(cx, cy)
+            .setRotation(angle)
+            .setScale(shipScale)
+            .setVisible(spriteVisible);
+        }
 
-        // Exhaust plume along exact world-space tail vector
+        // 6. Exhaust plume anchored right at the engine bells (cx, cy) + pad liftoff smoke
         const flame = this.flame;
         flame.clear();
         if (burning(s) && spriteVisible) {
-          const fx = cx - Math.sin(angle) * (shipH / 2 - 2 * shipScale);
-          const fy = cy + Math.cos(angle) * (shipH / 2 - 2 * shipScale);
+          const fx = cx;
+          const fy = cy;
           const wave = Math.sin(s.t * 44) * 3 * shipScale;
           for (const [width, length, color] of [
             [6 * shipScale, 24 * shipScale + wave, 0xd86c45],
@@ -298,9 +505,23 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
               fy + Math.cos(angle) * len,
             );
           }
+          // Pad exhaust billowing smoke near liftoff
+          if (alt < 120 && padVisible) {
+            for (let i = 0; i < 16; i++) {
+              const k = (s.t * 1.6 + i * 0.37) % 1;
+              const dir = i % 2 ? 1 : -1;
+              flame
+                .fillStyle(i % 3 ? 0xc8c2b6 : 0x7f8b92, (1 - k) * 0.75)
+                .fillCircle(
+                  padScreen.x + dir * k * 56 * shipScale,
+                  padScreen.y - (2 + k * 9) * shipScale,
+                  (3 + k * 6) * shipScale,
+                );
+            }
+          }
         }
 
-        // 6. Far-zoom spacecraft reticle so you never lose sight of your ship when viewing whole Earth
+        // 7. Far-zoom spacecraft reticle so you never lose sight of your ship when viewing whole Earth
         const m = this.marker;
         m.clear();
         if (s.status !== "lost" && ppm < 0.08) {
