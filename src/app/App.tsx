@@ -41,6 +41,7 @@ import {
   thrustToWeight,
   toggleChute,
   toggleLegs,
+  canChuteWarp,
   canWarp,
   clamp,
   deltaV,
@@ -460,14 +461,28 @@ export default function App() {
                 <Landmark />
               </button>
               <span className="timer">T+ {clock(s.t)}</span>
-              {(!active || m.rate > 1) && (
+              {(!active || m.rate > 1 || canChuteWarp(s)) && (
                 <button
                   className={
                     "warp-toggle" + (m.rate > 1 ? " warp-active" : "")
                   }
-                  title="Time warp"
-                  aria-label="Time warp"
-                  onClick={() => D("warp")}
+                  title={
+                    canChuteWarp(s) && active
+                      ? "Toggle 3× parachute warp"
+                      : "Time warp"
+                  }
+                  aria-label={
+                    canChuteWarp(s) && active
+                      ? "Toggle 3× parachute warp"
+                      : "Time warp"
+                  }
+                  onClick={() => {
+                    if (canChuteWarp(s) && active) {
+                      m.warp(m.rate === 3 ? 1 : 3);
+                    } else {
+                      D("warp");
+                    }
+                  }}
                 >
                   <FastForward size={14} />
                   {m.rate}×
@@ -786,11 +801,16 @@ export default function App() {
           {dialog === "warp" && (
             <>
               <div className="rates">
-                {[1, 5, 20].map((n) => (
+                {(canChuteWarp(s) ? [1, 3] : [1, 5, 20]).map((n) => (
                   <button
                     key={n}
                     aria-pressed={n === m.rate}
-                    disabled={!m.loaded || (n > 1 && (!canWarp(s) || m.paused))}
+                    disabled={
+                      !m.loaded ||
+                      (n > 1 &&
+                        (m.paused ||
+                          (n === 3 ? !canChuteWarp(s) : !canWarp(s))))
+                    }
                     onClick={() => {
                       m.warp(n);
                       D("");
@@ -800,10 +820,10 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              {(!canWarp(s) || m.paused) && (
+              {(!canWarp(s) && !canChuteWarp(s) || m.paused) && (
                 <p>
-                  Warp is available while coasting above 30.5 km with flight
-                  running.
+                  Warp is available while coasting above 30.5 km (5×/20×) or
+                  descending under parachute (3×) with flight running.
                 </p>
               )}
             </>

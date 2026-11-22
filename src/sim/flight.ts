@@ -7,7 +7,7 @@ export const AIR = 30000;
 export const SCALE_HEIGHT = 3200;
 export const MAX_ORBIT_AP = 600000;
 export const CHUTE_MAX_SPEED = 200;
-export const CHUTE_FULL_ALT = 500;
+export const CHUTE_FULL_ALT = 100;
 // SFS-scaled Moon: 85 km radius, 1.62 m/s^2 gravity, 2,400 km orbit, 360 km SOI, vacuum
 export const MOON_R = 85000;
 export const MOON_G0 = 1.62;
@@ -315,6 +315,10 @@ export function canWarp(s: Flight) {
   return s.status === "flying" && !burning(s) && radius(s) > bp.R + bp.AIR + 500;
 }
 
+export function canChuteWarp(s: Flight) {
+  return s.status === "flying" && Boolean(s.chuteDeployed) && !burning(s);
+}
+
 export function alignToVelocity(_s: Flight) {
   // All flight attitude controls are strictly manual.
 }
@@ -410,9 +414,9 @@ export function step(s: Flight, dt = STEP) {
   const chuteFull = Boolean(s.chuteDeployed && bp.AIR > 0 && alt <= CHUTE_FULL_ALT);
   const chuteHalf = Boolean(s.chuteDeployed && bp.AIR > 0 && alt > CHUTE_FULL_ALT && alt < bp.AIR);
   const chuteDragFactor = chuteFull
-    ? Math.max(950, midMass * 0.28)
+    ? midMass * 0.16
     : chuteHalf
-      ? Math.max(220, midMass * 0.055)
+      ? midMass * 0.0014
       : 0;
   const rawDrag =
     (0.5 * atmoDensity * (0.32 * engine.area + chuteDragFactor) * v) / midMass;

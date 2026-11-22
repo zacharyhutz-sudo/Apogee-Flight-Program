@@ -23,6 +23,7 @@ import {
   AIR,
   MOON_R,
   bodyParams,
+  canChuteWarp,
   canWarp,
   initial,
   thrustToWeight,
@@ -94,7 +95,7 @@ export function useMission() {
     if (!ready.current) return;
     fn(vessel.current);
     if (msg) log(msg);
-    if (!canWarp(vessel.current)) rate.current = 1;
+    if (rate.current > 1 && !canWarp(vessel.current) && !(rate.current === 3 && canChuteWarp(vessel.current))) rate.current = 1;
     save();
     refresh();
   }
@@ -205,7 +206,7 @@ export function useMission() {
 
   function separate() {
     if (stage(vessel.current)) {
-      if (!canWarp(vessel.current)) rate.current = 1;
+      if (rate.current > 1 && !canWarp(vessel.current) && !(rate.current === 3 && canChuteWarp(vessel.current))) rate.current = 1;
       log("Booster separated. Orbital stage selected.");
       save();
       refresh();
@@ -221,7 +222,8 @@ export function useMission() {
   }
 
   function warp(value: number) {
-    if (value !== 1 && !canWarp(vessel.current)) return;
+    const chuteAllowed = value === 3 && canChuteWarp(vessel.current);
+    if (value !== 1 && !canWarp(vessel.current) && !chuteAllowed) return;
     if (value > 1 && mission.current.program.warpAlert) {
       setNotice(mission.current.program.warpAlert);
       return;
@@ -431,7 +433,12 @@ export function useMission() {
           wasAlt = s.maxAlt;
         acc += dt;
         while (acc + 1e-9 >= STEP && s.status === "flying") {
-          if (rate.current > 1) {
+          if (rate.current > 1 && canChuteWarp(s)) {
+            for (let k = 0; k < rate.current && s.status === "flying" && canChuteWarp(s); k++) {
+              step(s);
+            }
+            if (!canChuteWarp(s)) rate.current = 1;
+          } else if (rate.current > 1) {
             if (!coast(s, STEP * rate.current)) {
               rate.current = 1;
               log("Warp ended before atmospheric entry.");
