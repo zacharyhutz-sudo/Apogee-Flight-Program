@@ -469,9 +469,10 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         const spriteVisible = s.status !== "lost" && ppm >= 0.06;
         const customParts = resolveParts(s.blueprintParts, s.stage);
 
+        let activeRocketHeight = (upper ? 42 : 76) * shipScale;
         if (customParts && spriteVisible) {
           this.ship.setVisible(false);
-          drawCustomStack(customGfx, customParts, cx, cy, angle, ppm * 2.1);
+          activeRocketHeight = drawCustomStack(customGfx, customParts, cx, cy, angle, ppm * 2.1);
         } else {
           this.ship
             .setTexture(upper ? "upper" : "vehicle")
@@ -506,17 +507,24 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
             }
           }
           if (s.chuteDeployed && alt < AIR) {
-            const noseH = (upper ? 42 : 76) * shipScale;
-            const sway = Math.sin(s.t * 4.5) * 4 * shipScale;
-            const nose = localPt(0, -noseH);
-            const canopyY = -noseH - 46 * shipScale;
-            const leftRim = localPt(-24 * shipScale + sway, canopyY);
-            const rightRim = localPt(24 * shipScale + sway, canopyY);
-            const midL = localPt(-12 * shipScale + sway, canopyY - 12 * shipScale);
-            const apex = localPt(sway, canopyY - 16 * shipScale);
-            const midR = localPt(12 * shipScale + sway, canopyY - 12 * shipScale);
+            // Parachute vector is strictly opposite gravity (+radial outward) with rocket tip locked to shroud
+            const antiGravAngle = Math.atan2(s.y, s.x);
+            const cG = Math.cos(antiGravAngle);
+            const sG = Math.sin(antiGravAngle);
+            const nose = localPt(0, -activeRocketHeight);
+            const chutePt = (lx: number, ly: number) => ({
+              x: nose.x + lx * cG - ly * sG,
+              y: nose.y + lx * sG + ly * cG,
+            });
+            const sway = Math.sin(s.t * 4.2) * 3 * shipScale;
+            const canopyDist = 46 * shipScale;
+            const leftRim = chutePt(-24 * shipScale + sway, -canopyDist);
+            const rightRim = chutePt(24 * shipScale + sway, -canopyDist);
+            const midL = chutePt(-12 * shipScale + sway, -canopyDist - 12 * shipScale);
+            const apex = chutePt(sway, -canopyDist - 16 * shipScale);
+            const midR = chutePt(12 * shipScale + sway, -canopyDist - 12 * shipScale);
             customGfx
-              .lineStyle(1, 0xd8d2c5, 0.8)
+              .lineStyle(1.1, 0xd8d2c5, 0.85)
               .lineBetween(nose.x, nose.y, leftRim.x, leftRim.y)
               .lineBetween(nose.x, nose.y, rightRim.x, rightRim.y)
               .lineBetween(nose.x, nose.y, midL.x, midL.y)
@@ -525,7 +533,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
               .fillStyle(0xf28c28, 0.96)
               .fillPoints([leftRim, midL, apex, midR, rightRim], true)
               .fillStyle(0xf6f1e3, 0.96)
-              .fillPoints([midL, apex, midR, localPt(sway, canopyY)], true)
+              .fillPoints([midL, apex, midR, chutePt(sway, -canopyDist)], true)
               .lineStyle(1.4, 0x090e14, 0.9)
               .strokePoints([leftRim, midL, apex, midR, rightRim], true);
           }

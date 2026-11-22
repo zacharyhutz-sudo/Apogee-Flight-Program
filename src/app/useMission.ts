@@ -8,6 +8,7 @@ import {
   prepare,
   prepareBlueprintFlight,
   quote,
+  reclaimTile,
   settle,
   tickEconomy,
   upgrade,
@@ -255,10 +256,28 @@ export function useMission() {
     newSortie("practice");
   }
 
-  function editSite(kind: Kind, tile?: { x: number; y: number }) {
+  function editSite(
+    kind: Kind,
+    tile?: { x: number; y: number },
+    fromTile?: { x: number; y: number } | null,
+    upgradeTile?: { x: number; y: number } | null,
+  ) {
     if (!ready.current) return "Save is still loading.";
     const p = mission.current.program;
-    const issue = tile ? place(p, kind, tile.x, tile.y) : upgrade(p, kind);
+    const issue = tile
+      ? place(p, kind, tile.x, tile.y, fromTile)
+      : upgrade(p, kind, upgradeTile);
+    if (!issue) {
+      save();
+      refresh();
+    }
+    return issue;
+  }
+
+  function expandOcean(x: number, y: number) {
+    if (!ready.current) return "Save is still loading.";
+    const p = mission.current.program;
+    const issue = reclaimTile(p, x, y);
     if (!issue) {
       save();
       refresh();
@@ -481,6 +500,7 @@ export function useMission() {
     separate,
     newSortie,
     editSite,
+    expandOcean,
     visitSite,
     togglePause,
     warp,

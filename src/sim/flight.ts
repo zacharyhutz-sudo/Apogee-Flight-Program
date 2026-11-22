@@ -6,6 +6,7 @@ export const MU = G0 * R * R;
 export const AIR = 30000;
 export const SCALE_HEIGHT = 3200;
 export const MAX_ORBIT_AP = 600000;
+export const CHUTE_MAX_SPEED = 200;
 export const STEP = 1 / 20;
 
 export interface StageSpec {
@@ -79,6 +80,7 @@ export interface Flight {
   hasChute?: boolean;
   legsDeployed?: boolean;
   chuteDeployed?: boolean;
+  chuteRipped?: boolean;
   /** Real simulated detached stages falling under gravity & drag. */
   debris?: Debris[];
   /** Optional custom stage specs constructed from a Rocket Workshop blueprint. */
@@ -122,6 +124,7 @@ export function initial(
     hasChute: true,
     legsDeployed: false,
     chuteDeployed: false,
+    chuteRipped: false,
   };
   if (customStages) f.customStages = customStages;
   if (customPayload !== undefined) f.customPayload = customPayload;
@@ -238,13 +241,24 @@ export function toggleLegs(s: Flight) {
   return true;
 }
 
-export function toggleChute(s: Flight) {
-  if (!s.hasChute && s.hasChute !== undefined) return false;
-  if (s.status !== "flying") return false;
+export function toggleChute(s: Flight): "deployed" | "ripped" | "cut" | "blocked" {
+  if (!s.hasChute && s.hasChute !== undefined) return "blocked";
+  if (s.status !== "flying" || s.chuteRipped) return "blocked";
   const alt = radius(s) - R;
-  if (!s.chuteDeployed && alt >= AIR) return false;
-  s.chuteDeployed = !s.chuteDeployed;
-  return true;
+  if (s.chuteDeployed) {
+    s.chuteDeployed = false;
+    return "cut";
+  }
+  if (alt >= AIR) return "blocked";
+  if (speed(s) > CHUTE_MAX_SPEED) {
+    s.chuteRipped = true;
+    s.chuteDeployed = false;
+    return "ripped";
+  }
+  s.chuteDeployed = true;
+  s.mode = "manual";
+  s.pitch = 0;
+  return "deployed";
 }
 
 export function density(alt: number) {
@@ -312,7 +326,18 @@ export function step(s: Flight, dt = STEP) {
   const vr = nx * s.vx + ny * s.vy,
     vt = nx * s.vy - ny * s.vx;
   const engine = st[s.stage];
+  if (s.chuteDeployed) {
+    if (v > CHUTE_MAX_SPEED) {
+      s.chuteRipped = true;
+      s.chuteDeployed = false;
+    } else {
+      // Parachute hangs strictly opposite gravity (+radial), locking vehicle pitch to 0
+      s.mode = "manual";
+      s.pitch = 0;
+    }
+  }
   if (
+    !s.chuteDeployed &&
     s.mode === "guide" &&
     s.throttle > 0 &&
     s.fuel[s.stage] > 0 &&
@@ -328,7 +353,7 @@ export function step(s: Flight, dt = STEP) {
       s.throttle = 0;
       s.mode = "prograde";
     }
-  } else alignToVelocity(s);
+  } else if (!s.chuteDeployed) alignToVelocity(s);
   const used =
     engine.thrust > 0
       ? Math.min(

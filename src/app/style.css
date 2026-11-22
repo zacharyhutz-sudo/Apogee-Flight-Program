@@ -730,3 +730,25 @@ dialog ol {
     transform: none;
   }
 }
+
+.pitch {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 146px;
+  padding: 7px 9px;
+}
+.pitch-locked {
+  opacity: 0.62;
+}
+.pitch-slider {
+  width: 100%;
+  min-height: 28px;
+  accent-color: var(--amber);
+  cursor: pointer;
+}
+.landing-toggles button.ripped-gear {
+  background: #2b171b;
+  color: var(--coral);
+  border-bottom-color: var(--coral-deep);
+}

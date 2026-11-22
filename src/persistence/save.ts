@@ -29,7 +29,7 @@ export interface Entry {
 }
 
 export interface Snapshot {
-  version: 5;
+  version: 6;
   program: Program;
   revision: number;
   view: "flight" | "map" | "site" | "workshop";
@@ -38,7 +38,7 @@ export interface Snapshot {
 }
 
 export const fresh = (): Snapshot => ({
-  version: 5,
+  version: 6,
   program: startProgram(),
   revision: 0,
   view: "site",
@@ -188,7 +188,7 @@ export function validate(raw: unknown): Snapshot {
   };
   if (
     !record(raw) ||
-    ![1, 2, 3, 4, 5].includes(Number(raw.version)) ||
+    ![1, 2, 3, 4, 5, 6].includes(Number(raw.version)) ||
     !num(raw.revision, 0, Number.MAX_SAFE_INTEGER) ||
     !Number.isSafeInteger(raw.revision) ||
     !(
@@ -286,10 +286,13 @@ export function validate(raw: unknown): Snapshot {
     }
   }
 
+  if (record(program) && !Array.isArray(program.reclaimedTiles)) {
+    program.reclaimedTiles = [];
+  }
   if (!validProgram(program, f)) return invalid();
 
   return {
-    version: 5,
+    version: 6,
     program,
     flight: f,
     view: raw.view as Snapshot["view"],

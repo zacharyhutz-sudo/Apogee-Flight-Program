@@ -16,6 +16,7 @@ import {
   Radar,
   Rocket,
   Sun,
+  Waves,
   Wrench,
   X,
 } from "lucide-react";
@@ -32,6 +33,9 @@ import {
   MAX_LEVEL,
   SIZE,
   canAffordUpgrade,
+  canReclaimTile,
+  countBuilt,
+  extraBuildCost,
   facilityBenefit,
   getCollectorCaps,
   getCreditRatePerHour,
@@ -39,9 +43,12 @@ import {
   getStorageCaps,
   launchIssue,
   level,
+  maxBuildingCount,
   placement,
   quote,
-  terrain,
+  reclaimCost,
+  tileTerrain,
+  upgradeStatDelta,
   type Kind,
   type Sortie,
   type Program,
@@ -97,6 +104,7 @@ export function LaunchSite({
   const [selected, S] = useState<Tile | null>(null);
   const [inspectLocked, setInspectLocked] = useState<Kind | null>(null);
   const [placing, G] = useState<Kind | null>(null);
+  const [movingFrom, setMovingFrom] = useState<Tile | null>(null);
   const [pending, Q] = useState<Sortie>("practice");
   const [message, M] = useState("");
   const [burst, setBurst] = useState<CollectBurst | null>(null);
@@ -121,12 +129,22 @@ export function LaunchSite({
       : inspectLocked ?? slotKindAtTile;
 
   const issue =
-    selected && placing ? placement(p, placing, selected.x, selected.y) : "";
+    selected && placing
+      ? placement(p, placing, selected.x, selected.y, movingFrom)
+      : "";
+
+  const canExpandSelected =
+    Boolean(selected) &&
+    !placing &&
+    !builtAtTile &&
+    canReclaimTile(p, selected!.x, selected!.y);
+  const expandPrice = reclaimCost(p);
 
   function cancel() {
     S(null);
     setInspectLocked(null);
     G(null);
+    setMovingFrom(null);
     M("");
   }
 
@@ -140,7 +158,7 @@ export function LaunchSite({
           res.resource === "credits"
             ? `+${res.collected.toLocaleString("en-US")} C`
             : `+${res.collected.toLocaleString("en-US")} Prop`,
-        color: res.resource === "credits" ? "#ffd298" : "#72d6c6",
+        color: res.resource === "credits" ? "#ffd298" : "#4fd1a5",
         seq: (prev?.seq ?? 0) + 1,
       }));
       return true;
@@ -149,7 +167,6 @@ export function LaunchSite({
   }
 
   function chooseTile(t: Tile) {
-    // 1-tap Clash-of-Clans collect when tapping Solar Foundry or Refinery with resources ready
     if (!placing) {
       const hit = p.buildings.find((b) => b.x === t.x && b.y === t.y);
       if (hit && (hit.kind === "foundry" || hit.kind === "refinery")) {
@@ -171,9 +188,14 @@ export function LaunchSite({
     M("");
   }
 
-  function startPlace(k: Kind) {
-    const built = p.buildings.find((b) => b.kind === k);
-    S(built ? { x: built.x, y: built.y } : freeTile(p, k));
+  function startPlace(k: Kind, existingTile?: Tile) {
+    if (existingTile) {
+      S({ x: existingTile.x, y: existingTile.y });
+      setMovingFrom({ x: existingTile.x, y: existingTile.y });
+    } else {
+      S(freeTile(p, k));
+      setMovingFrom(null);
+    }
     setInspectLocked(null);
     G(k);
     M("");
@@ -191,10 +213,11 @@ export function LaunchSite({
 
   function confirmPlacement() {
     if (!placing || !selected) return;
-    const result = m.editSite(placing, selected);
+    const result = m.editSite(placing, selected, movingFrom);
     if (result) M(result);
     else {
       G(null);
+      setMovingFrom(null);
       M("");
     }
   }
@@ -235,8 +258,10 @@ export function LaunchSite({
   }
 
   const buttonsDisabled = !m.loaded;
-  const activeLv = activeKind ? level(p, activeKind) : 0;
-  const upgCheck = activeKind ? canAffordUpgrade(p, activeKind) : null;
+  const activeLv = builtAtTile ? builtAtTile.level : 0;
+  const upgCheck = activeKind
+    ? canAffordUpgrade(p, activeKind, activeLv)
+    : null;
   const isCollector = activeKind === "foundry" || activeKind === "refinery";
   const collectorStored =
     activeKind === "foundry"
@@ -257,6 +282,7 @@ export function LaunchSite({
         program={p}
         selected={selected}
         placing={placing}
+        movingFrom={movingFrom}
         onTile={chooseTile}
         collectBurst={burst}
       />
@@ -302,13 +328,15 @@ export function LaunchSite({
               <div className="inspect-title">
                 <h2>
                   {placing
-                    ? (level(p, placing) ? "Move " : "Build ") +
+                    ? (movingFrom ? "Move " : "Build ") +
                       FACILITIES[placing].shortName
                     : activeKind
                       ? FACILITIES[activeKind].name
-                      : terrain(selected.x, selected.y) === "land"
-                        ? "Open plot"
-                        : "Terrain"}
+                      : canExpandSelected
+                        ? "Coastal Ocean"
+                        : tileTerrain(p, selected.x, selected.y) === "land"
+                          ? "Open plot"
+                          : "Terrain"}
                 </h2>
                 {activeKind && !placing && (
                   <span className="lv-badge">
@@ -336,6 +364,29 @@ export function LaunchSite({
                   </button>
                 </div>
               </>
+            ) : canExpandSelected ? (
+              <>
+                <p className="inspect-stat">
+                  Reclaim this coastal tile into buildable land.
+                </p>
+                <div className="upgrade-delta">
+                  +1 Buildable Land Tile
+                </div>
+                <div className="inspect-actions">
+                  <button
+                    className="primary grow"
+                    disabled={buttonsDisabled || p.credits < expandPrice}
+                    onClick={() => {
+                      const err = m.expandOcean(selected.x, selected.y);
+                      if (err) M(err);
+                      else M("");
+                    }}
+                  >
+                    <Waves size={16} />
+                    Expand Land · {expandPrice.toLocaleString("en-US")} C
+                  </button>
+                </div>
+              </>
             ) : activeKind ? (
               <>
                 <p className="inspect-stat">
@@ -351,10 +402,10 @@ export function LaunchSite({
                   </p>
                 )}
                 {activeLv < MAX_LEVEL && upgCheck && (
-                  <p className="inspect-next">
-                    {activeLv === 0 ? "Unlocks · " : `Lv ${activeLv + 1} · `}
-                    {facilityBenefit(activeKind, Math.max(1, activeLv + 1))}
-                  </p>
+                  <div className="upgrade-delta" aria-label="Upgrade stat increase">
+                    {activeLv === 0 ? "Unlocks: " : `Lv ${activeLv + 1} Gain: `}
+                    <strong>{upgradeStatDelta(activeKind, activeLv)}</strong>
+                  </div>
                 )}
                 {upgCheck &&
                   !upgCheck.ok &&
@@ -365,11 +416,11 @@ export function LaunchSite({
                     </div>
                   )}
                 <div className="inspect-actions">
-                  {activeLv > 0 && (
+                  {builtAtTile && (
                     <button
                       aria-label="Move"
                       title="Move facility"
-                      onClick={() => startPlace(activeKind)}
+                      onClick={() => startPlace(activeKind, selected)}
                     >
                       <Move />
                     </button>
@@ -392,7 +443,7 @@ export function LaunchSite({
                           if (err) M(err);
                           else setInspectLocked(null);
                         } else {
-                          M(m.editSite(activeKind));
+                          M(m.editSite(activeKind, undefined, undefined, selected));
                         }
                       }}
                     >
@@ -406,7 +457,10 @@ export function LaunchSite({
                 </div>
               </>
             ) : (
-              <p>Tap a building to inspect or open Build.</p>
+              <p>
+                Tap a building to inspect, tap coastal water to expand land, or
+                open Build.
+              </p>
             )}
             {message && <p role="alert">{message}</p>}
           </section>
@@ -539,9 +593,13 @@ export function LaunchSite({
           {panel === "build" && (
             <div className="facilities-list">
               {FACILITY_KINDS.map((k) => {
-                const built = p.buildings.find((b) => b.kind === k),
+                const builtList = p.buildings.filter((b) => b.kind === k),
+                  built = builtList[0],
+                  builtNum = countBuilt(p, k),
+                  maxNum = maxBuildingCount(p, k),
+                  canBuildExtra = builtNum > 0 && builtNum < maxNum,
                   Icon = glyph[k],
-                  check = canAffordUpgrade(p, k),
+                  check = canAffordUpgrade(p, k, 0),
                   locked =
                     !built &&
                     !check.ok &&
@@ -550,31 +608,43 @@ export function LaunchSite({
                   <button
                     key={k}
                     aria-label={
-                      built
-                        ? "Inspect " + FACILITIES[k].name
-                        : "Build " + FACILITIES[k].name
+                      canBuildExtra
+                        ? `Build 2nd ${FACILITIES[k].name}`
+                        : built
+                          ? "Inspect " + FACILITIES[k].name
+                          : "Build " + FACILITIES[k].name
                     }
                     onClick={() => {
+                      if (canBuildExtra) {
+                        startPlace(k);
+                        return;
+                      }
                       const pos = built
                         ? { x: built.x, y: built.y }
                         : FACILITIES[k].defaultPos;
                       S(pos);
                       setInspectLocked(built ? null : k);
                       G(null);
+                      setMovingFrom(null);
                       P(null);
                     }}
                   >
                     <Icon />
                     <span>
-                      <strong>{FACILITIES[k].name}</strong>
+                      <strong>
+                        {FACILITIES[k].name}
+                        {maxNum > 1 ? ` (${builtNum}/${maxNum})` : ""}
+                      </strong>
                       <small>{facilityBenefit(k, built?.level ?? 1)}</small>
                     </span>
                     <b className={locked ? "locked-badge" : ""}>
-                      {built
-                        ? `Lv ${built.level}`
-                        : locked
-                          ? "MC Lv 2"
-                          : `${FACILITIES[k].costs[0].credits.toLocaleString("en-US")} C`}
+                      {canBuildExtra
+                        ? `+${extraBuildCost(k).credits} C`
+                        : built
+                          ? `Lv ${built.level}`
+                          : locked
+                            ? "MC Lv 2"
+                            : `${FACILITIES[k].costs[0].credits.toLocaleString("en-US")} C`}
                     </b>
                   </button>
                 );

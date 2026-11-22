@@ -310,6 +310,7 @@ export interface EconomyState {
   warpAlert: string;
   blueprints: RocketBlueprint[];
   activeBlueprintId: string;
+  reclaimedTiles: string[];
 }
 
 export type Program = EconomyState;
@@ -344,7 +345,7 @@ export function syncBuildingLevels(buildings: Building[]): Record<Kind, number> 
     tracking: 0,
     lab: 0,
   };
-  for (const b of buildings) map[b.kind] = b.level;
+  for (const b of buildings) map[b.kind] = Math.max(map[b.kind], b.level);
   return map;
 }
 
@@ -378,6 +379,7 @@ export const startProgram = (): Program => {
     warpAlert: "",
     blueprints,
     activeBlueprintId: blueprints[0].id,
+    reclaimedTiles: [],
   };
 };
 
@@ -406,11 +408,77 @@ export function terrain(x: number, y: number) {
   return "land";
 }
 
-export function placement(p: Program, kind: Kind, x: number, y: number) {
-  if (!Number.isInteger(x) || !Number.isInteger(y) || terrain(x, y) !== "land")
+export function tileKey(x: number, y: number) {
+  return `${x},${y}`;
+}
+
+export function tileTerrain(p: Program, x: number, y: number) {
+  if (
+    x >= 0 &&
+    y >= 0 &&
+    x < SIZE &&
+    y < SIZE &&
+    Array.isArray(p.reclaimedTiles) &&
+    p.reclaimedTiles.includes(tileKey(x, y))
+  )
+    return "land";
+  return terrain(x, y);
+}
+
+/** Escalating ocean expansion cost: 100 -> 150 -> 250 -> 400 -> 600 -> 850... */
+export function reclaimCost(p: Program): number {
+  const n = p.reclaimedTiles?.length ?? 0;
+  return 100 + 25 * n * (n + 1);
+}
+
+export function canReclaimTile(p: Program, x: number, y: number): boolean {
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return false;
+  if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return false;
+  if (tileTerrain(p, x, y) !== "water") return false;
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+  return dirs.some(([dx, dy]) => tileTerrain(p, x + dx, y + dy) !== "water");
+}
+
+export function reclaimTile(p: Program, x: number, y: number): string {
+  if (!canReclaimTile(p, x, y)) return "Choose coastal water beside existing land.";
+  const cost = reclaimCost(p);
+  if (p.credits < cost) return `Need ${(cost - p.credits).toLocaleString("en-US")} C more.`;
+  p.credits = Math.max(0, p.credits - cost);
+  p.reclaimedTiles = [...(p.reclaimedTiles ?? []), tileKey(x, y)];
+  return "";
+}
+
+export function maxBuildingCount(_p: Program, k: Kind): number {
+  return k === "foundry" || k === "refinery" ? 2 : 1;
+}
+
+export function countBuilt(p: Program, k: Kind): number {
+  return p.buildings.filter((b) => b.kind === k).length;
+}
+
+export function extraBuildCost(k: Kind): Cost {
+  if (k === "foundry") return { credits: 350, research: 0 };
+  if (k === "refinery") return { credits: 380, research: 0 };
+  return FACILITIES[k].costs[0];
+}
+
+export function placement(
+  p: Program,
+  kind: Kind,
+  x: number,
+  y: number,
+  fromTile?: { x: number; y: number } | null,
+) {
+  if (!Number.isInteger(x) || !Number.isInteger(y) || tileTerrain(p, x, y) !== "land")
     return "Choose open ground.";
   for (const b of p.buildings) {
-    if (b.kind === kind) continue;
+    if (fromTile && b.x === fromTile.x && b.y === fromTile.y) continue;
+    if (!fromTile && maxBuildingCount(p, kind) === 1 && b.kind === kind) continue;
     const d = Math.abs(b.x - x) + Math.abs(b.y - y);
     if (!d) return "Tile occupied.";
     if (d === 1 && (kind === "pad" || b.kind === "pad"))
@@ -420,7 +488,7 @@ export function placement(p: Program, kind: Kind, x: number, y: number) {
 }
 
 export const level = (p: Program, k: Kind): number =>
-  p.buildings.find((b) => b.kind === k)?.level ?? 0;
+  p.buildings.reduce((m, b) => (b.kind === k ? Math.max(m, b.level) : m), 0);
 
 export const padCaps = (n: number) => {
   const lv = clamp(Math.floor(n), 0, MAX_LEVEL);
@@ -520,6 +588,36 @@ export function facilityBenefit(k: Kind, n: number): string {
   }
 }
 
+export function upgradeStatDelta(k: Kind, currentLevel: number): string {
+  const cur = clamp(Math.floor(currentLevel), 0, MAX_LEVEL);
+  const nxt = clamp(cur + 1, 1, MAX_LEVEL);
+  if (cur >= MAX_LEVEL) return "Max level";
+  if (cur === 0) return facilityBenefit(k, 1);
+  switch (k) {
+    case "command":
+      if (nxt === 2) return "Unlocks VAB, Tracking, Lab & Tier 2 contracts";
+      return `Raises all facility level caps to Lv ${nxt}`;
+    case "pad":
+      return `+${padCaps(nxt).tonnes - padCaps(cur).tonnes} t wet mass · +${padCaps(nxt).height - padCaps(cur).height} m`;
+    case "foundry":
+      return `+${(FOUNDRY_RATE_BY_LEVEL[nxt] - FOUNDRY_RATE_BY_LEVEL[cur]).toLocaleString("en-US")} C/hr · +${(FOUNDRY_HOPPER_BY_LEVEL[nxt] - FOUNDRY_HOPPER_BY_LEVEL[cur]).toLocaleString("en-US")} hopper`;
+    case "refinery":
+      return `+${(REFINERY_RATE_BY_LEVEL[nxt] - REFINERY_RATE_BY_LEVEL[cur]).toLocaleString("en-US")} Prop/hr · +${(REFINERY_HOPPER_BY_LEVEL[nxt] - REFINERY_HOPPER_BY_LEVEL[cur]).toLocaleString("en-US")} hopper`;
+    case "tanks":
+      return `+${(TANK_CAP_BY_LEVEL[nxt] - TANK_CAP_BY_LEVEL[cur]).toLocaleString("en-US")} Prop cap`;
+    case "office":
+      return `+${(CREDIT_CAP_BY_LEVEL[nxt] - CREDIT_CAP_BY_LEVEL[cur]).toLocaleString("en-US")} C cap · +1 active contract`;
+    case "vab": {
+      const c1 = vabCaps(cur), c2 = vabCaps(nxt);
+      return `+${c2.parts - c1.parts} parts · +1 stage · −${Math.round(c2.discount * 100)}% cost`;
+    }
+    case "tracking":
+      return trackingInfo(nxt).summary;
+    case "lab":
+      return `+10% Research Data · Tech Tier ${nxt}`;
+  }
+}
+
 function safeFinite(v: number, fallback = 0): number {
   return Number.isFinite(v) ? v : fallback;
 }
@@ -535,22 +633,34 @@ export function getStorageCaps(state: Program) {
 }
 
 export function getCollectorCaps(state: Program) {
-  const foundryLv = clamp(level(state, "foundry"), 0, MAX_LEVEL);
-  const refLv = clamp(level(state, "refinery"), 0, MAX_LEVEL);
-  return {
-    credits: FOUNDRY_HOPPER_BY_LEVEL[foundryLv],
-    propellant: REFINERY_HOPPER_BY_LEVEL[refLv],
-  };
+  let credits = 0;
+  let propellant = 0;
+  for (const b of state.buildings) {
+    const lv = clamp(b.level, 1, MAX_LEVEL);
+    if (b.kind === "foundry") credits += FOUNDRY_HOPPER_BY_LEVEL[lv];
+    if (b.kind === "refinery") propellant += REFINERY_HOPPER_BY_LEVEL[lv];
+  }
+  return { credits, propellant };
 }
 
 export function getCreditRatePerHour(state: Program): number {
-  const foundryLv = clamp(level(state, "foundry"), 0, MAX_LEVEL);
-  return FOUNDRY_RATE_BY_LEVEL[foundryLv];
+  return state.buildings.reduce(
+    (sum, b) =>
+      b.kind === "foundry"
+        ? sum + FOUNDRY_RATE_BY_LEVEL[clamp(b.level, 1, MAX_LEVEL)]
+        : sum,
+    0,
+  );
 }
 
 export function getPropellantRatePerHour(state: Program): number {
-  const refLv = clamp(level(state, "refinery"), 0, MAX_LEVEL);
-  return REFINERY_RATE_BY_LEVEL[refLv];
+  return state.buildings.reduce(
+    (sum, b) =>
+      b.kind === "refinery"
+        ? sum + REFINERY_RATE_BY_LEVEL[clamp(b.level, 1, MAX_LEVEL)]
+        : sum,
+    0,
+  );
 }
 
 /**
@@ -700,8 +810,15 @@ export function tickEconomy(p: Program, dtSimSec: number) {
   p.elapsed = next.elapsed;
 }
 
-export function canAffordUpgrade(state: Program, buildingId: Kind) {
-  const current = level(state, buildingId);
+export function canAffordUpgrade(
+  state: Program,
+  buildingId: Kind,
+  currentLevelOverride?: number,
+) {
+  const current =
+    currentLevelOverride !== undefined
+      ? currentLevelOverride
+      : level(state, buildingId);
   const targetLevel = current + 1;
   const mcLevel = level(state, "command");
   const def = FACILITIES[buildingId];
@@ -910,16 +1027,46 @@ export function applyContractReward(state: Program, contractId: Job) {
   };
 }
 
-export function place(p: Program, k: Kind, x: number, y: number): string {
-  const problem = placement(p, k, x, y);
+export function place(
+  p: Program,
+  k: Kind,
+  x: number,
+  y: number,
+  fromTile?: { x: number; y: number } | null,
+): string {
+  const problem = placement(p, k, x, y, fromTile);
   if (problem) return problem;
-  const existing = p.buildings.find((b) => b.kind === k);
-  if (existing) {
-    existing.x = x;
-    existing.y = y;
+  if (fromTile) {
+    const moving = p.buildings.find(
+      (b) => b.kind === k && b.x === fromTile.x && b.y === fromTile.y,
+    );
+    if (moving) {
+      moving.x = x;
+      moving.y = y;
+      return "";
+    }
+  }
+  const builtCount = countBuilt(p, k);
+  const maxCount = maxBuildingCount(p, k);
+  if (builtCount >= maxCount) {
+    const existing = p.buildings.find((b) => b.kind === k);
+    if (existing) {
+      existing.x = x;
+      existing.y = y;
+      return "";
+    }
+  }
+  if (builtCount > 0 && builtCount < maxCount) {
+    // Building a 2nd Solar Foundry or 2nd Propellant Refinery (allowed at MC Lv 1!)
+    const cost = extraBuildCost(k);
+    if (p.credits < cost.credits)
+      return `Need ${(cost.credits - p.credits).toLocaleString("en-US")} C more.`;
+    p.credits = Math.max(0, p.credits - cost.credits);
+    p.buildings.push({ kind: k, x, y, level: 1 });
+    p.buildingLevels = syncBuildingLevels(p.buildings);
     return "";
   }
-  const check = canAffordUpgrade(p, k);
+  const check = canAffordUpgrade(p, k, 0);
   if (!check.ok) return check.reason;
   p.credits = Math.max(0, p.credits - check.cost.credits);
   p.research = Math.max(0, p.research - check.cost.research);
@@ -928,8 +1075,14 @@ export function place(p: Program, k: Kind, x: number, y: number): string {
   return "";
 }
 
-export function upgrade(p: Program, k: Kind): string {
-  const b = p.buildings.find((b) => b.kind === k);
+export function upgrade(
+  p: Program,
+  k: Kind,
+  atTile?: { x: number; y: number } | null,
+): string {
+  const b = atTile
+    ? p.buildings.find((x) => x.kind === k && x.x === atTile.x && x.y === atTile.y)
+    : p.buildings.find((x) => x.kind === k);
   if (!b) {
     const def = FACILITIES[k].defaultPos;
     if (!placement(p, k, def.x, def.y)) return place(p, k, def.x, def.y);
@@ -938,7 +1091,7 @@ export function upgrade(p: Program, k: Kind): string {
         if (!placement(p, k, x, y)) return place(p, k, x, y);
     return "No open plot available.";
   }
-  const check = canAffordUpgrade(p, k);
+  const check = canAffordUpgrade(p, k, b.level);
   if (!check.ok) return check.reason;
   p.credits = Math.max(0, p.credits - check.cost.credits);
   p.research = Math.max(0, p.research - check.cost.research);
@@ -1168,7 +1321,7 @@ export function validProgram(value: unknown, f: Flight): value is Program {
     p.simTimeSec < 0 ||
     !Array.isArray(p.buildings) ||
     p.buildings.length < STARTER_KINDS.length ||
-    p.buildings.length > FACILITY_KINDS.length ||
+    p.buildings.length > FACILITY_KINDS.length + 2 ||
     !p.completed ||
     !CONTRACT_JOBS.every((k) => natural(p.completed[k])) ||
     !Array.isArray(p.activeContracts) ||
@@ -1196,9 +1349,9 @@ export function validProgram(value: unknown, f: Flight): value is Program {
         b.level >= 1 &&
         b.level <= MAX_LEVEL,
     ) ||
-    new Set(p.buildings.map((b) => b.kind)).size !== p.buildings.length ||
+    FACILITY_KINDS.some((k) => countBuilt(p, k) > maxBuildingCount(p, k)) ||
     !STARTER_KINDS.every((k) => level(p, k) >= 1) ||
-    p.buildings.some((b) => placement(p, b.kind, b.x, b.y))
+    p.buildings.some((b) => placement(p, b.kind, b.x, b.y, { x: b.x, y: b.y }))
   )
     return false;
 

@@ -35,6 +35,8 @@ import { FlightScene } from "../game/scenes/FlightScene";
 import { OrbitalMap } from "../game/orbital/OrbitalMap";
 import {
   AIR,
+  CHUTE_MAX_SPEED,
+  burning,
   stagesOf,
   thrustToWeight,
   toggleChute,
@@ -140,11 +142,27 @@ export default function App() {
       );
   }
 
+  const canSteer = m.loaded && !ended && burning(s) && !s.chuteDeployed;
+
   function pitch(value: number) {
+    if (!canSteer) return;
     m.change((f) => {
       f.mode = "manual";
       f.pitch = clamp(value, -180, 180);
     });
+  }
+
+  function handleChuteToggle() {
+    if (!m.loaded || !flying || s.chuteRipped) return;
+    const outcome = toggleChute(s);
+    if (outcome === "ripped") {
+      m.setNotice(`Parachute ripped! Deployed above ${CHUTE_MAX_SPEED} m/s.`);
+      m.change(() => {}, `Parachute ripped above ${CHUTE_MAX_SPEED} m/s.`);
+    } else if (outcome === "deployed") {
+      m.change(() => {}, "Parachute deployed — attitude locked to gravity.");
+    } else if (outcome === "cut") {
+      m.change(() => {}, "Parachute cut.");
+    }
   }
 
   function throttle(value: number) {
@@ -181,10 +199,10 @@ export default function App() {
           if (!e.repeat) primary();
           break;
         case "ArrowLeft":
-          if (!ended) pitch(s.pitch - 5);
+          if (canSteer) pitch(s.pitch - 1);
           break;
         case "ArrowRight":
-          if (!ended) pitch(s.pitch + 5);
+          if (canSteer) pitch(s.pitch + 1);
           break;
         case "ArrowUp":
           if (!ended) throttle(s.throttle + 0.05);
@@ -197,8 +215,7 @@ export default function App() {
             m.change((f) => { toggleLegs(f); }, s.legsDeployed ? "Landing legs retracted." : "Landing legs deployed.");
           break;
         case "KeyC":
-          if (flying && s.hasChute !== false && m.alt < AIR)
-            m.change((f) => { toggleChute(f); }, s.chuteDeployed ? "Parachute cut." : "Parachute deployed.");
+          handleChuteToggle();
           break;
         default:
           return;
@@ -389,22 +406,22 @@ export default function App() {
                   )}
                   {s.hasChute !== false && (
                     <button
-                      className={s.chuteDeployed ? "active-gear" : ""}
-                      aria-label="Toggle parachute"
-                      disabled={!s.chuteDeployed && m.alt >= AIR}
-                      onClick={() =>
-                        m.change(
-                          (f) => {
-                            toggleChute(f);
-                          },
-                          s.chuteDeployed
-                            ? "Parachute cut."
-                            : "Parachute deployed.",
-                        )
+                      className={
+                        s.chuteRipped
+                          ? "ripped-gear"
+                          : s.chuteDeployed
+                            ? "active-gear"
+                            : ""
                       }
+                      aria-label="Toggle parachute"
+                      disabled={
+                        Boolean(s.chuteRipped) ||
+                        (!s.chuteDeployed && m.alt >= AIR)
+                      }
+                      onClick={handleChuteToggle}
                     >
                       <Wind size={15} />
-                      Chute
+                      {s.chuteRipped ? "Ripped" : "Chute"}
                     </button>
                   )}
                 </div>
@@ -423,7 +440,7 @@ export default function App() {
                 </span>
                 <select
                   aria-label="Attitude"
-                  disabled={pilotDisabled}
+                  disabled={pilotDisabled || Boolean(s.chuteDeployed)}
                   value={s.mode}
                   onChange={(e) => flightMode(e.target.value as Mode)}
                 >
@@ -433,29 +450,27 @@ export default function App() {
                   <option value="retrograde">Retrograde hold</option>
                 </select>
               </label>
-              <div className="pitch">
+              <label className={"pitch" + (!canSteer ? " pitch-locked" : "")}>
                 <span className="control-label">
-                  Pitch <b>{Math.round(s.pitch)}°</b>
+                  {s.chuteDeployed
+                    ? "Chute Locked"
+                    : !burning(s)
+                      ? "Ignite to Steer"
+                      : "Pitch"}{" "}
+                  <b>{Math.round(s.pitch)}°</b>
                 </span>
-                <div className="pitch-pair">
-                  <button
-                    aria-label="Decrease pitch by five degrees"
-                    title="Pitch left"
-                    disabled={pilotDisabled}
-                    onClick={() => pitch(s.pitch - 5)}
-                  >
-                    <ChevronLeft />
-                  </button>
-                  <button
-                    aria-label="Increase pitch by five degrees"
-                    title="Pitch right"
-                    disabled={pilotDisabled}
-                    onClick={() => pitch(s.pitch + 5)}
-                  >
-                    <ChevronRight />
-                  </button>
-                </div>
-              </div>
+                <input
+                  className="pitch-slider"
+                  aria-label="Pitch angle"
+                  type="range"
+                  min="-180"
+                  max="180"
+                  step="1"
+                  value={Math.round(s.pitch)}
+                  disabled={!canSteer}
+                  onChange={(e) => pitch(+e.target.value)}
+                />
+              </label>
             </div>
           )}
 

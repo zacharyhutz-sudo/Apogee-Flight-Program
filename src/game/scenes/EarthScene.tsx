@@ -8,7 +8,7 @@ import {
   getStorageCaps,
   level,
   placement,
-  terrain,
+  tileTerrain,
   type Program,
   type Kind,
 } from "../../program/program";
@@ -46,6 +46,7 @@ interface Props {
   program: Program;
   selected: Tile | null;
   placing: Kind | null;
+  movingFrom?: Tile | null;
   onTile: (t: Tile) => void;
   collectBurst?: CollectBurst | null;
   zoom?: number;
@@ -166,6 +167,8 @@ export function EarthScene(props: Props) {
 
     class Site extends Phaser.Scene {
       board!: Phaser.GameObjects.Container;
+      terrainLayer!: Phaser.GameObjects.Container;
+      terrainSig = "";
       marker!: Phaser.GameObjects.Graphics;
       overlay!: Phaser.GameObjects.Graphics;
       ghost!: Phaser.GameObjects.Image;
@@ -195,14 +198,14 @@ export function EarthScene(props: Props) {
         );
       }
 
-      create() {
-        this.board = this.add.container(0, 0);
+      rebuildTerrain(prog: Program) {
+        this.terrainLayer.removeAll(true);
         for (let sum = -8; sum < 24; sum++)
           for (let x = -5; x <= 12; x++) {
             const y = sum - x;
             if (y < -5 || y > 12) continue;
             const pt = project(x, y),
-              t = terrain(x, y);
+              t = tileTerrain(prog, x, y);
             const frame =
               t === "water"
                 ? 7
@@ -213,17 +216,17 @@ export function EarthScene(props: Props) {
                     : t === "road"
                       ? 4
                       : Math.abs(x * 13 + y * 7) % 4;
-            this.board.add(
+            this.terrainLayer.add(
               this.add
                 .image(pt.x, pt.y, "terrain", frame)
                 .setOrigin(0.5, 80 / 104),
             );
           }
         const surf = this.add.graphics();
-        this.board.add(surf);
+        this.terrainLayer.add(surf);
         for (let x = 0; x < SIZE; x++)
           for (let y = 0; y < SIZE; y++) {
-            if (terrain(x, y) === "water") continue;
+            if (tileTerrain(prog, x, y) === "water") continue;
             const pt = project(x, y);
             for (const [dx, dy, ax, ay, bx, by] of [
               [1, 0, 32, 0, 0, 16],
@@ -231,10 +234,10 @@ export function EarthScene(props: Props) {
               [-1, 0, -32, 0, 0, -16],
               [0, -1, 0, -16, 32, 0],
             ]) {
-              if (terrain(x + dx, y + dy) !== "water") continue;
+              if (tileTerrain(prog, x + dx, y + dy) !== "water") continue;
               const drop = dx + dy > 0 ? 7 : 0;
               surf
-                .lineStyle(1, 0x98bcac, 0.75)
+                .lineStyle(1.4, 0xc4f2e8, 0.85)
                 .lineBetween(
                   pt.x + ax,
                   pt.y + ay + drop,
@@ -243,12 +246,20 @@ export function EarthScene(props: Props) {
                 );
             }
             if (y === 4 && x % 2 === 1)
-              this.board.add(
+              this.terrainLayer.add(
                 this.add
                   .image(pt.x - 13, pt.y + 4, "terrain", LAMP_FRAME)
                   .setOrigin(0.5, 80 / 104),
               );
           }
+      }
+
+      create() {
+        this.board = this.add.container(0, 0);
+        this.terrainLayer = this.add.container(0, 0);
+        this.board.add(this.terrainLayer);
+        this.rebuildTerrain(state.current.program);
+        this.terrainSig = (state.current.program.reclaimedTiles ?? []).join("|");
         this.marker = this.add.graphics();
         this.board.add(this.marker);
         this.buildings = this.add.container(0, 0);
@@ -306,6 +317,11 @@ export function EarthScene(props: Props) {
           .setPosition(Math.round(o.x), Math.round(o.y))
           .setScale(size());
 
+        const tSig = (p.program.reclaimedTiles ?? []).join("|");
+        if (tSig !== this.terrainSig) {
+          this.terrainSig = tSig;
+          this.rebuildTerrain(p.program);
+        }
         const mcLv = level(p.program, "command");
         const key =
           mcLv +
@@ -495,27 +511,22 @@ export function EarthScene(props: Props) {
             .fillCircle(cx, cy, 3.6);
         };
 
-        const foundryB = p.program.buildings.find((b) => b.kind === "foundry");
-        if (foundryB) {
+        for (const foundryB of p.program.buildings.filter((b) => b.kind === "foundry")) {
           drawCollectBubble(
             foundryB,
             Math.floor(p.program.collectors.credits),
             hopperCaps.credits,
             p.program.credits >= storageCaps.credits,
-            0xf3a953,
+            0xf28c28,
           );
         }
-
-        const refineryB = p.program.buildings.find(
-          (b) => b.kind === "refinery",
-        );
-        if (refineryB) {
+        for (const refineryB of p.program.buildings.filter((b) => b.kind === "refinery")) {
           drawCollectBubble(
             refineryB,
             Math.floor(p.program.collectors.propellant),
             hopperCaps.propellant,
             p.program.propellant >= storageCaps.propellant,
-            0x72d6c6,
+            0x4fd1a5,
           );
         }
 
@@ -524,7 +535,7 @@ export function EarthScene(props: Props) {
         if (p.placing) {
           for (let tx = 0; tx < SIZE; tx++)
             for (let ty = 0; ty < SIZE; ty++) {
-              if (placement(p.program, p.placing, tx, ty)) continue;
+              if (placement(p.program, p.placing, tx, ty, p.movingFrom)) continue;
               const q = project(tx, ty);
               this.marker
                 .lineStyle(1, 0xc6e3bb, 0.55)
@@ -540,7 +551,7 @@ export function EarthScene(props: Props) {
         if (p.selected) {
           const { x, y } = project(p.selected.x, p.selected.y);
           const bad = p.placing
-            ? placement(p.program, p.placing, p.selected.x, p.selected.y)
+            ? placement(p.program, p.placing, p.selected.x, p.selected.y, p.movingFrom)
             : "";
           const c = bad ? 0xf28e77 : p.placing ? 0xa8f2c5 : 0xffcb84;
           this.marker
@@ -567,7 +578,7 @@ export function EarthScene(props: Props) {
     const game = new Phaser.Game({
       type: Phaser.CANVAS,
       parent: el,
-      backgroundColor: "#304e5d",
+      backgroundColor: "#227093",
       pixelArt: true,
       roundPixels: true,
       width: el.clientWidth,
