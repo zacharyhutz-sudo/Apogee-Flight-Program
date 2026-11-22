@@ -248,6 +248,20 @@ export const CONTRACTS = {
     heightMeters: 48,
     cargo: 2000,
   },
+  recovery: {
+    name: "Suborbital Recovery",
+    tier: 1,
+    tierLabel: "Tier 1",
+    goal: "Reach Ap ≥ 20 km and land safely back on Earth.",
+    hardwareCost: 350,
+    propellantCost: 450,
+    credits: 1250,
+    research: 25,
+    firstTimeCredits: 0,
+    wetMassTonnes: 26,
+    heightMeters: 30,
+    cargo: 0,
+  },
   leo: {
     name: "Precision Circular LEO",
     tier: 2,
@@ -261,6 +275,20 @@ export const CONTRACTS = {
     wetMassTonnes: 62,
     heightMeters: 46,
     cargo: 1500,
+  },
+  return: {
+    name: "Orbital Capsule Return",
+    tier: 2,
+    tierLabel: "Tier 2",
+    goal: "Reach stable orbit, deorbit, and land safely on Earth.",
+    hardwareCost: 750,
+    propellantCost: 1100,
+    credits: 4200,
+    research: 95,
+    firstTimeCredits: 0,
+    wetMassTonnes: 42,
+    heightMeters: 40,
+    cargo: 0,
   },
 } as const satisfies Record<string, ContractDef>;
 
@@ -368,7 +396,7 @@ export const startProgram = (): Program => {
     buildings,
     buildingLevels: syncBuildingLevels(buildings),
     activeContracts: [],
-    completed: { sounding: 0, hop: 0, orbit: 0, relay: 0, leo: 0 },
+    completed: { sounding: 0, hop: 0, orbit: 0, recovery: 0, relay: 0, leo: 0, return: 0 },
     milestones: { firstSounding: false, firstKarman: false, firstOrbit: false },
     award: null,
     sortie: "practice",
@@ -1221,6 +1249,10 @@ export function contractConditionMet(p: Program, f: Flight): boolean {
       return f.maxAlt >= AIR && f.stage >= 1;
     case "orbit":
       return f.orbitEarned && o.pe >= AIR && o.ap >= 38000;
+    case "recovery":
+      return f.maxAlt >= 20000 && f.status === "landed";
+    case "return":
+      return f.orbitEarned && f.status === "landed";
     case "relay":
       return (
         f.status === "flying" &&

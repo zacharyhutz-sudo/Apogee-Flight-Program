@@ -241,12 +241,25 @@ export default function App() {
 
   const objectives = [
     { name: "Lift off", done: !pad },
-    { name: "Separate booster", done: !booster },
-    ...(sortie === "sounding"
-      ? [{ name: "Reach 15 km", done: s.maxAlt >= 15000 }]
-      : sortie === "hop"
-        ? [{ name: "Reach 30 km", done: s.maxAlt >= AIR }]
-        : [{ name: "Establish orbit", done: s.orbitEarned }]),
+    ...(sortie === "recovery"
+      ? [
+          { name: "Reach 20 km", done: s.maxAlt >= 20000 },
+          { name: "Land safely on Earth", done: s.status === "landed" },
+        ]
+      : sortie === "return"
+        ? [
+            { name: "Separate booster", done: !booster },
+            { name: "Establish orbit", done: s.orbitEarned },
+            { name: "Land safely on Earth", done: s.status === "landed" },
+          ]
+        : [
+            { name: "Separate booster", done: !booster },
+            ...(sortie === "sounding"
+              ? [{ name: "Reach 15 km", done: s.maxAlt >= 15000 }]
+              : sortie === "hop"
+                ? [{ name: "Reach 30 km", done: s.maxAlt >= AIR }]
+                : [{ name: "Establish orbit", done: s.orbitEarned }]),
+          ]),
   ];
   const current = objectives.findIndex((t) => !t.done);
   const guidance = m.mission.program.rewarded

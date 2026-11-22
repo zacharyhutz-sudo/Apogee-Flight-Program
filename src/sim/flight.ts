@@ -7,6 +7,7 @@ export const AIR = 30000;
 export const SCALE_HEIGHT = 3200;
 export const MAX_ORBIT_AP = 600000;
 export const CHUTE_MAX_SPEED = 200;
+export const CHUTE_FULL_ALT = 500;
 export const STEP = 1 / 20;
 
 export interface StageSpec {
@@ -366,8 +367,17 @@ export function step(s: Flight, dt = STEP) {
     used > 0 ? (used * engine.isp * G0) / (dt * midMass) : 0;
   const theta = (s.pitch * Math.PI) / 180,
     grav = MU / (r * r);
-  const chuteArea = s.chuteDeployed && alt < AIR ? 145 : 0;
-  const drag = (0.5 * density(alt) * (0.32 * engine.area + 1.35 * chuteArea) * v) / midMass;
+  const chuteFull = Boolean(s.chuteDeployed && alt <= CHUTE_FULL_ALT);
+  const chuteHalf = Boolean(s.chuteDeployed && alt > CHUTE_FULL_ALT && alt < AIR);
+  const chuteDragFactor = chuteFull
+    ? Math.max(950, midMass * 0.28)
+    : chuteHalf
+      ? Math.max(220, midMass * 0.055)
+      : 0;
+  const rawDrag =
+    (0.5 * density(alt) * (0.32 * engine.area + chuteDragFactor) * v) / midMass;
+  // Cap per-step drag damping so stiff full-canopy drag never oscillates numerically
+  const drag = Math.min(rawDrag, 0.45 / dt);
   const ax =
     (nx * Math.cos(theta) - ny * Math.sin(theta)) * thrustAcc -
     nx * grav -
@@ -385,9 +395,9 @@ export function step(s: Flight, dt = STEP) {
   const nextR = radius(s);
   s.maxAlt = Math.max(s.maxAlt, nextR - R);
   if (nextR <= R) {
-    const maxVr = s.legsDeployed ? 13 : 5.5;
-    const maxVt = s.legsDeployed ? 6.5 : 3;
-    const maxTilt = s.legsDeployed ? 24 : 15;
+    const maxVr = s.legsDeployed ? 14 : 6;
+    const maxVt = s.legsDeployed ? 7 : 3;
+    const maxTilt = s.legsDeployed ? 25 : 15;
     s.status =
       Math.abs(vr) < maxVr && Math.abs(vt) < maxVt && Math.abs(s.pitch) < maxTilt
         ? "landed"

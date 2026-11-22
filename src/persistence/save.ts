@@ -286,8 +286,12 @@ export function validate(raw: unknown): Snapshot {
     }
   }
 
-  if (record(program) && !Array.isArray(program.reclaimedTiles)) {
-    program.reclaimedTiles = [];
+  if (record(program)) {
+    if (!Array.isArray(program.reclaimedTiles)) program.reclaimedTiles = [];
+    if (record(program.completed)) {
+      if (typeof program.completed.recovery !== "number") program.completed.recovery = 0;
+      if (typeof program.completed.return !== "number") program.completed.return = 0;
+    }
   }
   if (!validProgram(program, f)) return invalid();
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, type MutableRefObject } from "react";
 import Phaser from "phaser";
 import {
   AIR,
+  CHUTE_FULL_ALT,
   R,
   burning,
   clamp,
@@ -516,13 +517,17 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
               x: nose.x + lx * cG - ly * sG,
               y: nose.y + lx * sG + ly * cG,
             });
-            const sway = Math.sin(s.t * 4.2) * 3 * shipScale;
-            const canopyDist = 46 * shipScale;
-            const leftRim = chutePt(-24 * shipScale + sway, -canopyDist);
-            const rightRim = chutePt(24 * shipScale + sway, -canopyDist);
-            const midL = chutePt(-12 * shipScale + sway, -canopyDist - 12 * shipScale);
-            const apex = chutePt(sway, -canopyDist - 16 * shipScale);
-            const midR = chutePt(12 * shipScale + sway, -canopyDist - 12 * shipScale);
+            const fullOpen = alt <= CHUTE_FULL_ALT;
+            const bloom = fullOpen ? 1.0 : 0.48;
+            const sway = Math.sin(s.t * 4.2) * (fullOpen ? 3 : 1.5) * shipScale;
+            const canopyDist = (fullOpen ? 50 : 38) * shipScale;
+            const span = 28 * bloom * shipScale;
+            const domeH = 16 * bloom * shipScale;
+            const leftRim = chutePt(-span + sway, -canopyDist);
+            const rightRim = chutePt(span + sway, -canopyDist);
+            const midL = chutePt(-span * 0.5 + sway, -canopyDist - domeH * 0.75);
+            const apex = chutePt(sway, -canopyDist - domeH);
+            const midR = chutePt(span * 0.5 + sway, -canopyDist - domeH * 0.75);
             customGfx
               .lineStyle(1.1, 0xd8d2c5, 0.85)
               .lineBetween(nose.x, nose.y, leftRim.x, leftRim.y)
