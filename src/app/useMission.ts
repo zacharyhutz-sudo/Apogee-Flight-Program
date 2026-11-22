@@ -511,16 +511,33 @@ export function useMission() {
       id = requestAnimationFrame(frame);
     }
 
+    function catchUpBackground() {
+      if (!ready.current) return;
+      const res = applyOfflineProgress(mission.current.program, Date.now());
+      mission.current.program = res.state;
+      if (res.creditsAdded > 0 || res.propellantAdded > 0) {
+        save();
+        refresh();
+      }
+    }
     function suspend() {
       last = 0;
       acc = 0;
-      if (dirty.current) save();
+      if (ready.current) {
+        mission.current.program.lastRealTimestampMs = Date.now();
+        save();
+      }
     }
     function visibility() {
       if (document.hidden) suspend();
-      else last = 0;
+      else {
+        last = 0;
+        catchUpBackground();
+      }
     }
     document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("focus", catchUpBackground);
+    window.addEventListener("blur", suspend);
     window.addEventListener("pagehide", suspend);
     return () => {
       alive = false;
@@ -529,6 +546,8 @@ export function useMission() {
       ready.current = false;
       releaseLock();
       document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("focus", catchUpBackground);
+      window.removeEventListener("blur", suspend);
       window.removeEventListener("pagehide", suspend);
     };
   }, []);

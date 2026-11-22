@@ -782,10 +782,15 @@ export function applyOfflineProgress(state: Program, nowMs: number) {
   const curP = clamp(safeFinite(state.collectors?.propellant, 0), 0, hopperCaps.propellant);
   const nextC = clamp(curC + (getCreditRatePerHour(state) / 3600) * elapsedSec, 0, hopperCaps.credits);
   const nextP = clamp(curP + (getPropellantRatePerHour(state) / 3600) * elapsedSec, 0, hopperCaps.propellant);
+  const nextLunar = structuredClone(state.lunar);
+  if (nextLunar && nextLunar.unlocked) {
+    tickLunarColony(nextLunar, elapsedSec);
+  }
   return {
     state: {
       ...state,
       collectors: { credits: nextC, propellant: nextP },
+      lunar: nextLunar,
       lastRealTimestampMs: validNow,
     },
     creditsAdded: Math.floor(nextC - curC),
