@@ -8,6 +8,12 @@ import {
   type Flight,
 } from "../sim/flight.ts";
 import {
+  initialLunarColony,
+  tickLunarColony,
+  unlockLunarColony,
+  type LunarColony,
+} from "./lunar.ts";
+import {
   PARTS,
   analyzeBlueprint,
   buildVehicleInstance,
@@ -290,6 +296,34 @@ export const CONTRACTS = {
     heightMeters: 40,
     cargo: 0,
   },
+  lunar_flyby: {
+    name: "Lunar Flyby",
+    tier: 2,
+    tierLabel: "Tier 2",
+    goal: "Execute a Moon transfer and enter the Moon's SOI.",
+    hardwareCost: 950,
+    propellantCost: 1500,
+    credits: 5200,
+    research: 140,
+    firstTimeCredits: 0,
+    wetMassTonnes: 65,
+    heightMeters: 48,
+    cargo: 0,
+  },
+  lunar_colony: {
+    name: "Establish Lunar Outpost",
+    tier: 2,
+    tierLabel: "Tier 2",
+    goal: "Land safely on the Moon to unpack your separate Lunar Colony.",
+    hardwareCost: 1200,
+    propellantCost: 1800,
+    credits: 7500,
+    research: 220,
+    firstTimeCredits: 0,
+    wetMassTonnes: 78,
+    heightMeters: 52,
+    cargo: 4000,
+  },
 } as const satisfies Record<string, ContractDef>;
 
 export type Job = keyof typeof CONTRACTS;
@@ -339,6 +373,7 @@ export interface EconomyState {
   blueprints: RocketBlueprint[];
   activeBlueprintId: string;
   reclaimedTiles: string[];
+  lunar: LunarColony;
 }
 
 export type Program = EconomyState;
@@ -396,7 +431,7 @@ export const startProgram = (): Program => {
     buildings,
     buildingLevels: syncBuildingLevels(buildings),
     activeContracts: [],
-    completed: { sounding: 0, hop: 0, orbit: 0, recovery: 0, relay: 0, leo: 0, return: 0 },
+    completed: { sounding: 0, hop: 0, orbit: 0, recovery: 0, relay: 0, leo: 0, return: 0, lunar_flyby: 0, lunar_colony: 0 },
     milestones: { firstSounding: false, firstKarman: false, firstOrbit: false },
     award: null,
     sortie: "practice",
@@ -408,6 +443,7 @@ export const startProgram = (): Program => {
     blueprints,
     activeBlueprintId: blueprints[0].id,
     reclaimedTiles: [],
+    lunar: initialLunarColony(),
   };
 };
 
@@ -836,6 +872,7 @@ export function tickEconomy(p: Program, dtSimSec: number) {
   p.collectors = next.collectors;
   p.simTimeSec = next.simTimeSec;
   p.elapsed = next.elapsed;
+  p.warpAlert = tickLunarColony(p.lunar, dtSimSec);
 }
 
 export function canAffordUpgrade(
@@ -1253,6 +1290,10 @@ export function contractConditionMet(p: Program, f: Flight): boolean {
       return f.maxAlt >= 20000 && f.status === "landed";
     case "return":
       return f.orbitEarned && f.status === "landed";
+    case "lunar_flyby":
+      return Boolean(f.moonVisited || f.body === "moon");
+    case "lunar_colony":
+      return f.body === "moon" && f.status === "landed";
     case "relay":
       return (
         f.status === "flying" &&
@@ -1280,6 +1321,9 @@ export function contractConditionMet(p: Program, f: Flight): boolean {
 }
 
 export function settle(p: Program, f: Flight): string {
+  if (f.body === "moon" && f.status === "landed" && !p.lunar.unlocked) {
+    unlockLunarColony(p.lunar);
+  }
   const job = p.sortie;
   if (job === "practice" || !p.paid || p.rewarded) return "";
   if (!contractConditionMet(p, f)) return "";

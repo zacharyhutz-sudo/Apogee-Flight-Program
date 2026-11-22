@@ -13,9 +13,11 @@ import {
   type Kind,
   type Program,
 } from "../program/program.ts";
+import { initialLunarColony } from "../program/lunar.ts";
 import { starterBlueprints } from "../program/workshop.ts";
 import {
   R,
+  bodyParams,
   clamp,
   initial,
   radius,
@@ -29,16 +31,16 @@ export interface Entry {
 }
 
 export interface Snapshot {
-  version: 6;
+  version: 7;
   program: Program;
   revision: number;
-  view: "flight" | "map" | "site" | "workshop";
+  view: "flight" | "map" | "site" | "workshop" | "lunar";
   flight: Flight;
   log: Entry[];
 }
 
 export const fresh = (): Snapshot => ({
-  version: 6,
+  version: 7,
   program: startProgram(),
   revision: 0,
   view: "site",
@@ -188,14 +190,14 @@ export function validate(raw: unknown): Snapshot {
   };
   if (
     !record(raw) ||
-    ![1, 2, 3, 4, 5, 6].includes(Number(raw.version)) ||
+    ![1, 2, 3, 4, 5, 6, 7].includes(Number(raw.version)) ||
     !num(raw.revision, 0, Number.MAX_SAFE_INTEGER) ||
     !Number.isSafeInteger(raw.revision) ||
     !(
       raw.version === 1
         ? ["flight", "map"]
         : Number(raw.version) >= 4
-          ? ["flight", "map", "site", "workshop"]
+          ? ["flight", "map", "site", "workshop", "lunar"]
           : ["flight", "map", "site"]
     ).includes(String(raw.view)) ||
     !Array.isArray(raw.log) ||
@@ -219,7 +221,7 @@ export function validate(raw: unknown): Snapshot {
     !num(f.maxAlt, 0, 1e19) ||
     ![f.x, f.y].every((v) => num(v, -1e19, 1e19)) ||
     ![f.vx, f.vy].every((v) => num(v, -1e7, 1e7)) ||
-    radius(f) < R - 0.01 ||
+    radius(f) < bodyParams(f.body).R - 0.01 ||
     !Array.isArray(f.fuel) ||
     f.fuel.length !== 2 ||
     !f.fuel.every((v, i) => num(v, 0, st[i].fuel)) ||
@@ -231,7 +233,7 @@ export function validate(raw: unknown): Snapshot {
     f.status === "pad" &&
     (f.t !== 0 ||
       f.stage !== 0 ||
-      f.x !== R ||
+      f.x !== bodyParams(f.body).R ||
       f.y !== 0 ||
       f.vx !== 0 ||
       f.vy !== 0 ||
@@ -291,12 +293,15 @@ export function validate(raw: unknown): Snapshot {
     if (record(program.completed)) {
       if (typeof program.completed.recovery !== "number") program.completed.recovery = 0;
       if (typeof program.completed.return !== "number") program.completed.return = 0;
+      if (typeof program.completed.lunar_flyby !== "number") program.completed.lunar_flyby = 0;
+      if (typeof program.completed.lunar_colony !== "number") program.completed.lunar_colony = 0;
     }
+    if (!record(program.lunar)) program.lunar = initialLunarColony();
   }
   if (!validProgram(program, f)) return invalid();
 
   return {
-    version: 6,
+    version: 7,
     program,
     flight: f,
     view: raw.view as Snapshot["view"],

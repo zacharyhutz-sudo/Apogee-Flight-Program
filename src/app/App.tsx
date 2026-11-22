@@ -1,6 +1,7 @@
 import { Dialog } from "./Dialog";
 import { LaunchSite } from "./LaunchSite";
 import { Workshop } from "./Workshop";
+import { LunarSite } from "./LunarSite";
 import { CONTRACTS, level, quote } from "../program/program";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -177,6 +178,7 @@ export default function App() {
         dialog ||
         m.mission.view === "site" ||
         m.mission.view === "workshop" ||
+        m.mission.view === "lunar" ||
         !m.loaded ||
         e.altKey ||
         e.ctrlKey ||
@@ -310,10 +312,13 @@ export default function App() {
         mission={m}
         onFlight={() => toggleView(false)}
         onWorkshop={m.openWorkshop}
+        onLunar={m.openLunar}
       />
     );
   if (m.mission.view === "workshop")
     return <Workshop mission={m} onSite={m.visitSite} />;
+  if (m.mission.view === "lunar")
+    return <LunarSite mission={m} onEarth={m.visitSite} />;
 
   return (
     <>

@@ -4,6 +4,7 @@ import {
   AIR,
   CHUTE_FULL_ALT,
   R,
+  bodyParams,
   burning,
   clamp,
   headingVector,
@@ -277,8 +278,10 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         const s = vessel.current;
         const w = this.scale.width;
         const h = this.scale.height;
-        const r = radius(s) || R;
-        const alt = Math.max(0, r - R);
+        const bp = bodyParams(s.body);
+        const isMoon = s.body === "moon";
+        const r = radius(s) || bp.R;
+        const alt = Math.max(0, r - bp.R);
 
         // World-fixed north-up inertial camera centered on the rocket.
         // Anchor slightly below center on the pad so the full rocket + tower frame cleanly above controls.
@@ -293,7 +296,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         });
 
         // 1. Sky / Space background based on 30 km SFS atmosphere
-        const atmoFrac = clamp(1 - alt / AIR, 0, 1);
+        const atmoFrac = bp.AIR > 0 ? clamp(1 - alt / bp.AIR, 0, 1) : 0;
         const bg = this.bg;
         bg.clear();
         const skyR = Math.round(13 + 38 * atmoFrac * atmoFrac);
@@ -317,29 +320,23 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         const g = this.world;
         g.clear();
 
-        const planetScreenR = R * ppm;
-        const atmoScreenR = (R + AIR) * ppm;
+        const planetScreenR = bp.R * ppm;
+        const atmoScreenR = (bp.R + bp.AIR) * ppm;
         const earthCenter = worldToScreen(0, 0);
 
         if (planetScreenR < 2600) {
-          g.fillStyle(0x4b87a6, 0.24).fillCircle(
-            earthCenter.x,
-            earthCenter.y,
-            atmoScreenR,
-          );
-          g.lineStyle(1.2, 0x87c8d6, 0.45).strokeCircle(
-            earthCenter.x,
-            earthCenter.y,
-            atmoScreenR,
-          );
-          g.fillStyle(0x1f435a, 1).fillCircle(
+          if (!isMoon) {
+            g.fillStyle(0x4b87a6, 0.24).fillCircle(earthCenter.x, earthCenter.y, atmoScreenR);
+            g.lineStyle(1.2, 0x87c8d6, 0.45).strokeCircle(earthCenter.x, earthCenter.y, atmoScreenR);
+          }
+          g.fillStyle(isMoon ? 0x67707a : 0x1f435a, 1).fillCircle(
             earthCenter.x,
             earthCenter.y,
             planetScreenR,
           );
           g.lineStyle(
             Math.max(1.5, Math.min(5, planetScreenR * 0.018)),
-            0x5c8b76,
+            isMoon ? 0xb4bcc4 : 0x5c8b76,
             1,
           ).strokeCircle(earthCenter.x, earthCenter.y, planetScreenR);
           const padPt = worldToScreen(R, 0);
@@ -379,26 +376,26 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
             g.fillStyle(color, alpha).fillPoints(pts, true);
           };
 
-          if (alt < AIR * 1.8) {
-            drawArcBand(R + AIR, R, 0x4b87a6, 0.22 * (0.4 + 0.6 * atmoFrac));
+          if (!isMoon && alt < bp.AIR * 1.8) {
+            drawArcBand(bp.R + bp.AIR, bp.R, 0x4b87a6, 0.22 * (0.4 + 0.6 * atmoFrac));
           }
-          const depth = Math.min(R * 0.6, (Math.max(w, h) * 1.4) / ppm);
-          drawArcBand(R, Math.max(0, R - depth), 0x1d3544, 1);
+          const depth = Math.min(bp.R * 0.6, (Math.max(w, h) * 1.4) / ppm);
+          drawArcBand(bp.R, Math.max(0, bp.R - depth), isMoon ? 0x4d545c : 0x1d3544, 1);
           const crust = Math.max(12, 8 / ppm);
-          drawArcBand(R, Math.max(0, R - crust), 0x4f7865, 1);
+          drawArcBand(bp.R, Math.max(0, bp.R - crust), isMoon ? 0x9aa3ad : 0x4f7865, 1);
 
           const rimPts: Array<{ x: number; y: number }> = [];
           for (let i = 0; i <= steps; i++) {
             const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
-            rimPts.push(worldToScreen(R * Math.cos(a), R * Math.sin(a)));
+            rimPts.push(worldToScreen(bp.R * Math.cos(a), bp.R * Math.sin(a)));
           }
-          g.lineStyle(1.5, 0x89b39d, 0.95).strokePoints(rimPts, false);
+          g.lineStyle(1.5, isMoon ? 0xd2d8de : 0x89b39d, 0.95).strokePoints(rimPts, false);
         }
 
         // 3. Launchpad slab & gantry tower flush with surface at North Pole (R, 0)
         // Because rocket origin is bottom-center (0.5, 1) at (s.x, s.y), at alt=0 its bells rest right on padScreen.y!
-        const padScreen = worldToScreen(R, 0);
-        const padVisible =
+        const padScreen = worldToScreen(bp.R, 0);
+        const padVisible = !isMoon &&
           ppm > 0.08 &&
           padScreen.x > -200 &&
           padScreen.x < w + 200 &&

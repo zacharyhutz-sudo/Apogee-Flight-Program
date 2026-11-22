@@ -8,6 +8,31 @@ export const SCALE_HEIGHT = 3200;
 export const MAX_ORBIT_AP = 600000;
 export const CHUTE_MAX_SPEED = 200;
 export const CHUTE_FULL_ALT = 500;
+// SFS-scaled Moon: 85 km radius, 1.62 m/s^2 gravity, 2,400 km orbit, 360 km SOI, vacuum
+export const MOON_R = 85000;
+export const MOON_G0 = 1.62;
+export const MOON_MU = MOON_G0 * MOON_R * MOON_R;
+export const MOON_ORBIT_R = 2400000;
+export const MOON_SOI = 360000;
+export const MOON_OMEGA = Math.sqrt(MU / MOON_ORBIT_R ** 3);
+export type Body = "earth" | "moon";
+
+export function bodyParams(body: Body = "earth") {
+  return body === "moon"
+    ? { R: MOON_R, MU: MOON_MU, AIR: 0, name: "Moon" }
+    : { R, MU, AIR, name: "Earth" };
+}
+
+export function moonPosition(simTimeSec: number) {
+  // Start Moon at +55 deg ahead of North Pole so an eastbound LEO transfer intercepts cleanly
+  const a = 0.96 + MOON_OMEGA * simTimeSec;
+  const x = MOON_ORBIT_R * Math.cos(a);
+  const y = MOON_ORBIT_R * Math.sin(a);
+  const speedOrb = MOON_ORBIT_R * MOON_OMEGA;
+  const vx = -speedOrb * Math.sin(a);
+  const vy = speedOrb * Math.cos(a);
+  return { x, y, vx, vy, angle: a };
+}
 export const STEP = 1 / 20;
 
 export interface StageSpec {
@@ -82,6 +107,9 @@ export interface Flight {
   legsDeployed?: boolean;
   chuteDeployed?: boolean;
   chuteRipped?: boolean;
+  /** Active sphere of influence (Earth or Moon). */
+  body?: Body;
+  moonVisited?: boolean;
   /** Real simulated detached stages falling under gravity & drag. */
   debris?: Debris[];
   /** Optional custom stage specs constructed from a Rocket Workshop blueprint. */
@@ -126,6 +154,8 @@ export function initial(
     legsDeployed: false,
     chuteDeployed: false,
     chuteRipped: false,
+    body: "earth",
+    moonVisited: false,
   };
   if (customStages) f.customStages = customStages;
   if (customPayload !== undefined) f.customPayload = customPayload;
@@ -168,7 +198,8 @@ export function mass(s: Flight) {
 export function thrustToWeight(s: Flight) {
   const st = stagesOf(s);
   const thrust = s.fuel[s.stage] > 0 ? st[s.stage].thrust * s.throttle : 0;
-  return thrust / ((mass(s) * MU) / radius(s) ** 2);
+  const bp = bodyParams(s.body);
+  return thrust / ((mass(s) * bp.MU) / radius(s) ** 2);
 }
 
 export function deltaV(s: Flight) {
@@ -187,28 +218,30 @@ export function deltaV(s: Flight) {
 }
 
 export function orbit(s: Flight) {
+  const bp = bodyParams(s.body);
   const r = radius(s),
     v = speed(s),
     dot = s.x * s.vx + s.y * s.vy;
   const h = s.x * s.vy - s.y * s.vx;
-  const ex = ((v * v - MU / r) * s.x - dot * s.vx) / MU,
-    ey = ((v * v - MU / r) * s.y - dot * s.vy) / MU;
+  const ex = ((v * v - bp.MU / r) * s.x - dot * s.vx) / bp.MU,
+    ey = ((v * v - bp.MU / r) * s.y - dot * s.vy) / bp.MU;
   const e = Math.hypot(ex, ey),
-    p = (h * h) / MU;
-  const a = 1 / (2 / r - (v * v) / MU);
+    p = (h * h) / bp.MU;
+  const a = 1 / (2 / r - (v * v) / bp.MU);
   return {
     e,
     a,
     p,
     h,
     arg: Math.atan2(ey, ex),
-    pe: p / (1 + e) - R,
-    ap: a > 0 ? a * (1 + e) - R : Infinity,
+    pe: p / (1 + e) - bp.R,
+    ap: a > 0 ? a * (1 + e) - bp.R : Infinity,
   };
 }
 
 export function stable(s: Flight) {
   const o = orbit(s);
+  if (s.body === "moon") return o.pe >= 3000 && o.ap <= MOON_SOI * 0.9;
   return o.pe >= AIR && o.ap <= MAX_ORBIT_AP;
 }
 
@@ -245,12 +278,13 @@ export function toggleLegs(s: Flight) {
 export function toggleChute(s: Flight): "deployed" | "ripped" | "cut" | "blocked" {
   if (!s.hasChute && s.hasChute !== undefined) return "blocked";
   if (s.status !== "flying" || s.chuteRipped) return "blocked";
-  const alt = radius(s) - R;
+  const bp = bodyParams(s.body);
+  const alt = radius(s) - bp.R;
   if (s.chuteDeployed) {
     s.chuteDeployed = false;
     return "cut";
   }
-  if (alt >= AIR) return "blocked";
+  if (bp.AIR <= 0 || alt >= bp.AIR) return "blocked";
   if (speed(s) > CHUTE_MAX_SPEED) {
     s.chuteRipped = true;
     s.chuteDeployed = false;
@@ -277,7 +311,8 @@ export function burning(s: Flight) {
 }
 
 export function canWarp(s: Flight) {
-  return s.status === "flying" && !burning(s) && radius(s) > R + AIR + 500;
+  const bp = bodyParams(s.body);
+  return s.status === "flying" && !burning(s) && radius(s) > bp.R + bp.AIR + 500;
 }
 
 export function alignToVelocity(s: Flight) {
@@ -316,11 +351,38 @@ export function stepDebris(s: Flight, dt: number) {
   s.debris = keep.length ? keep : undefined;
 }
 
+export function checkSoiTransition(s: Flight, simTimeSec: number): Body | null {
+  if (s.status !== "flying") return null;
+  const m = moonPosition(simTimeSec);
+  if (s.body !== "moon") {
+    const dx = s.x - m.x;
+    const dy = s.y - m.y;
+    if (Math.hypot(dx, dy) <= MOON_SOI) {
+      s.body = "moon";
+      s.moonVisited = true;
+      s.x = dx;
+      s.y = dy;
+      s.vx -= m.vx;
+      s.vy -= m.vy;
+      return "moon";
+    }
+  } else if (radius(s) > MOON_SOI * 1.04) {
+    s.body = "earth";
+    s.x += m.x;
+    s.y += m.y;
+    s.vx += m.vx;
+    s.vy += m.vy;
+    return "earth";
+  }
+  return null;
+}
+
 export function step(s: Flight, dt = STEP) {
   if (s.status !== "flying") return;
   const st = stagesOf(s);
+  const bp = bodyParams(s.body);
   const r = radius(s),
-    alt = r - R,
+    alt = r - bp.R,
     v = speed(s),
     nx = s.x / r,
     ny = s.y / r;
@@ -347,7 +409,7 @@ export function step(s: Flight, dt = STEP) {
     // SFS-scale gravity turn: climb above 30 km atmosphere before circularizing at ~45 km
     const targetClimb = clamp((48000 - alt) / 14, -70, 420);
     const acc = (engine.thrust * s.throttle) / mass(s);
-    const radial = (targetClimb - vr) / 8 + MU / (r * r) - (vt * vt) / r;
+    const radial = (targetClimb - vr) / 8 + bp.MU / (r * r) - (vt * vt) / r;
     const tilt = (Math.acos(clamp(radial / acc, -1, 1)) * 180) / Math.PI;
     s.pitch = clamp(tilt, 0, Math.min(115, Math.max(0, alt / 260)));
     if (stable(s)) {
@@ -366,16 +428,17 @@ export function step(s: Flight, dt = STEP) {
   const thrustAcc =
     used > 0 ? (used * engine.isp * G0) / (dt * midMass) : 0;
   const theta = (s.pitch * Math.PI) / 180,
-    grav = MU / (r * r);
-  const chuteFull = Boolean(s.chuteDeployed && alt <= CHUTE_FULL_ALT);
-  const chuteHalf = Boolean(s.chuteDeployed && alt > CHUTE_FULL_ALT && alt < AIR);
+    grav = bp.MU / (r * r);
+  const atmoDensity = bp.AIR > 0 ? density(alt) : 0;
+  const chuteFull = Boolean(s.chuteDeployed && bp.AIR > 0 && alt <= CHUTE_FULL_ALT);
+  const chuteHalf = Boolean(s.chuteDeployed && bp.AIR > 0 && alt > CHUTE_FULL_ALT && alt < bp.AIR);
   const chuteDragFactor = chuteFull
     ? Math.max(950, midMass * 0.28)
     : chuteHalf
       ? Math.max(220, midMass * 0.055)
       : 0;
   const rawDrag =
-    (0.5 * density(alt) * (0.32 * engine.area + chuteDragFactor) * v) / midMass;
+    (0.5 * atmoDensity * (0.32 * engine.area + chuteDragFactor) * v) / midMass;
   // Cap per-step drag damping so stiff full-canopy drag never oscillates numerically
   const drag = Math.min(rawDrag, 0.45 / dt);
   const ax =
@@ -393,8 +456,8 @@ export function step(s: Flight, dt = STEP) {
   s.t += dt;
   s.fuel[s.stage] -= used;
   const nextR = radius(s);
-  s.maxAlt = Math.max(s.maxAlt, nextR - R);
-  if (nextR <= R) {
+  if (s.body !== "moon") s.maxAlt = Math.max(s.maxAlt, nextR - bp.R);
+  if (nextR <= bp.R) {
     const maxVr = s.legsDeployed ? 14 : 6;
     const maxVt = s.legsDeployed ? 7 : 3;
     const maxTilt = s.legsDeployed ? 25 : 15;
@@ -402,13 +465,14 @@ export function step(s: Flight, dt = STEP) {
       Math.abs(vr) < maxVr && Math.abs(vt) < maxVt && Math.abs(s.pitch) < maxTilt
         ? "landed"
         : "lost";
-    s.x *= R / nextR;
-    s.y *= R / nextR;
+    s.x *= bp.R / nextR;
+    s.y *= bp.R / nextR;
     s.vx = 0;
     s.vy = 0;
     s.throttle = 0;
     s.chuteDeployed = false;
   }
-  if (!s.orbitEarned && stable(s)) s.orbitEarned = true;
+  if (!s.orbitEarned && s.body !== "moon" && stable(s)) s.orbitEarned = true;
   stepDebris(s, dt);
+  checkSoiTransition(s, s.t);
 }

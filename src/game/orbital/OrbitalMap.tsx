@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import {
-  AIR,
-  R,
+  MOON_ORBIT_R,
+  MOON_R,
+  MOON_SOI,
+  bodyParams,
   clamp,
   headingVector,
+  moonPosition,
   orbit,
   radius,
   type Flight,
@@ -45,8 +48,11 @@ export function OrbitalMap({
     };
   }, []);
 
+  const bp = bodyParams(s.body);
+  const isMoon = s.body === "moon";
+  const moonPos = moonPosition(s.t);
   const o = orbit(s),
-    scale = (D * zoom) / R;
+    scale = (D * zoom) / bp.R;
   const ox = size.w / 2 + pan[0] - (track ? s.y * scale : 0),
     oy = size.h * 0.49 + pan[1] + (track ? s.x * scale : 0);
   const point = (x: number, y: number) => [ox + y * scale, oy - x * scale];
@@ -54,14 +60,14 @@ export function OrbitalMap({
   let previousVisible = false;
 
   if (Math.abs(o.h) > 1 && o.p > 0) {
-    const cut = o.e > 1e-12 ? (o.p / R - 1) / o.e : 2;
+    const cut = o.e > 1e-12 ? (o.p / bp.R - 1) / o.e : 2;
     const start = cut >= 1 ? 0 : Math.acos(clamp(cut, -1, 1));
     const end = 2 * Math.PI - start;
     for (let i = 0; i <= 480; i++) {
       const f = start + ((end - start) * i) / 480,
         den = 1 + o.e * Math.cos(f),
         r = o.p / den;
-      if (den <= 0 || r > 250 * R) {
+      if (den <= 0 || r > 250 * bp.R) {
         previousVisible = false;
         continue;
       }
@@ -72,7 +78,7 @@ export function OrbitalMap({
       previousVisible = true;
     }
   } else if (s.status === "flying" && Number.isFinite(o.ap)) {
-    const k = (R + o.ap) / radius(s);
+    const k = (bp.R + o.ap) / radius(s);
     pts.push(
       "M" + point(s.x, s.y).join(" ") + "L" + point(s.x * k, s.y * k).join(" "),
     );
@@ -178,7 +184,7 @@ export function OrbitalMap({
         <circle
           cx={ox}
           cy={oy}
-          r={(R + AIR) * scale}
+          r={(bp.R + bp.AIR) * scale}
           fill="#406777"
           stroke="#486877"
           strokeWidth=".6"
@@ -210,9 +216,43 @@ export function OrbitalMap({
         </g>
         {zoom < 3 && !track && (
           <text x={ox} y={oy + 4} textAnchor="middle" className="earth-label">
-            EARTH
+            {isMoon ? "MOON" : "EARTH"}
           </text>
         )}
+        {!isMoon && (() => {
+          const [mx, my] = point(moonPos.x, moonPos.y);
+          return (
+            <g>
+              <circle
+                cx={ox}
+                cy={oy}
+                r={MOON_ORBIT_R * scale}
+                fill="none"
+                stroke="#8ea3b044"
+                strokeDasharray="4 4"
+              />
+              <circle
+                cx={mx}
+                cy={my}
+                r={MOON_SOI * scale}
+                fill="#a79cf514"
+                stroke="#a79cf588"
+                strokeDasharray="3 3"
+              />
+              <circle
+                cx={mx}
+                cy={my}
+                r={Math.max(3.5, MOON_R * scale)}
+                fill="#bfc6ce"
+                stroke="#f6f1e3"
+                strokeWidth="0.9"
+              />
+              <text x={mx + Math.max(6, MOON_R * scale + 4)} y={my + 3}>
+                MOON
+              </text>
+            </g>
+          );
+        })()}
         <path
           d={pts.join(" ")}
           fill="none"
@@ -223,14 +263,14 @@ export function OrbitalMap({
           Number.isFinite(o.ap) &&
           marker(
             "Ap",
-            -(R + o.ap) * Math.cos(o.arg),
-            -(R + o.ap) * Math.sin(o.arg),
+            -(bp.R + o.ap) * Math.cos(o.arg),
+            -(bp.R + o.ap) * Math.sin(o.arg),
           )}
         {o.pe >= 0 &&
           marker(
             "Pe",
-            (R + o.pe) * Math.cos(o.arg),
-            (R + o.pe) * Math.sin(o.arg),
+            (bp.R + o.pe) * Math.cos(o.arg),
+            (bp.R + o.pe) * Math.sin(o.arg),
           )}
         {(s.debris ?? []).map((d, idx) => {
           const [dx, dy] = point(d.x, d.y);
@@ -262,7 +302,7 @@ export function OrbitalMap({
         {hasManeuverSlot ? <Radar size={13} /> : <Lock size={13} />}
         <span>
           {hasManeuverSlot
-            ? "Maneuver Nodes · Ready (v0.5)"
+            ? "Moon Transfer · SOI Active"
             : "Maneuver Nodes · Tracking Lv 2"}
         </span>
       </div>

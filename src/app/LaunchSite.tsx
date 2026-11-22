@@ -12,6 +12,7 @@ import {
   Hammer,
   Landmark,
   Lock,
+  Moon,
   Move,
   Radar,
   Rocket,
@@ -86,10 +87,12 @@ export function LaunchSite({
   mission: m,
   onFlight,
   onWorkshop,
+  onLunar,
 }: {
   mission: ReturnType<typeof useMission>;
   onFlight: () => void;
   onWorkshop: () => void;
+  onLunar: () => void;
 }) {
   const p = m.mission.program,
     flight = m.mission.flight;
@@ -467,6 +470,12 @@ export function LaunchSite({
         )}
 
         <div className="site-dock">
+          {p.lunar.unlocked && (
+            <button aria-label="Lunar Outpost" onClick={onLunar}>
+              <Moon />
+              Moon
+            </button>
+          )}
           <button disabled={buttonsDisabled} onClick={() => showPanel("build")}>
             <Building2 />
             Build

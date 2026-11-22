@@ -16,12 +16,15 @@ import {
   type Sortie,
 } from "../program/program";
 import type { RocketBlueprint } from "../program/workshop";
+import { buildOrUpgradeLunar, collectLunar, type LunarKind } from "../program/lunar";
 import { useEffect, useRef, useState } from "react";
 import {
   STEP,
   AIR,
-  R,
+  MOON_R,
+  bodyParams,
   canWarp,
+  initial,
   thrustToWeight,
   radius,
   stage,
@@ -285,6 +288,56 @@ export function useMission() {
     return issue;
   }
 
+  function openLunar() {
+    if (!ready.current || !mission.current.program.lunar.unlocked) return;
+    if (vessel.current.status === "flying") paused.current = true;
+    rate.current = 1;
+    change(() => {
+      mission.current.view = "lunar";
+    });
+  }
+
+  function collectLunarFacility(kind: LunarKind) {
+    if (!ready.current) return "";
+    const p = mission.current.program;
+    const res = collectLunar(p.lunar, kind);
+    if (res.researchGained > 0) p.research += res.researchGained;
+    if (res.text) {
+      save();
+      refresh();
+    }
+    return res.text;
+  }
+
+  function upgradeLunarFacility(kind: LunarKind) {
+    if (!ready.current) return "Save is still loading.";
+    const err = buildOrUpgradeLunar(mission.current.program.lunar, kind);
+    if (!err) {
+      save();
+      refresh();
+    }
+    return err;
+  }
+
+  function launchFromMoon() {
+    if (!ready.current) return;
+    const data = mission.current;
+    const f = initial();
+    f.body = "moon";
+    f.x = MOON_R;
+    f.y = 0;
+    f.moonVisited = true;
+    data.flight = f;
+    data.program.sortie = "practice";
+    data.program.paid = false;
+    data.program.rewarded = false;
+    data.program.award = null;
+    data.log = [{ t: 0, text: "Lunar Refuel Pad launch ready." }];
+    data.view = "flight";
+    install(data);
+    save();
+  }
+
   function visitSite() {
     if (!ready.current) return;
     if (vessel.current.status === "flying") paused.current = true;
@@ -501,12 +554,16 @@ export function useMission() {
     newSortie,
     editSite,
     expandOcean,
+    openLunar,
+    collectLunarFacility,
+    upgradeLunarFacility,
+    launchFromMoon,
     visitSite,
     togglePause,
     warp,
     reset,
     restore,
     save,
-    alt: Math.max(0, radius(vessel.current) - R),
+    alt: Math.max(0, radius(vessel.current) - bodyParams(vessel.current.body).R),
   };
 }

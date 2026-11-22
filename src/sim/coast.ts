@@ -1,8 +1,7 @@
 import {
-  AIR,
   alignToVelocity,
-  MU,
-  R,
+  bodyParams,
+  checkSoiTransition,
   STEP,
   canWarp,
   clamp,
@@ -20,9 +19,10 @@ const positive = (angle: number) => ((angle % tau) + tau) % tau;
 // retain the ordinary fixed step, including collision detection.
 export function coast(s: Flight, seconds: number): boolean {
   if (!canWarp(s) || seconds <= 0) return false;
+  const bp = bodyParams(s.body);
   const o = orbit(s),
     r = radius(s),
-    limit = R + AIR + 500;
+    limit = bp.R + bp.AIR + 500;
   if (o.e >= 0.999999 || Math.abs(o.h) < 1 || o.a <= 0) {
     let left = seconds;
     while (left > 1e-8 && canWarp(s)) {
@@ -33,7 +33,7 @@ export function coast(s: Flight, seconds: number): boolean {
     return canWarp(s);
   }
   const sign = Math.sign(o.h),
-    n = Math.sqrt(MU / o.a ** 3);
+    n = Math.sqrt(bp.MU / o.a ** 3);
   const trueAnom = (Math.atan2(s.y, s.x) - o.arg) * sign;
   const E = Math.atan2(
     Math.sqrt(1 - o.e * o.e) * Math.sin(trueAnom),
@@ -41,7 +41,7 @@ export function coast(s: Flight, seconds: number): boolean {
   );
   const M = E - o.e * Math.sin(E);
   let safe = true;
-  if (o.pe <= AIR + 500 && o.e > 1e-12) {
+  if (o.pe <= bp.AIR + 500 && o.e > 1e-12) {
     const crossE = -Math.acos(clamp((1 - limit / o.a) / o.e, -1, 1));
     const until = positive(crossE - o.e * Math.sin(crossE) - M) / n;
     if (until <= seconds + 0.25) {
@@ -74,12 +74,13 @@ export function coast(s: Flight, seconds: number): boolean {
   const apE = positive(Math.PI - M) / n;
   s.maxAlt = Math.max(
     s.maxAlt,
-    r - R,
-    radius(s) - R,
+    r - bp.R,
+    radius(s) - bp.R,
     apE <= seconds ? o.ap : 0,
   );
   alignToVelocity(s);
   s.t += seconds;
+  if (checkSoiTransition(s, s.t)) safe = false;
   // Advance any active detached stages in small substeps during coast
   if (s.debris && s.debris.length) {
     const sub = Math.min(20, Math.max(1, Math.ceil(seconds / 0.5)));
