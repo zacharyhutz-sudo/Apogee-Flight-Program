@@ -149,6 +149,17 @@ function drawCustomStack(
         0xf3a953,
       );
     }
+    if (def.category === "tank") {
+      fillPoly([[-hw * .84, yTop + 1], [-hw * .61, yTop + 1],
+        [-hw * .61, yBot - 1], [-hw * .84, yBot - 1]], 0xf5ebd2);
+      fillPoly([[hw * .5, yTop + 1], [hw, yTop + 1],
+        [hw, yBot - 1], [hw * .5, yBot - 1]], 0x98a4a3);
+    } else if (def.category === "engine") {
+      fillPoly([[-hw * .78, yBot - h * .19], [hw * .78, yBot - h * .19],
+        [hw * .86, yBot], [-hw * .86, yBot]], 0xb39779);
+    } else if (def.category === "pod") {
+      fillPoly([[0, yTop], [hw, yBot], [hw * .55, yBot]], 0x9ba5a7);
+    }
     yTop = yBot;
   }
 
@@ -240,6 +251,12 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
     class Range extends Phaser.Scene {
       bg!: Phaser.GameObjects.Graphics;
       world!: Phaser.GameObjects.Graphics;
+      skyline!: Phaser.GameObjects.Image;
+      hills!: Phaser.GameObjects.Image;
+      padSurface!: Phaser.GameObjects.Graphics;
+      canopy!: Phaser.GameObjects.Image;
+      canopyWidth = 0;
+      lastFlightTime = 0;
       tower!: Phaser.GameObjects.Image;
       debrisSprites: Phaser.GameObjects.Image[] = [];
       customGfx!: Phaser.GameObjects.Graphics;
@@ -248,7 +265,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
       marker!: Phaser.GameObjects.Graphics;
 
       preload() {
-        for (const key of ["tower", "vehicle", "upper"])
+        for (const key of ["tower", "vehicle", "upper", "canopy", "dusk", "range"])
           this.load.image(
             key,
             import.meta.env.BASE_URL + "art/" + key + ".png",
@@ -257,7 +274,10 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
 
       create() {
         this.bg = this.add.graphics();
+        this.skyline = this.add.image(0, 0, "dusk").setOrigin(0.5, 1);
         this.world = this.add.graphics();
+        this.hills = this.add.image(0, 0, "range").setOrigin(0.5, 237 / 260);
+        this.padSurface = this.add.graphics();
         this.tower = this.add.image(0, 0, "tower").setOrigin(1, 1);
         for (let i = 0; i < 4; i++) {
           const d = this.add
@@ -271,6 +291,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         this.customGfx = this.add.graphics();
         // Anchor ship sprite at its bottom center (engine bells) so alt = 0 sits flush on the pad!
         this.ship = this.add.image(0, 0, "vehicle").setOrigin(0.5, 1);
+        this.canopy = this.add.image(0, 0, "canopy").setOrigin(32 / 65, 25 / 30);
         this.marker = this.add.graphics();
       }
 
@@ -402,24 +423,42 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           padScreen.y > -200 &&
           padScreen.y < h + 200;
 
+        // Keep distant terrain behind the local pad and let it fall away on ascent.
+        const sceneryAlpha = isMoon ? 0 : clamp(1 - alt / 1800, 0, 1)
+          * clamp((ppm - 0.09) / 0.3, 0, 1)
+          * clamp(2 - Math.abs(padScreen.x - cx) / w, 0, 1);
+        const horizon = cy + Math.min(h, alt * ppm * 0.16);
+        const artScale = Math.max((w + 100) / 600, h / 255);
+        const sceneryX = cx + clamp((padScreen.x - cx) * 0.08, -45, 45);
+        this.skyline.setPosition(sceneryX, horizon).setScale(artScale)
+          .setVisible(sceneryAlpha > 0).setAlpha(sceneryAlpha);
+        this.hills.setPosition(sceneryX, padScreen.y).setScale(artScale)
+          .setVisible(sceneryAlpha > 0).setAlpha(sceneryAlpha);
+
         const shipScale = clamp(ppm / 1.35, 0.16, 2.2);
+        const padSurface = this.padSurface.clear();
+        const foregroundY = Math.floor(padScreen.y + 23 * artScale);
+        if (sceneryAlpha > 0 && foregroundY < h) {
+          padSurface.fillStyle(0x202c3a, sceneryAlpha)
+            .fillRect(0, foregroundY, w, h - foregroundY);
+        }
         if (padVisible) {
           const padW = 84 * shipScale;
           const padH = 6 * shipScale;
-          g.fillStyle(0x283643, 1).fillRect(
+          padSurface.fillStyle(0x283643, 1).fillRect(
             padScreen.x - padW / 2,
             padScreen.y,
             padW,
             Math.max(3, padH),
           );
-          g.fillStyle(0xb8b2a1, 1).fillRect(
+          padSurface.fillStyle(0xb8b2a1, 1).fillRect(
             padScreen.x - padW / 2 - 2,
             padScreen.y - 1,
             padW + 4,
             Math.max(2, 2 * shipScale),
           );
           for (let i = -3; i <= 3; i++) {
-            g.fillStyle(0xd99357, 1).fillRect(
+            padSurface.fillStyle(0xd99357, 1).fillRect(
               padScreen.x + i * 11 * shipScale - 2,
               padScreen.y,
               4 * shipScale,
@@ -481,6 +520,14 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         }
 
         // 5b. Deployable Landing Legs & Parachute Canopy visuals
+        const elapsed = clamp(s.t - this.lastFlightTime, 0, 0.1);
+        this.lastFlightTime = s.t;
+        const chuteOpen = Boolean(s.chuteDeployed) && !isMoon && alt < AIR;
+        const targetWidth = alt <= CHUTE_FULL_ALT ? 1 : 0.48;
+        this.canopyWidth = chuteOpen
+          ? Math.min(targetWidth, Math.max(0.15, this.canopyWidth + elapsed * 2.8))
+          : 0;
+        this.canopy.setVisible(false);
         if (spriteVisible) {
           const cosA = Math.cos(angle);
           const sinA = Math.sin(angle);
@@ -504,7 +551,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
                 .lineBetween(padL.x, padL.y, padR.x, padR.y);
             }
           }
-          if (s.chuteDeployed && alt < AIR) {
+          if (chuteOpen) {
             // Parachute vector is strictly opposite gravity (+radial outward) with rocket tip locked to shroud
             const antiGravAngle = Math.atan2(s.y, s.x);
             const cG = Math.cos(antiGravAngle);
@@ -514,30 +561,20 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
               x: nose.x + lx * cG - ly * sG,
               y: nose.y + lx * sG + ly * cG,
             });
-            const fullOpen = alt <= CHUTE_FULL_ALT;
-            const bloom = fullOpen ? 1.0 : 0.48;
-            const sway = Math.sin(s.t * 4.2) * (fullOpen ? 3 : 1.5) * shipScale;
-            const canopyDist = (fullOpen ? 50 : 38) * shipScale;
-            const span = 28 * bloom * shipScale;
-            const domeH = 16 * bloom * shipScale;
-            const leftRim = chutePt(-span + sway, -canopyDist);
-            const rightRim = chutePt(span + sway, -canopyDist);
-            const midL = chutePt(-span * 0.5 + sway, -canopyDist - domeH * 0.75);
-            const apex = chutePt(sway, -canopyDist - domeH);
-            const midR = chutePt(span * 0.5 + sway, -canopyDist - domeH * 0.75);
-            customGfx
-              .lineStyle(1.1, 0xd8d2c5, 0.85)
-              .lineBetween(nose.x, nose.y, leftRim.x, leftRim.y)
-              .lineBetween(nose.x, nose.y, rightRim.x, rightRim.y)
-              .lineBetween(nose.x, nose.y, midL.x, midL.y)
-              .lineBetween(nose.x, nose.y, midR.x, midR.y);
-            customGfx
-              .fillStyle(0xf28c28, 0.96)
-              .fillPoints([leftRim, midL, apex, midR, rightRim], true)
-              .fillStyle(0xf6f1e3, 0.96)
-              .fillPoints([midL, apex, midR, chutePt(sway, -canopyDist)], true)
-              .lineStyle(1.4, 0x090e14, 0.9)
-              .strokePoints([leftRim, midL, apex, midR, rightRim], true);
+            const width = this.canopyWidth;
+            const sway = Math.sin(s.t * 2.2) * 1.4 * shipScale * width;
+            const height = (29 + 22 * width) * shipScale;
+            const center = chutePt(sway, -height);
+            const bridle = chutePt(0, -5 * shipScale);
+            customGfx.lineStyle(Math.max(0.65, shipScale * 0.8), 0xe1d8bf, 0.92)
+              .lineBetween(nose.x, nose.y, bridle.x, bridle.y);
+            for (const anchor of [-30, -15, 0, 15, 30]) {
+              const hem = chutePt(sway + anchor * width * shipScale, -height);
+              customGfx.lineBetween(bridle.x, bridle.y, hem.x, hem.y);
+            }
+            this.canopy.setVisible(true).setRotation(antiGravAngle)
+              .setPosition(center.x, center.y)
+              .setScale(width * shipScale, (0.65 + 0.35 * width) * shipScale);
           }
         }
 
@@ -547,35 +584,38 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         if (burning(s) && spriteVisible) {
           const fx = cx;
           const fy = cy;
-          const wave = Math.sin(s.t * 44) * 3 * shipScale;
-          for (const [width, length, color] of [
-            [6 * shipScale, 24 * shipScale + wave, 0xd86c45],
-            [4 * shipScale, 16 * shipScale + wave, 0xf3a953],
-            [2 * shipScale, 10 * shipScale, 0xffefd0],
-          ]) {
-            const len = length * (0.35 + 0.65 * s.throttle);
-            const dx = Math.cos(angle) * width;
-            const dy = Math.sin(angle) * width;
-            flame.fillStyle(color).fillTriangle(
-              fx - dx,
-              fy - dy,
-              fx + dx,
-              fy + dy,
-              fx - Math.sin(angle) * len,
-              fy + Math.cos(angle) * len,
-            );
-          }
+          const phase = Math.floor(s.t * 14);
+          const pulse = Math.sin(phase * 2.3);
+          const length = (22 + pulse * 2) * shipScale * (0.35 + 0.65 * s.throttle);
+          const plumePoint = (across: number, along: number) => ({
+            x: fx + Math.cos(angle) * across * shipScale - Math.sin(angle) * along * length,
+            y: fy + Math.sin(angle) * across * shipScale + Math.cos(angle) * along * length,
+          });
+          // The bell stays steady while the outer flame breaks into short tongues.
+          flame.fillStyle(0xba5d41, 0.92).fillPoints([
+            plumePoint(-4.6, 0), plumePoint(-4.1, 0.36), plumePoint(-2.7, 0.76),
+            plumePoint(-1.8, 0.56), plumePoint(pulse, 1.1), plumePoint(1.8, 0.70),
+            plumePoint(2.9, 0.86), plumePoint(4.5, 0.33), plumePoint(4.6, 0),
+          ], true);
+          flame.fillStyle(0xffb264).fillPoints([
+            plumePoint(-3.8, 0), plumePoint(-2.5, 0.36), plumePoint(0, 0.82),
+            plumePoint(2.7, 0.38), plumePoint(3.8, 0),
+          ], true);
+          flame.fillStyle(0xffefbf).fillPoints([
+            plumePoint(-2.6, 0), plumePoint(0, 0.45), plumePoint(2.6, 0),
+          ], true);
           // Pad exhaust billowing smoke near liftoff
           if (alt < 120 && padVisible) {
             for (let i = 0; i < 16; i++) {
-              const k = (s.t * 1.6 + i * 0.37) % 1;
+              const k = (s.t * 0.85 + i * 0.37) % 1;
               const dir = i % 2 ? 1 : -1;
               flame
                 .fillStyle(i % 3 ? 0xc8c2b6 : 0x7f8b92, (1 - k) * 0.75)
-                .fillCircle(
-                  padScreen.x + dir * k * 56 * shipScale,
+                .fillEllipse(
+                  padScreen.x + dir * k * 64 * shipScale,
                   padScreen.y - (2 + k * 9) * shipScale,
-                  (3 + k * 6) * shipScale,
+                  (5 + k * 16) * shipScale,
+                  (4 + k * 8) * shipScale,
                 );
             }
           }

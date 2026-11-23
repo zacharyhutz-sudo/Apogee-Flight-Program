@@ -461,7 +461,12 @@ export default function App() {
               >
                 <Landmark />
               </button>
-              <span className="timer">T+ {clock(s.t)}</span>
+              <div className="flight-readout">
+                <span role="status" className={"state" + (booster && flying && !fuelPct ? " alert" : "")}>
+                  <i />{flightStatus()}
+                </span>
+                {!pad && <span className="timer">T+ {clock(s.t)}</span>}
+              </div>
               {(!active || m.rate > 1 || Boolean(s.chuteDeployed && flying)) && (
                 <button
                   className={
@@ -546,6 +551,15 @@ export default function App() {
                   )}
                 </>
               )}
+              {!pad && (
+                <div className="meter fuel-meter">
+                  <span>S{s.stage + 1} fuel</span>
+                  <strong>{Math.ceil(fuelPct)}<small>%</small></strong>
+                  <div className="fuel-track" aria-hidden="true">
+                    <i style={{ width: fuelPct + "%" }} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -574,6 +588,7 @@ export default function App() {
                   {s.hasLegs !== false && (
                     <button
                       className={s.legsDeployed ? "active-gear" : ""}
+                      aria-pressed={Boolean(s.legsDeployed)}
                       aria-label="Toggle landing legs"
                       onClick={() =>
                         m.change(
@@ -599,6 +614,7 @@ export default function App() {
                             ? "active-gear"
                             : ""
                       }
+                      aria-pressed={Boolean(s.chuteDeployed)}
                       aria-label="Toggle parachute"
                       disabled={
                         Boolean(s.chuteRipped) ||
@@ -614,15 +630,7 @@ export default function App() {
               )}
 
               <div className="command-card">
-                <span
-                  role="status"
-                  className={
-                    "state" + (booster && flying && !fuelPct ? " alert" : "")
-                  }
-                >
-                  <i />
-                  {flightStatus()}
-                </span>
+
 
                 {pad && launchQuote && (
                   <div className="launch-costs" aria-label="Launch cost">
@@ -664,21 +672,11 @@ export default function App() {
                     disabled={!m.loaded || lowThrust}
                     onClick={m.launchFreeSim}
                   >
-                    Simulate Free · 0 Cost
+                    Simulate free
                   </button>
                 )}
 
-                {!pad && (
-                  <div className="fuel-bar-wrap">
-                    <div className="fuel-label">
-                      <span>S{s.stage + 1} FUEL</span>
-                      <b>{Math.ceil(fuelPct)}%</b>
-                    </div>
-                    <div className="fuel-track">
-                      <i style={{ width: fuelPct + "%" }} />
-                    </div>
-                  </div>
-                )}
+
               </div>
             </div>
           </div>

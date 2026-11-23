@@ -67,15 +67,15 @@ for i in range(8):
         d.line((46, 85, 54, 85), fill="#449cb8")
         put(i)
         continue
-    green = ["#5fb36d", "#68be72", "#57ab68", "#6ec375"]
+    green = ["#73977a", "#759b7d", "#709578", "#789d7e"]
     box(-16, -16, 32, 32, -7, 7, (green[i % 4], "#8f6d4f", "#6e5039"))
-    for _ in range(72):
+    for _ in range(34):
         x = r.randint(-15, 15)
         y = r.randint(-15, 15)
         line(
             (x, y, 0),
             (min(x + 1, 15), y, 0),
-            r.choice(["#7ad17c", "#509c5f", "#84d67c", "#4c9459"]),
+            r.choice(["#86a984", "#729176", "#90ad87", "#65876e"]),
         )
     if i == 4:
         face([(-16, -10, 0), (16, -10, 0), (16, 10, 0), (-16, 10, 0)], "#4b5863")
@@ -118,6 +118,7 @@ for typ in range(9):
     for tier in range(4):
         idx = 8 + typ * 4 + tier
         frame(idx)
+        face([(-12, -10, 0), (15, -10, 0), (16, 12, 0), (13, 15, 0), (-12, 15, 0)], "#506d60")
         box(-13, -13, 26, 26, 0, 2, ("#d6d9cc", "#869da3", "#607780"))
 
         if typ == 0:  # Mission Control (command)
@@ -157,6 +158,11 @@ for typ in range(9):
             box(-11, -9, 13, 18, 2, 8 + tier, dark)
             tank(5, -5, 2, 5, 16 + tier * 3, "#7cc7d1")
             tank(6, 5, 2, 4, 12 + tier * 2, "#5cb4c2")
+            # An insulated transfer pipe and a ladder along the processing hall.
+            line((-9, 9, 4), (0, 9, 4), "#6addc5", 2)
+            line((0, 9, 4), (0, 9, 10 + tier), "#6addc5", 2)
+            for z in range(4, 11 + tier, 3):
+                line((-7, 9, z), (-4, 9, z), "#ccded1")
             fx, fy = iso(-9, -7, 10 + tier)
             d.line((fx, fy, fx, fy - 18 - tier * 2), fill="#7c9199", width=2)
             d.ellipse((fx - 3, fy - 23 - tier * 2, fx + 3, fy - 17 - tier * 2), fill="#ffae42")
@@ -175,6 +181,9 @@ for typ in range(9):
                 line((k, 8, 7), (k + 2, 8, 7), "#64e3d6", 2)
                 if tier >= 1:
                     line((k, 8, 11), (k + 2, 8, 11), "#ffe08a", 2)
+            # Recessed front entrance and projecting awning.
+            box(2, 8, 5, 2, 2, 6, dark)
+            box(1, 7, 8, 4, 8, 1, light)
             if tier >= 2:
                 box(-5, -5, 10, 10, 14 + tier * 2, 3, steel)
 
@@ -185,6 +194,8 @@ for typ in range(9):
             face([(-6, 11, 2), (4, 11, 2), (4, 11, vh - 2), (-6, 11, vh - 2)], "#223342")
             for stripe in range(6, vh - 3, 5):
                 line((-5, 11, stripe), (3, 11, stripe), "#4c6a80", 1)
+            for rib in [-9, -7, 6, 8, 10]:
+                line((rib, 11, 3), (rib, 11, vh - 2), "#91a9ac")
             line((-11, 11, vh - 1), (11, 11, vh - 1), "#f28c28", 2)
 
         elif typ == 6:  # Tracking Station (tracking)
@@ -210,6 +221,10 @@ for typ in range(9):
         else:  # Solar Foundry (foundry) — bright cobalt solar arrays + warm amber crucible
             box(-11, -10, 20, 18, 2, 7 + tier, dark)
             box(-5, -5, 10, 10, 9 + tier, 5 + tier, ("#ffcf70", "#f28c28", "#b35b14"))
+            # Twin vented stacks distinguish the foundry from the tank farm.
+            for fx in [-7, -2]:
+                box(fx, -7, 3, 3, 9 + tier, 10 + tier, dark)
+                box(fx - 1, -8, 5, 5, 18 + tier * 2, 2, warm)
             for sx in [-11, 4]:
                 face([(sx, -11, 5 + tier), (sx + 7, -11, 5 + tier), (sx + 7, 10, 8 + tier), (sx, 10, 8 + tier)], "#2466a8")
                 for gy in range(-8, 10, 5):
@@ -248,3 +263,22 @@ atlas.save(out)
 if docs_out.parent.exists():
     atlas.save(docs_out)
 print(f"Generated vibrant {out} ({atlas.size[0]}x{atlas.size[1]})")
+
+# Resource silhouettes share the same pixels in the world and in the HUD.
+for resource in ("credits", "propellant"):
+    icon = Image.new("RGBA", (16, 16))
+    pen = ImageDraw.Draw(icon)
+    if resource == "credits":
+        for x, y in [(1, 8), (4, 5), (2, 2)]:
+            pen.rounded_rectangle((x, y + 1, x + 10, y + 5), 2, fill="#ae622e")
+            pen.ellipse((x, y, x + 10, y + 4), fill="#f8c45d", outline="#e19a40")
+            pen.line((x + 3, y + 1, x + 7, y + 1), fill="#fff2ab")
+            pen.point((x + 3, y + 4), fill="#ffdf8a")
+    else:
+        pen.rectangle((6, 1, 10, 3), fill="#d2ede2")
+        pen.rounded_rectangle((3, 3, 12, 14), 3, fill="#78dfc9")
+        pen.rectangle((9, 5, 12, 12), fill="#329e98")
+        pen.line((5, 5, 5, 11), fill="#d7f4de")
+        pen.rectangle((3, 7, 12, 8), fill="#205a68")
+        pen.line((5, 13, 10, 13), fill="#48aa9c")
+    icon.save(out.parent / (resource + ".png"))

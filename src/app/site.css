@@ -65,6 +65,10 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
+.res-row img {
+  image-rendering: pixelated;
+  flex: none;
+}
 .res-row svg {
   width: 14px;
   height: 14px;

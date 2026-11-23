@@ -869,3 +869,64 @@ dialog ol {
   border-radius: var(--radius-sm);
   font-size: 13px;
 }
+
+/* Shared instrument housings leave more of the range visible around each control. */
+.flight-readout { min-width: 0; display: grid; gap: 2px; }
+.flight-readout .state, .flight-readout .timer {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  text-shadow: 0 1px 3px #060d15;
+}
+.flight-readout .state {
+  display: block;
+  justify-self: stretch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+.flight-readout .state i { display: none; }
+.flight-readout .state.alert { color: var(--amber-bright); }
+.flight-readout .timer { font-size: 10px; color: #c7d4db; }
+.topline nav, .landing-toggles {
+  flex: none;
+  gap: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: #172430;
+  border: 1px solid #435565;
+}
+.topline nav button, .landing-toggles button {
+  min-height: 44px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+.topline nav button + button, .landing-toggles button + button { border-left: 1px solid #344552; }
+.topline nav button:focus-visible, .landing-toggles button:focus-visible { outline-offset: -3px; }
+.landing-toggles { align-self: flex-end; }
+.landing-toggles .active-gear { background: #24483e; color: #9ee9ce; }
+.landing-toggles .ripped-gear { color: var(--coral); }
+.flight-actions { max-width: 174px; }
+.flight-actions.actions-pad { max-width: 196px; }
+.actions-pad .launch-costs { background: #182633; border-width: 1px; }
+.actions-pad .sim-free-btn { min-height: 44px; border-width: 1px; box-shadow: none; }
+.telemetry .fuel-meter { position: relative; }
+.fuel-meter .fuel-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  border: 0;
+  border-radius: 0;
+}
+.steer-pill { background: #17243099; border: 0; width: 30px; height: 36px; }
+@media (max-width: 420px) {
+  .topline { gap: 4px; }
+  .identity { gap: 4px; }
+  .map-view .meter { padding-inline: 3px; }
+  .map-view .meter strong { font-size: 12px; }
+}

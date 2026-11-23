@@ -303,7 +303,7 @@ export function LaunchSite({
           <div className="resource-bar" aria-label="Program resources">
             <div className="res-pill credits" title="Credits">
               <div className="res-row">
-                <Coins />
+                <img width="16" height="16" alt="" src={import.meta.env.BASE_URL + "art/credits.png"} />
                 <strong>{compactNum(p.credits)}</strong>
                 <small>/{compactNum(caps.credits)}</small>
                 <em className="res-rate">+{creditRate}/h</em>
@@ -314,7 +314,7 @@ export function LaunchSite({
             </div>
             <div className="res-pill propellant" title="Propellant">
               <div className="res-row">
-                <Flame />
+                <img width="16" height="16" alt="" src={import.meta.env.BASE_URL + "art/propellant.png"} />
                 <strong>{compactNum(p.propellant)}</strong>
                 <small>/{compactNum(caps.propellant)}</small>
                 <em className="res-rate">+{propRate}/h</em>

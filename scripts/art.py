@@ -121,3 +121,26 @@ for n in (192,512):
     d.arc((34,75,228,181),22,310,fill='#6fb6af',width=7)
     d.polygon([(174,48),(151,184),(127,148),(88,151)],fill='#efad72')
     im.resize((n,n),Image.Resampling.LANCZOS).save(out.parent/f'icon-{n}.png')
+
+# Ribbed recovery canopy. Suspension-line anchors sit on the lower hem at y=25.
+canopy = Image.new("RGBA", (65, 30))
+pen = ImageDraw.Draw(canopy)
+panels = [("#b45938", "#d67647"), ("#d1c1a1", "#eee2c4"),
+          ("#d27140", "#f39852"), ("#ded1b4", "#fff0ce"),
+          ("#b75d37", "#e28046"), ("#beb69f", "#dfd7bf")]
+angles = [-math.pi / 2 + i * math.pi / len(panels) for i in range(len(panels) + 1)]
+def rib(a, t):
+    return (round(32 + 30 * math.sin(a) * math.sin(t * math.pi / 2)),
+            round(4 + 21 * (1 - math.cos(t * math.pi / 2))))
+for i, (shadow, light) in enumerate(panels):
+    a, b = angles[i:i + 2]
+    left, right = rib(a, 1), rib(b, 1)
+    top = [rib(a, k / 16) for k in range(17)]
+    bottom = [rib(b, k / 16) for k in range(16, -1, -1)]
+    mid = ((left[0] + right[0]) // 2, 23)
+    pen.polygon(top + [mid] + bottom, fill=light)
+    pen.polygon([rib(a, k / 16) for k in range(17)] + [mid] +
+                [rib(a * .63 + b * .37, k / 16) for k in range(16, -1, -1)], fill=shadow)
+    pen.line([left, mid, right], fill="#825743")
+pen.line((30, 4, 34, 4), fill="#795549")
+canopy.save(out / "canopy.png")

@@ -71,15 +71,16 @@ export function EarthScene(props: Props) {
       home = props.recenter ?? 0;
     const points = new Map<number, { x: number; y: number }>();
 
+    const badgeHits: Array<{ tile: Tile; x: number; y: number }> = [];
+
+    let width = el.clientWidth, height = el.clientHeight;
     function size() {
-      return (
-        Math.min(el.clientWidth / 455, el.clientHeight / 340, 2.35) * scale
-      );
+      return Math.min(width / 455, height / 340, 2.35) * scale;
     }
     function origin() {
       return {
-        x: el.clientWidth / 2 + panX,
-        y: el.clientHeight * 0.49 + panY - 112 * size(),
+        x: width / 2 + panX,
+        y: height * 0.49 + panY - 112 * size(),
       };
     }
     function tileAt(x: number, y: number) {
@@ -133,7 +134,12 @@ export function EarthScene(props: Props) {
         if (!state.current.placing) {
           const o = origin(),
             z = size();
-          const b = [...state.current.program.buildings]
+          const localX = (x - o.x) / z;
+          const localY = (y - o.y) / z;
+          const hit = badgeHits.find((badge) =>
+            Math.abs(localX - badge.x) <= 12 && Math.abs(localY - badge.y) <= 13
+          );
+          const b = hit?.tile ?? [...state.current.program.buildings]
             .sort((a, b) => b.x + b.y - a.x - a.y)
             .find((b) => {
               const pt = project(b.x, b.y);
@@ -167,7 +173,8 @@ export function EarthScene(props: Props) {
 
     class Site extends Phaser.Scene {
       board!: Phaser.GameObjects.Container;
-      terrainLayer!: Phaser.GameObjects.Container;
+      ground!: Phaser.Textures.CanvasTexture;
+      badges: Phaser.GameObjects.Image[] = [];
       terrainSig = "";
       marker!: Phaser.GameObjects.Graphics;
       overlay!: Phaser.GameObjects.Graphics;
@@ -191,6 +198,8 @@ export function EarthScene(props: Props) {
       ready = false;
 
       preload() {
+        for (const resource of ["credits", "propellant"])
+          this.load.image(resource, import.meta.env.BASE_URL + "art/" + resource + ".png");
         this.load.spritesheet(
           "terrain",
           import.meta.env.BASE_URL + "art/site.png",
@@ -199,7 +208,13 @@ export function EarthScene(props: Props) {
       }
 
       rebuildTerrain(prog: Program) {
-        this.terrainLayer.removeAll(true);
+        // Bake the static island once in board coordinates. Only reclamation changes it.
+        const ground = this.ground;
+        const ctx = ground.context;
+        const left = 592, top = 224;
+        ctx.clearRect(0, 0, ground.width, ground.height);
+        const stamp = (frame: number, x: number, y: number) =>
+          ground.drawFrame("terrain", frame, left + x - 40, top + y - 80, false);
         for (let sum = -8; sum < 24; sum++)
           for (let x = -5; x <= 12; x++) {
             const y = sum - x;
@@ -216,14 +231,23 @@ export function EarthScene(props: Props) {
                     : t === "road"
                       ? 4
                       : Math.abs(x * 13 + y * 7) % 4;
-            this.terrainLayer.add(
-              this.add
-                .image(pt.x, pt.y, "terrain", frame)
-                .setOrigin(0.5, 80 / 104),
-            );
+            if (t === "water") {
+              // Sparse, reproducible glints break up the repeating diamond grid offshore.
+              const seed = ((x + 17) * 73856093 ^ (y + 17) * 19349663) >>> 0;
+              if (seed % 4 !== 0) {
+                ctx.fillStyle = seed % 3 ? "#34829a" : "#428da1";
+                const wx = left + pt.x - 12 + seed % 24;
+                const wy = top + pt.y - 5 + (seed >>> 5) % 10;
+                ctx.fillRect(wx, wy, 3 + (seed >>> 9) % 8, 1);
+                if (seed % 5 === 0) ctx.fillRect(wx + 4, wy - 1, 4, 1);
+              }
+            } else {
+              stamp(frame, pt.x, pt.y);
+            }
           }
-        const surf = this.add.graphics();
-        this.terrainLayer.add(surf);
+        ctx.strokeStyle = "#b3dccc";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
         for (let x = 0; x < SIZE; x++)
           for (let y = 0; y < SIZE; y++) {
             if (tileTerrain(prog, x, y) === "water") continue;
@@ -236,28 +260,19 @@ export function EarthScene(props: Props) {
             ]) {
               if (tileTerrain(prog, x + dx, y + dy) !== "water") continue;
               const drop = dx + dy > 0 ? 7 : 0;
-              surf
-                .lineStyle(1.4, 0xc4f2e8, 0.85)
-                .lineBetween(
-                  pt.x + ax,
-                  pt.y + ay + drop,
-                  pt.x + bx,
-                  pt.y + by + drop,
-                );
+              ctx.moveTo(left + pt.x + ax, top + pt.y + ay + drop);
+              ctx.lineTo(left + pt.x + bx, top + pt.y + by + drop);
             }
-            if (y === 4 && x % 2 === 1)
-              this.terrainLayer.add(
-                this.add
-                  .image(pt.x - 13, pt.y + 4, "terrain", LAMP_FRAME)
-                  .setOrigin(0.5, 80 / 104),
-              );
+            if (y === 4 && x % 2 === 1) stamp(LAMP_FRAME, pt.x - 13, pt.y + 4);
           }
+        ctx.stroke();
+        ground.refresh();
       }
 
       create() {
         this.board = this.add.container(0, 0);
-        this.terrainLayer = this.add.container(0, 0);
-        this.board.add(this.terrainLayer);
+        this.ground = this.textures.createCanvas("ground", 1184, 660)!;
+        this.board.add(this.add.image(-592, -224, "ground").setOrigin(0));
         this.rebuildTerrain(state.current.program);
         this.terrainSig = (state.current.program.reclaimedTiles ?? []).join("|");
         this.marker = this.add.graphics();
@@ -297,7 +312,7 @@ export function EarthScene(props: Props) {
         this.ready = true;
       }
 
-      update(time: number) {
+      update(time: number, delta: number) {
         if (!this.ready) return;
         const p = state.current;
         const nextZoom = p.zoom ?? 0;
@@ -407,7 +422,7 @@ export function EarthScene(props: Props) {
 
         // Animated pixel base crew strolling along roads and between facilities
         this.crewGfx.clear();
-        const dtCrew = 1 / 30;
+        const dtCrew = Math.min(delta, 80) / 1000;
         for (const c of this.crew) {
           if (c.pause > 0) {
             c.pause -= dtCrew;
@@ -452,7 +467,8 @@ export function EarthScene(props: Props) {
         this.overlay.clear();
         const storageCaps = getStorageCaps(p.program);
         const hopperCaps = getCollectorCaps(p.program);
-        const bob = Math.sin(time * 0.0045) * 2.2;
+        const bob = Math.round(Math.sin(time * 0.003) * 1.25);
+        badgeHits.length = 0;
 
         const tanksBuilding = p.program.buildings.find(
           (b) => b.kind === "tanks",
@@ -483,32 +499,32 @@ export function EarthScene(props: Props) {
           amount: number,
           hopperCap: number,
           storageFull: boolean,
-          fillColor: number,
+          resource: "credits" | "propellant",
         ) => {
           if (amount < 1) return;
           const pt = project(b.x, b.y);
           const cx = pt.x;
-          const cy = pt.y - 34 - b.level * 2 + bob;
+          const cy = pt.y - 42 - b.level * 2 + bob;
+          const fillColor = resource === "credits" ? 0xf2b558 : 0x57d7c4;
           const fullHopper = amount >= hopperCap * 0.98;
           const ringColor = storageFull
             ? 0xf07c6b
             : fullHopper
               ? 0xffefd0
               : fillColor;
-          // Bubble pointer triangle
-          this.overlay
-            .fillStyle(0x13222e, 0.95)
-            .fillTriangle(cx - 3, cy + 5, cx + 3, cy + 5, cx, cy + 9);
-          // Circular pill badge
-          this.overlay
-            .fillStyle(0x13222e, 0.96)
-            .fillCircle(cx, cy, 8)
-            .lineStyle(1.4, ringColor, 1)
-            .strokeCircle(cx, cy, 8);
-          // Inner resource pip (amber coin or teal fuel drop)
-          this.overlay
-            .fillStyle(storageFull ? 0x8e9da3 : fillColor, 1)
-            .fillCircle(cx, cy, 3.6);
+          this.overlay.fillStyle(0x172932, 1)
+            .fillTriangle(cx - 4, cy + 9, cx + 4, cy + 9, cx, cy + 14)
+            .fillRoundedRect(cx - 11, cy - 10, 22, 21, 4)
+            .lineStyle(fullHopper ? 2 : 1, ringColor, 1)
+            .strokeRoundedRect(cx - 11, cy - 10, 22, 21, 4);
+          const index = badgeHits.length;
+          if (!this.badges[index]) {
+            this.badges[index] = this.add.image(0, 0, resource);
+            this.board.add(this.badges[index]);
+          }
+          this.badges[index].setTexture(resource).setPosition(cx, cy)
+            .setVisible(true).setAlpha(storageFull ? 0.65 : 1);
+          badgeHits.push({ tile: b, x: cx, y: cy });
         };
 
         for (const foundryB of p.program.buildings.filter((b) => b.kind === "foundry")) {
@@ -517,7 +533,7 @@ export function EarthScene(props: Props) {
             Math.floor(p.program.collectors.credits),
             hopperCaps.credits,
             p.program.credits >= storageCaps.credits,
-            0xf28c28,
+            "credits",
           );
         }
         for (const refineryB of p.program.buildings.filter((b) => b.kind === "refinery")) {
@@ -526,9 +542,10 @@ export function EarthScene(props: Props) {
             Math.floor(p.program.collectors.propellant),
             hopperCaps.propellant,
             p.program.propellant >= storageCaps.propellant,
-            0x4fd1a5,
+            "propellant",
           );
         }
+        for (let i = badgeHits.length; i < this.badges.length; i++) this.badges[i].setVisible(false);
 
         this.marker.clear();
         this.ghost.setVisible(false);
@@ -587,11 +604,15 @@ export function EarthScene(props: Props) {
       banner: false,
       audio: { noAudio: true },
       input: { keyboard: false, mouse: false, touch: false },
-      fps: { target: 30, forceSetTimeOut: true },
+      fps: { target: 60 },
     });
 
     const obs = new ResizeObserver(() =>
-      game.scale.resize(el.clientWidth, el.clientHeight),
+      {
+        width = el.clientWidth;
+        height = el.clientHeight;
+        game.scale.resize(width, height);
+      }
     );
     obs.observe(el);
     el.addEventListener("pointerdown", down);
