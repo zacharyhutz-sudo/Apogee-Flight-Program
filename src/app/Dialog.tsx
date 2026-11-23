@@ -3,10 +3,12 @@ import { X } from "lucide-react";
 export function Dialog({
   title,
   children,
+  tone,
   close,
 }: {
   title: string;
   children: ReactNode;
+  tone?: "warning";
   close: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -19,6 +21,7 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-label={title}
+      data-tone={tone}
       onCancel={close}
       onClick={(e) => {
         if (e.target === e.currentTarget) close();

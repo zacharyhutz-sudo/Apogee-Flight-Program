@@ -64,7 +64,6 @@ import type { useMission } from "./useMission";
 import { Dialog } from "./Dialog";
 import { CloudSyncPanel } from "./CloudSyncPanel";
 import { SoundingReport } from "./SoundingReport";
-import "./site.css";
 
 const BUILD_GROUPS: { title: string; kinds: Kind[] }[] = [
   { title: "Resources & Storage", kinds: ["foundry", "refinery", "tanks"] },
@@ -535,11 +534,12 @@ export function LaunchSite({
               Moon
             </button>
           )}
-          <button disabled={buttonsDisabled} onClick={() => showPanel("build")}>
+          <button className="secondary" disabled={buttonsDisabled} onClick={() => showPanel("build")}>
             <Building2 />
             Build
           </button>
           <button
+            className="secondary"
             aria-label="Rocket Workshop"
             disabled={buttonsDisabled}
             onClick={onWorkshop}
@@ -577,6 +577,7 @@ export function LaunchSite({
 
       {panel && (
         <Dialog
+          tone={panel === "replace" ? "warning" : undefined}
           title={
             panel === "board"
               ? "Contracts"

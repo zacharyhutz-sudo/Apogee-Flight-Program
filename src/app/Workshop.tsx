@@ -26,7 +26,6 @@ import {
 } from "../program/workshop";
 import { getFacilityLimits } from "../program/program";
 import type { useMission } from "./useMission";
-import "./workshop.css";
 
 const CATEGORIES: Array<{ id: PartCategory; label: string }> = [
   { id: "pod", label: "Pods" },

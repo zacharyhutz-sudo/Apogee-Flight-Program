@@ -9,37 +9,34 @@
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --mono: var(--font-mono);
 
-  /* Handcrafted Retro-Indie Aerospace Palette (Solid Matte Hardware, Zero Glassmorphism) */
-  --bg-void: #0e151f;
-  --panel: #173f57;
-  --panel-alt: #265e7c;
-  --panel-deep: #123147;
+  --bg-void: #0b111a;
+  --panel: #1c2a3b;
+  --panel-alt: #283b52;
+  --panel-deep: #111a26;
   --surface: var(--panel);
   --surface-solid: var(--panel);
   --surface-raised: var(--panel-alt);
   --glass: var(--panel);
 
-  --ink: #f6f1e3;
-  --ink-muted: #c1d9df;
-  --amber: #ffb354;
-  --amber-bright: #ffae52;
-  --amber-deep: #b97829;
-  --teal: #70e0c0;
-  --teal-deep: #217358;
+  --ink: #f4efe6;
+  --ink-muted: #b8c5d2;
+  --amber: #f5b82e;
+  --amber-bright: #ffd166;
+  --amber-deep: #91601b;
+  --teal: #71d8d3;
+  --teal-deep: #265d62;
   --mint: var(--teal);
-  --violet: #a79cf5;
-  --coral: #e85d56;
-  --coral-deep: #8f2d28;
-
-  --edge-dark: #245369;
-  --edge-light: #c9f5ff40;
-  --line: #427188;
-  --line-strong: #6198ab;
-
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --shadow-panel: 0 5px 0 #245369cc;
+  --violet: #bcb1ec;
+  --coral: #ff9483;
+  --coral-deep: #813932;
+  --edge-dark: #070b10;
+  --edge-light: #ffffff24;
+  --line: #42556d;
+  --line-strong: #637e99;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --shadow-panel: 0 4px 0 #070b10a8;
 
   font-family: var(--font-ui);
   color: var(--ink);

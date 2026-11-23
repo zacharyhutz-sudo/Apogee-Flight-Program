@@ -20,7 +20,6 @@ import {
   type LunarKind,
 } from "../program/lunar";
 import type { useMission } from "./useMission";
-import "./lunar.css";
 
 const icons: Record<LunarKind, typeof Sun> = {
   hub: Building2,

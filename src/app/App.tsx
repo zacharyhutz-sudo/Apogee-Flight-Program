@@ -54,7 +54,7 @@ import {
 } from "../sim/flight";
 import { validate } from "../persistence/save";
 import { useMission } from "./useMission";
-import "./style.css";
+import "./interface.css";
 
 const clock = (t: number) =>
   [Math.floor(t / 3600), Math.floor(t / 60) % 60, Math.floor(t) % 60]
@@ -699,6 +699,7 @@ export default function App() {
 
       {dialog && (
         <Dialog
+          tone={["reset", "import", "stage"].includes(dialog) ? "warning" : undefined}
           title={
             {
               menu: "Mission menu",
@@ -954,7 +955,7 @@ export default function App() {
                 resources are kept.
               </p>
               <button
-                className="primary"
+                className="danger"
                 onClick={() => {
                   m.reset();
                   D("");
@@ -971,7 +972,7 @@ export default function App() {
                 {clock(backup.current.flight.t)}?
               </p>
               <button
-                className="primary"
+                className="danger"
                 onClick={() => {
                   if (backup.current) m.restore(backup.current);
                   backup.current = null;
