@@ -272,15 +272,32 @@ export function useMission() {
     refresh();
   }
 
-  function saveBlueprint(bp: RocketBlueprint, selectNew = false) {
-    if (!ready.current) return;
+  function saveBlueprint(bp: RocketBlueprint, selectNew = false): boolean {
+    if (!ready.current) return false;
     const p = mission.current.program;
     const idx = p.blueprints.findIndex((b) => b.id === bp.id);
     if (idx >= 0) p.blueprints[idx] = bp;
     else if (p.blueprints.length < 16) p.blueprints.push(bp);
+    else return false;
     if (selectNew || idx < 0) p.activeBlueprintId = bp.id;
     save();
     refresh();
+    return true;
+  }
+
+  function deleteBlueprint(id: string): boolean {
+    if (!ready.current) return false;
+    const p = mission.current.program;
+    if (p.blueprints.length <= 1) return false;
+    const idx = p.blueprints.findIndex((b) => b.id === id);
+    if (idx < 0) return false;
+    p.blueprints.splice(idx, 1);
+    if (p.activeBlueprintId === id) {
+      p.activeBlueprintId = p.blueprints[Math.max(0, idx - 1)].id;
+    }
+    save();
+    refresh();
+    return true;
   }
 
   function launchBlueprint(id: string, mode: "practice" | "real"): string {
@@ -704,6 +721,7 @@ export function useMission() {
     openWorkshop,
     selectBlueprint,
     saveBlueprint,
+    deleteBlueprint,
     launchBlueprint,
     separate,
     newSortie,

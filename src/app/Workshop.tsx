@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   Coins,
   Copy,
   Flame,
@@ -9,7 +10,7 @@ import {
   Layers2,
   Lock,
   Plus,
-  Rocket,
+  Save,
   Split,
   Trash2,
   TriangleAlert,
@@ -25,7 +26,17 @@ import {
   type RocketBlueprint,
 } from "../program/workshop";
 import { getFacilityLimits } from "../program/program";
+import { Dialog } from "./Dialog";
+import {
+  PartPixelThumb,
+  PixelRocketPart,
+  VAB_PX,
+  getPartPixelSize,
+  getRadialPixelSize,
+} from "./PixelRocketPart";
 import type { useMission } from "./useMission";
+
+const MAX_BLUEPRINTS = 16;
 
 const CATEGORIES: Array<{ id: PartCategory; label: string }> = [
   { id: "pod", label: "Pods" },
@@ -50,6 +61,10 @@ export function Workshop({
   const [category, setCategory] = useState<PartCategory>("tank");
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [savedMsg, setSavedMsg] = useState("");
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [dialogError, setDialogError] = useState("");
 
   const analysis = useMemo(
     () => analyzeBlueprint(activeBp, limits),
@@ -62,6 +77,7 @@ export function Workshop({
   function mutateBlueprint(fn: (bp: RocketBlueprint) => RocketBlueprint) {
     m.saveBlueprint(fn(structuredClone(activeBp)));
     setNotice("");
+    setSavedMsg("");
   }
 
   function addPart(partId: PartId) {
@@ -138,6 +154,10 @@ export function Workshop({
   }
 
   function cloneBlueprint() {
+    if (p.blueprints.length >= MAX_BLUEPRINTS) {
+      setNotice(`Design hangar full (${MAX_BLUEPRINTS}/${MAX_BLUEPRINTS}). Delete an older design first.`);
+      return;
+    }
     const id = "bp_" + Math.random().toString(36).slice(2, 7);
     const copy: RocketBlueprint = {
       ...structuredClone(activeBp),
@@ -147,6 +167,72 @@ export function Workshop({
     };
     m.saveBlueprint(copy, true);
     setSelectedUid(null);
+    setNotice("");
+    setSavedMsg(`Cloned "${copy.name}".`);
+  }
+
+  function openSaveDialog() {
+    setDraftName(activeBp.name);
+    setDialogError("");
+    setSaveDialogOpen(true);
+  }
+
+  function saveAsNewDesign(e?: FormEvent) {
+    e?.preventDefault();
+    const clean = draftName.trim().slice(0, 32);
+    if (!clean) {
+      setDialogError("Enter a name for this rocket design.");
+      return;
+    }
+    if (p.blueprints.length >= MAX_BLUEPRINTS) {
+      setDialogError(
+        `All ${MAX_BLUEPRINTS} design slots are full. Update or delete an existing design.`,
+      );
+      return;
+    }
+    const id = "bp_" + Math.random().toString(36).slice(2, 7);
+    const saved: RocketBlueprint = {
+      id,
+      name: clean,
+      version: 1,
+      parts: structuredClone(activeBp.parts),
+    };
+    const ok = m.saveBlueprint(saved, true);
+    if (!ok) {
+      setDialogError("Could not save rocket design.");
+      return;
+    }
+    setSaveDialogOpen(false);
+    setSelectedUid(null);
+    setNotice("");
+    setSavedMsg(`Saved "${clean}" to rocket designs.`);
+  }
+
+  function overwriteCurrentDesign() {
+    const clean = draftName.trim().slice(0, 32);
+    if (!clean) {
+      setDialogError("Enter a name for this rocket design.");
+      return;
+    }
+    const updated: RocketBlueprint = {
+      ...structuredClone(activeBp),
+      name: clean,
+    };
+    m.saveBlueprint(updated, true);
+    setSaveDialogOpen(false);
+    setNotice("");
+    setSavedMsg(`Updated "${clean}".`);
+  }
+
+  function deleteCurrentDesign() {
+    if (p.blueprints.length <= 1) return;
+    const removedName = activeBp.name;
+    if (m.deleteBlueprint(activeBp.id)) {
+      setSaveDialogOpen(false);
+      setSelectedUid(null);
+      setNotice("");
+      setSavedMsg(`Deleted "${removedName}".`);
+    }
   }
 
   function launchMode(mode: "practice" | "real") {
@@ -154,7 +240,7 @@ export function Workshop({
     if (err) setNotice(err);
   }
 
-  // Compute SVG stack geometry (top to bottom)
+  // Compute pixel-grid-aligned SVG stack geometry (top to bottom)
   const scalePx = 5.4;
   const centerParts = activeBp.parts.filter((pt) => {
     const def = PARTS[pt.partId];
@@ -165,17 +251,18 @@ export function Workshop({
     return Boolean(def.symmetric && pt.symmetry === 2);
   });
 
-  let cursorY = 38;
+  let cursorY = 36;
+  let coreHalfW = 16;
   const stackNodes = centerParts.map((pt) => {
     const def = PARTS[pt.partId];
-    const h = Math.max(12, def.heightM * scalePx);
-    const w = Math.max(18, def.widthM * scalePx * 2.2);
+    const { cols, rows, w, h } = getPartPixelSize(pt.partId, scalePx);
     const y = cursorY;
     cursorY += h;
-    return { pt, def, x: 160 - w / 2, y, w, h };
+    coreHalfW = Math.max(coreHalfW, w / 2);
+    return { pt, def, cols, rows, x: 160 - w / 2, y, w, h };
   });
-  const baseY = Math.max(210, cursorY + 12);
-  const svgH = Math.max(245, baseY + 22);
+  const baseY = Math.max(210, cursorY + 4);
+  const svgH = Math.max(246, baseY + 26);
 
   const visibleParts = PART_IDS.filter((id) => PARTS[id].category === category);
   const canAffordReal =
@@ -203,6 +290,7 @@ export function Workshop({
               m.selectBlueprint(e.target.value);
               setSelectedUid(null);
               setNotice("");
+              setSavedMsg("");
             }}
           >
             {p.blueprints.map((b) => (
@@ -211,6 +299,14 @@ export function Workshop({
               </option>
             ))}
           </select>
+          <button
+            className="save-bp-btn"
+            aria-label="Save rocket design"
+            title="Save rocket design"
+            onClick={openSaveDialog}
+          >
+            <Save size={16} />
+          </button>
           <button
             aria-label="Clone blueprint"
             title="Clone blueprint"
@@ -287,28 +383,25 @@ export function Workshop({
             stroke="#72d6c62b"
             strokeDasharray="4 4"
           />
-          <line
-            x1="36"
-            y1={baseY}
-            x2="284"
-            y2={baseY}
-            stroke="#9eb9c266"
-            strokeWidth="2"
-          />
 
-          {stackNodes.map(({ pt, def, x, y, w, h }) => {
+          {/* Pixel-art launchpad assembly stand matching FlightScene pad */}
+          <g shapeRendering="crispEdges">
+            <rect x="44" y={baseY} width="232" height="8" fill="#283643" />
+            <rect x="40" y={baseY - 2} width="240" height="3" fill="#b8b2a1" />
+            {[-88, -60, -32, 32, 60, 88].map((dx) => (
+              <rect
+                key={dx}
+                x={160 + dx - 4}
+                y={baseY + 1}
+                width="8"
+                height="2"
+                fill="#d99357"
+              />
+            ))}
+          </g>
+
+          {stackNodes.map(({ pt, def, cols, rows, x, y, w, h }) => {
             const isSel = pt.uid === selectedUid;
-            const stroke = isSel ? "#f3a953" : "#9eb9c288";
-            const fill =
-              def.category === "pod"
-                ? "#e7e1d4"
-                : def.category === "tank"
-                  ? "#d2d9d5"
-                  : def.category === "engine"
-                    ? "#425563"
-                    : def.category === "stage"
-                      ? "#d98d4c"
-                      : "#7ea8ab";
             return (
               <g
                 key={pt.uid}
@@ -318,46 +411,32 @@ export function Workshop({
                   setSelectedUid(pt.uid);
                 }}
               >
-                {def.category === "pod" ? (
-                  <polygon
-                    points={`160,${y} ${x + w},${y + h} ${x},${y + h}`}
-                    fill={fill}
-                    stroke={stroke}
-                    strokeWidth={isSel ? 2.4 : 1.2}
-                  />
-                ) : def.category === "engine" ? (
-                  <polygon
-                    points={`${x + w * 0.22},${y} ${x + w * 0.78},${y} ${x + w * 0.92},${y + h} ${x + w * 0.08},${y + h}`}
-                    fill={fill}
-                    stroke={stroke}
-                    strokeWidth={isSel ? 2.4 : 1.2}
-                  />
-                ) : (
+                <PixelRocketPart
+                  partId={pt.partId}
+                  x={x}
+                  y={y}
+                  cols={cols}
+                  rows={rows}
+                  px={VAB_PX}
+                  selected={isSel}
+                />
+                {isSel && (
                   <rect
-                    x={x}
-                    y={y}
-                    width={w}
-                    height={h}
-                    rx="2"
-                    fill={fill}
-                    stroke={stroke}
-                    strokeWidth={isSel ? 2.4 : 1.2}
-                  />
-                )}
-                {def.category === "tank" && (
-                  <line
-                    x1={x + 2}
-                    y1={y + h * 0.5}
-                    x2={x + w - 2}
-                    y2={y + h * 0.5}
-                    stroke="#f3a953"
-                    strokeWidth="2.5"
+                    x={x - 3}
+                    y={y - 2}
+                    width={w + 6}
+                    height={h + 4}
+                    fill="none"
+                    stroke="#ffd166"
+                    strokeWidth="1.2"
+                    strokeDasharray="4 2"
+                    shapeRendering="crispEdges"
                   />
                 )}
                 <text
-                  x={x + w + 8}
+                  x={Math.max(x + w, 160 + coreHalfW) + 12}
                   y={y + h / 2 + 3}
-                  className="stage-tag"
+                  className={isSel ? "stage-tag active" : "stage-tag"}
                 >
                   S{pt.stage + 1} · {def.shortName}
                 </text>
@@ -368,10 +447,14 @@ export function Workshop({
           {radialParts.map((pt, idx) => {
             const def = PARTS[pt.partId];
             const isSel = pt.uid === selectedUid;
-            const h = Math.max(24, def.heightM * scalePx);
-            const w = Math.max(12, def.widthM * scalePx * 2);
-            const y = Math.max(52, cursorY - h - idx * 8);
-            const stroke = isSel ? "#f3a953" : "#72d6c6aa";
+            const { cols, rows, w, h } = getRadialPixelSize(pt.partId, scalePx);
+            const gap = VAB_PX * 2;
+            const y = Math.max(
+              48,
+              Math.round((cursorY - h - idx * 8) / VAB_PX) * VAB_PX,
+            );
+            const leftX = 160 - coreHalfW - gap - w;
+            const rightX = 160 + coreHalfW + gap;
             return (
               <g
                 key={pt.uid}
@@ -381,27 +464,31 @@ export function Workshop({
                   setSelectedUid(pt.uid);
                 }}
               >
-                <rect
-                  x={120 - w}
+                <PixelRocketPart
+                  partId={pt.partId}
+                  x={leftX}
                   y={y}
-                  width={w}
-                  height={h}
-                  rx="3"
-                  fill="#cfd8d4"
-                  stroke={stroke}
-                  strokeWidth={isSel ? 2.4 : 1.2}
+                  cols={cols}
+                  rows={rows}
+                  px={VAB_PX}
+                  selected={isSel}
+                  radialSide={-1}
                 />
-                <rect
-                  x={200}
+                <PixelRocketPart
+                  partId={pt.partId}
+                  x={rightX}
                   y={y}
-                  width={w}
-                  height={h}
-                  rx="3"
-                  fill="#cfd8d4"
-                  stroke={stroke}
-                  strokeWidth={isSel ? 2.4 : 1.2}
+                  cols={cols}
+                  rows={rows}
+                  px={VAB_PX}
+                  selected={isSel}
+                  radialSide={1}
                 />
-                <text x={200 + w + 6} y={y + h / 2 + 3} className="stage-tag">
+                <text
+                  x={rightX + w + 8}
+                  y={y + h / 2 + 3}
+                  className={isSel ? "stage-tag active" : "stage-tag"}
+                >
                   2× {def.shortName}
                 </text>
               </g>
@@ -431,7 +518,10 @@ export function Workshop({
               S{selectedPart.stage + 1}
             </button>
             {PARTS[selectedPart.partId].symmetric && (
-              <button aria-label="Toggle mirror symmetry" onClick={toggleSymmetry}>
+              <button
+                aria-label="Toggle mirror symmetry"
+                onClick={toggleSymmetry}
+              >
                 <Split size={16} />
                 {selectedPart.symmetry}×
               </button>
@@ -446,6 +536,13 @@ export function Workshop({
           </div>
         )}
       </section>
+
+      {savedMsg && !notice && (
+        <div className="vab-saved-toast" role="status">
+          <Check size={14} />
+          <span>{savedMsg}</span>
+        </div>
+      )}
 
       {(analysis.warnings.length > 0 || notice) && (
         <div className="vab-warnings" role="status">
@@ -477,27 +574,34 @@ export function Workshop({
                 aria-label={"Add " + def.name}
                 onClick={() => addPart(id)}
               >
-                <div className="part-card-top">
-                  <strong>{def.shortName}</strong>
-                  {locked ? (
-                    <span className="part-lock">
-                      <Lock size={11} /> Lab {def.requiredLabLevel}
-                    </span>
-                  ) : (
-                    <Plus size={14} />
-                  )}
+                <div className="part-card-body">
+                  <PartPixelThumb partId={id} />
+                  <div className="part-card-info">
+                    <div className="part-card-top">
+                      <strong>{def.shortName}</strong>
+                      {locked ? (
+                        <span className="part-lock">
+                          <Lock size={11} /> Lab {def.requiredLabLevel}
+                        </span>
+                      ) : (
+                        <Plus size={14} />
+                      )}
+                    </div>
+                    <small>
+                      {def.thrustKn > 0
+                        ? `${def.thrustKn} kN · ${def.ispVac}s`
+                        : def.fuelTonnes > 0
+                          ? `${def.fuelTonnes} t fuel`
+                          : `${def.dryTonnes} t`}
+                    </small>
+                    <em className="part-cost">
+                      {def.hardwareCost} C
+                      {def.propellantCost > 0
+                        ? ` · ${def.propellantCost} P`
+                        : ""}
+                    </em>
+                  </div>
                 </div>
-                <small>
-                  {def.thrustKn > 0
-                    ? `${def.thrustKn} kN · ${def.ispVac}s`
-                    : def.fuelTonnes > 0
-                      ? `${def.fuelTonnes} t fuel`
-                      : `${def.dryTonnes} t`}
-                </small>
-                <em className="part-cost">
-                  {def.hardwareCost} C
-                  {def.propellantCost > 0 ? ` · ${def.propellantCost} P` : ""}
-                </em>
               </button>
             );
           })}
@@ -521,11 +625,83 @@ export function Workshop({
         >
           <span>Launch</span>
           <small className="vab-launch-price">
-            <span><Coins />{analysis.hardwareCost}</span>
-            <span><Flame />{analysis.propellantCost}</span>
+            <span>
+              <Coins />
+              {analysis.hardwareCost}
+            </span>
+            <span>
+              <Flame />
+              {analysis.propellantCost}
+            </span>
           </small>
         </button>
       </footer>
+
+      {saveDialogOpen && (
+        <Dialog title="Save Rocket Design" close={() => setSaveDialogOpen(false)}>
+          <form className="save-bp-form" onSubmit={saveAsNewDesign}>
+            <label className="save-bp-label" htmlFor="bp-name-input">
+              Design Name
+              <span className="save-bp-slots">
+                {p.blueprints.length}/{MAX_BLUEPRINTS} saved
+              </span>
+            </label>
+            <input
+              id="bp-name-input"
+              className="save-bp-input"
+              type="text"
+              maxLength={32}
+              autoFocus
+              value={draftName}
+              placeholder="e.g. Lunar Heavy"
+              onChange={(e) => {
+                setDraftName(e.target.value);
+                setDialogError("");
+              }}
+            />
+
+            <div className="save-bp-summary">
+              <span>{analysis.partCount} parts</span>
+              <span>{analysis.wetTonnes.toFixed(1)} t</span>
+              <span>{Math.round(analysis.totalDeltaV).toLocaleString("en-US")} m/s</span>
+              <span>TWR {analysis.liftoffTwr.toFixed(2)}</span>
+            </div>
+
+            {dialogError && (
+              <p className="save-bp-error" role="alert">
+                {dialogError}
+              </p>
+            )}
+
+            <div className="dialog-actions">
+              <button
+                type="submit"
+                className="primary"
+                disabled={p.blueprints.length >= MAX_BLUEPRINTS}
+              >
+                <Save size={15} />
+                Save as New
+              </button>
+              <button type="button" onClick={overwriteCurrentDesign}>
+                Update Current
+              </button>
+            </div>
+
+            {p.blueprints.length > 1 && (
+              <div className="save-bp-danger-row">
+                <button
+                  type="button"
+                  className="save-bp-delete"
+                  onClick={deleteCurrentDesign}
+                >
+                  <Trash2 size={14} />
+                  Delete "{activeBp.name}"
+                </button>
+              </div>
+            )}
+          </form>
+        </Dialog>
+      )}
     </main>
   );
 }
