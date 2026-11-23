@@ -359,7 +359,7 @@ export default function App() {
         : booster && fuelPct === 0
           ? "Booster empty. Tap Stage."
           : s.orbitEarned
-            ? "Orbit reached. Open Map to coast at 5× or 20×."
+            ? "Orbit reached. Open Map to coast at 5×, 20×, or 100×."
             : "Hold left or right screen edges while thrusting to pitch.";
 
   const pilotDisabled = !m.loaded || ended;
@@ -818,7 +818,7 @@ export default function App() {
           {dialog === "warp" && (
             <>
               <div className="rates">
-                {(canChuteWarp(s) ? [1, 3] : [1, 5, 20]).map((n) => (
+                {(canChuteWarp(s) ? [1, 3] : [1, 5, 20, 100]).map((n) => (
                   <button
                     key={n}
                     aria-pressed={n === m.rate}
@@ -839,7 +839,7 @@ export default function App() {
               </div>
               {(!canWarp(s) && !canChuteWarp(s) || m.paused) && (
                 <p>
-                  Warp is available while coasting above 30.5 km (5×/20×) or
+                  Warp is available while coasting above 30.5 km (5×/20×/100×) or
                   descending under parachute (3×) with flight running.
                 </p>
               )}
