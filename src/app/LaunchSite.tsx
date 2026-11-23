@@ -37,6 +37,7 @@ import {
   canAffordUpgrade,
   clearingQuote,
   costShortfall,
+  contractVehicle,
   type Cost,
   canReclaimTile,
   countBuilt,
@@ -46,6 +47,7 @@ import {
   getCreditRatePerHour,
   getPropellantRatePerHour,
   getStorageCaps,
+  inspectSoundingBlueprint,
   launchIssue,
   level,
   maxBuildingCount,
@@ -61,6 +63,7 @@ import {
 import type { useMission } from "./useMission";
 import { Dialog } from "./Dialog";
 import { CloudSyncPanel } from "./CloudSyncPanel";
+import { SoundingReport } from "./SoundingReport";
 import "./site.css";
 
 const BUILD_GROUPS: { title: string; kinds: Kind[] }[] = [
@@ -129,12 +132,18 @@ export function LaunchSite({
   const propPct = Math.min(100, (100 * p.propellant) / caps.propellant);
   const credPct = Math.min(100, (100 * p.credits) / caps.credits);
 
-  const [panel, P] = useState<"board" | "build" | "replace" | "cloud" | null>(null);
+  const [panel, P] = useState<
+    "board" | "build" | "replace" | "cloud" | "sounding-report" | null
+  >(null);
   const [selected, S] = useState<Tile | null>(null);
   const [inspectLocked, setInspectLocked] = useState<Kind | null>(null);
   const [placing, G] = useState<Kind | null>(null);
   const [movingFrom, setMovingFrom] = useState<Tile | null>(null);
   const [pending, Q] = useState<Sortie>("practice");
+  const [soundingBlueprintId, setSoundingBlueprintId] = useState("");
+  const soundingChoice = soundingBlueprintId
+    ? inspectSoundingBlueprint(p, soundingBlueprintId)
+    : null;
   const [message, M] = useState("");
   const [burst, setBurst] = useState<CollectBurst | null>(null);
 
@@ -248,7 +257,7 @@ export function LaunchSite({
       P("replace");
       return;
     }
-    if (m.newSortie(job)) P(null);
+    if (m.newSortie(job, soundingBlueprintId)) P(null);
   }
 
   function confirmPlacement() {
@@ -575,7 +584,9 @@ export function LaunchSite({
                 ? "Facilities"
                 : panel === "cloud"
                   ? "Cloud Save"
-                  : "Replace flight?"
+                  : panel === "sounding-report"
+                    ? "Sounding report"
+                    : "Replace flight?"
           }
           close={() => P(null)}
         >
@@ -583,9 +594,11 @@ export function LaunchSite({
             <>
               <div className="contract-list">
                 {CONTRACT_JOBS.map((job) => {
-                  const c = CONTRACTS[job],
-                    q = quote(p, job),
-                    reason = launchIssue(p, job);
+                  const c = CONTRACTS[job];
+                  const choice = job === "sounding" ? soundingChoice : null;
+                  const vehicle = choice?.vehicle ?? contractVehicle(p, job);
+                  const q = quote(p, job, vehicle);
+                  const reason = choice ? choice.error : launchIssue(p, job, vehicle);
                   return (
                     <article
                       className={
@@ -600,10 +613,28 @@ export function LaunchSite({
                         </span>
                       </header>
                       <p>{c.goal}</p>
+                      {job === "sounding" && (
+                        <label className="sounding-vehicle">
+                          Vehicle
+                          <select
+                            value={soundingBlueprintId}
+                            onChange={(e) => setSoundingBlueprintId(e.target.value)}
+                          >
+                            <option value="">Sponsored rocket</option>
+                            <optgroup label="Workshop blueprints">
+                              {p.blueprints.map((blueprint) => (
+                                <option key={blueprint.id} value={blueprint.id}>
+                                  {blueprint.name} (v{blueprint.version})
+                                </option>
+                              ))}
+                            </optgroup>
+                          </select>
+                        </label>
+                      )}
                       <div className="cost-strip">
                         <span>
                           <Coins size={13} />
-                          {q.hardwareCost === 0
+                          {vehicle.sponsored
                             ? "0 C (Sponsored)"
                             : `${q.hardwareCost.toLocaleString("en-US")} C`}
                         </span>
@@ -613,7 +644,7 @@ export function LaunchSite({
                         </span>
                         <span>
                           <Database size={13} />
-                          {c.wetMassTonnes} t
+                          {Number(vehicle.wetMassTonnes.toFixed(1))} t
                         </span>
                       </div>
                       <div className="mission-row">
@@ -634,6 +665,11 @@ export function LaunchSite({
                         </button>
                       </div>
                       {reason && <small className="lock-note">{reason}</small>}
+                      {job === "sounding" && p.soundingReport && (
+                        <button className="sounding-report-btn" onClick={() => P("sounding-report")}>
+                          Sounding report
+                        </button>
+                      )}
                       {p.completed[job] > 0 && (
                         <small>Completed ×{p.completed[job]}</small>
                       )}
@@ -714,6 +750,12 @@ export function LaunchSite({
           )}
 
           {panel === "cloud" && <CloudSyncPanel mission={m} />}
+          {panel === "sounding-report" && p.soundingReport && (
+            <>
+              <SoundingReport report={p.soundingReport} />
+              <button onClick={() => P("board")}>Back to contracts</button>
+            </>
+          )}
 
           {panel === "replace" && (
             <>
@@ -721,13 +763,18 @@ export function LaunchSite({
                 Retire the active vehicle and stage{" "}
                 {pending === "practice"
                   ? "a free simulation"
-                  : CONTRACTS[pending].name}
-                ?
+                  : pending === "sounding" && soundingChoice?.vehicle
+                    ? soundingChoice.vehicle.name + " for Atmospheric Sounding"
+                    : CONTRACTS[pending].name}?
               </p>
+              {pending === "sounding" && soundingChoice?.error && (
+                <small className="lock-note">{soundingChoice.error}</small>
+              )}
               <button
                 className="primary"
+                disabled={pending === "sounding" && Boolean(soundingChoice?.error)}
                 onClick={() => {
-                  if (m.newSortie(pending)) P(null);
+                  if (m.newSortie(pending, soundingBlueprintId)) P(null);
                 }}
               >
                 Prepare flight

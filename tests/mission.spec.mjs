@@ -173,3 +173,75 @@ test("mobile and desktop touch targets are >= 44 CSS px with zero horizontal ove
   ).toContainText("Tracking Lv 2");
   await checkViewport();
 });
+
+test("Workshop rockets fly paid Atmospheric Sounding missions with persistent costs and reports", async ({ page }) => {
+  await useFlightClock(page);
+  const button = (name) => page.getByRole("button", { name, exact: true });
+  const checkpoint = () => page.evaluate(() =>
+    JSON.parse(localStorage.getItem("apogee-v1:" + new URL(".", document.baseURI).pathname)),
+  );
+  const report = page.getByRole("dialog", { name: "Sounding report" });
+
+  await page.goto("./");
+  await button("Rocket Workshop").click();
+  await page.getByLabel("Select blueprint").selectOption("bp_sounding_dart");
+  await button("Clone blueprint").click();
+  await button("Add Medium Cryo Tank").click();
+  const heavyId = await page.getByLabel("Select blueprint").inputValue();
+  const heavyName = await page.getByLabel("Select blueprint").locator("option:checked").textContent();
+  await button("Earth launch site").click();
+
+  for (const [index, vehicle] of [
+    { id: heavyId, name: heavyName.replace(/ \(v\d+\)$/, "").trim(), credits: 440, propellant: 540 },
+    { id: "bp_sounding_dart", name: "Sounding Arrow", credits: 300, propellant: 180 },
+  ].entries()) {
+    await button("Contracts").click();
+    const card = page.locator("article").filter({ has: page.getByRole("heading", { name: "Atmospheric Sounding" }) });
+    await expect(card).toContainText("0 C (Sponsored)");
+    await card.getByLabel("Vehicle").selectOption(vehicle.id);
+    await expect(card).toContainText(vehicle.credits + " C");
+    await expect(card).toContainText(vehicle.propellant + " Prop");
+    await expect(card).toContainText("+450 C");
+    await button("Accept Atmospheric Sounding").click();
+    if (index > 0) await button("Prepare flight").click();
+    await expect(page.getByRole("status")).toContainText(vehicle.name);
+    const staged = await checkpoint();
+
+    await page.reload();
+    await expect(button("Launch vehicle")).toBeEnabled();
+    await expect(page.getByRole("status")).toContainText(vehicle.name);
+    await expect(page.getByLabel("Launch cost")).toContainText(vehicle.credits + " C");
+    await expect(page.getByLabel("Launch cost")).toContainText(vehicle.propellant + " Prop");
+    await button("Launch vehicle").click();
+    const launched = await checkpoint();
+    expect(launched.program.credits).toBe(staged.program.credits - vehicle.credits);
+    expect(launched.program.propellant).toBe(staged.program.propellant - vehicle.propellant);
+
+    await page.evaluate(() => window.advanceFlight(120));
+    await expect(page.getByRole("alert")).toContainText("Atmospheric Sounding complete");
+    await page.reload();
+    await button("Mission menu").click();
+    await button("Sounding report").click();
+    await expect(report).toContainText(vehicle.name);
+    await expect(report).toContainText("Reached");
+    await expect(report).toContainText("450 C + 5 RD");
+    await expect(report).toContainText(vehicle.credits + " C");
+    await expect(report).toContainText(vehicle.propellant + " Prop");
+    await button("Close dialog").click();
+    if (await button("Resume").count()) {
+      await button("Resume").click();
+      await page.evaluate(() => window.advanceFlight(180));
+    }
+    const completed = await checkpoint();
+    expect(completed.program.credits).toBe(launched.program.credits + 450);
+    expect(completed.program.research).toBe((index + 1) * 5);
+    expect(completed.program.completed.sounding).toBe(index + 1);
+    await button("Earth launch site").click();
+  }
+
+  await page.reload();
+  await button("Contracts").click();
+  await button("Sounding report").click();
+  await expect(report).toContainText("Sounding Arrow");
+  await expect(report).toContainText("450 C + 5 RD");
+});

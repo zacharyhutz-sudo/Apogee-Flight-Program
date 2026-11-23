@@ -487,3 +487,23 @@ dialog:has(.facilities-groups) .dialog-head { border-color: #c7d6ce; }
 }
 
 .facilities-list button:focus-visible, .inspector button:focus-visible { outline-color: #166385; }
+
+.sounding-vehicle {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.sounding-vehicle select {
+  width: 100%;
+  padding: 0 8px;
+  color: var(--ink);
+  background: var(--panel-deep);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  text-overflow: ellipsis;
+}
+.sounding-report-btn {
+  margin-top: 8px;
+}

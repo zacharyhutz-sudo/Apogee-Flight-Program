@@ -245,8 +245,12 @@ export function stable(s: Flight) {
   return o.pe >= AIR && o.ap <= MAX_ORBIT_AP;
 }
 
+export function hasUpperStage(s: Flight) {
+  return stagesOf(s)[1].thrust > 0;
+}
+
 export function stage(s: Flight) {
-  if (s.status !== "flying" || s.stage !== 0) return false;
+  if (s.status !== "flying" || s.stage !== 0 || !hasUpperStage(s)) return false;
   const st = stagesOf(s);
   const { tx, ty, angle } = headingVector(s);
   const sepSpeed = 5.5;

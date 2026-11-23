@@ -2,12 +2,13 @@ import {
   CONTRACTS,
   applyOfflineProgress,
   collectFromBuilding,
+  contractVehicle,
   launchIssue,
   payLaunch,
   place,
   prepare,
   prepareBlueprintFlight,
-  quote,
+  prepareSoundingBlueprint,
   reclaimTile,
   clearObstacle,
   settle,
@@ -26,7 +27,7 @@ import {
   bodyParams,
   canChuteWarp,
   canWarp,
-  initial,
+  hasUpperStage,
   thrustToWeight,
   radius,
   stage,
@@ -81,7 +82,7 @@ export function useMission() {
 
   function log(text: string) {
     const m = mission.current;
-    m.log.push({ t: m.flight.t, text });
+    m.log.push({ t: m.flight.t, text: text.slice(0, 180) });
     m.log = m.log.slice(-64);
   }
 
@@ -213,16 +214,15 @@ export function useMission() {
       return;
     if (!ready.current) return;
     const prog = mission.current.program;
-    const sortie = prog.sortie;
-    const q = sortie === "practice" ? null : quote(prog, sortie);
+    const { credits, propellant } = prog;
     const reason = payLaunch(prog);
     if (reason) {
       setNotice(reason);
       return;
     }
-    const costNote = q
-      ? `Ignition · −${q.hardwareCost.toLocaleString("en-US")} C · −${q.propellantCost.toLocaleString("en-US")} Prop`
-      : `${vessel.current.vehicleName || "Vehicle"} ignition.`;
+    const costNote = prog.sortie === "practice"
+      ? `${vessel.current.vehicleName || "Vehicle"} ignition.`
+      : `Ignition · −${(credits - prog.credits).toLocaleString("en-US")} C · −${(propellant - prog.propellant).toLocaleString("en-US")} Prop`;
     change((s) => {
       s.status = "flying";
       paused.current = false;
@@ -233,7 +233,13 @@ export function useMission() {
     if (!ready.current) return;
     const data = mission.current;
     if (data.program.sortie !== "practice" || vessel.current.status !== "pad") {
-      data.flight = prepare(data.program, "practice");
+      const customSounding =
+        data.program.soundingVehicle && vessel.current.status === "pad";
+      data.flight = prepare(
+        data.program,
+        "practice",
+        customSounding ? vessel.current : undefined,
+      );
       data.log = [{ t: 0, text: "Free simulation ready (0 cost · 0 payout)." }];
       data.view = "flight";
       install(data);
@@ -330,22 +336,35 @@ export function useMission() {
     refresh();
   }
 
-  function newSortie(job: Sortie) {
+  function newSortie(job: Sortie, soundingBlueprintId = "") {
     if (!ready.current) return false;
-    const data = mission.current,
-      issue = launchIssue(data.program, job);
-    if (issue) {
-      setNotice(issue);
-      return false;
+    const data = mission.current;
+    if (job === "sounding" && soundingBlueprintId) {
+      const result = prepareSoundingBlueprint(data.program, soundingBlueprintId);
+      if (!result.flight) {
+        setNotice(result.error);
+        return false;
+      }
+      data.flight = result.flight;
+    } else {
+      const issue = launchIssue(
+        data.program,
+        job,
+        job === "sounding" ? contractVehicle(data.program, job) : undefined,
+      );
+      if (issue) {
+        setNotice(issue);
+        return false;
+      }
+      data.flight = prepare(data.program, job);
     }
-    data.flight = prepare(data.program, job);
     data.log = [
       {
         t: 0,
         text:
           job === "practice"
             ? "Free simulation ready (0 cost · 0 payout)."
-            : CONTRACTS[job].name + " staged on pad.",
+            : `${data.flight.vehicleName ?? CONTRACTS[job].name} staged on pad.`.slice(0, 180),
       },
     ];
     data.view = "flight";
@@ -422,16 +441,12 @@ export function useMission() {
   function launchFromMoon() {
     if (!ready.current) return;
     const data = mission.current;
-    const f = initial();
+    const f = prepare(data.program, "practice");
     f.body = "moon";
     f.x = MOON_R;
     f.y = 0;
     f.moonVisited = true;
     data.flight = f;
-    data.program.sortie = "practice";
-    data.program.paid = false;
-    data.program.rewarded = false;
-    data.program.award = null;
     data.log = [{ t: 0, text: "Lunar Refuel Pad launch ready." }];
     data.view = "flight";
     install(data);
@@ -569,9 +584,11 @@ export function useMission() {
         }
         if (prevFuel > 0 && s.fuel[s.stage] === 0) {
           log(
-            s.stage === 0
-              ? "Booster depleted. Separate stage to continue."
-              : "Orbital stage propellant depleted.",
+            !hasUpperStage(s)
+              ? "Propellant depleted."
+              : s.stage === 0
+                ? "Booster depleted. Separate stage to continue."
+                : "Orbital stage propellant depleted.",
           );
           event = true;
         }

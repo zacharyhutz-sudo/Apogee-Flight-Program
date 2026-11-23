@@ -197,12 +197,14 @@ export interface ContractDef {
   sponsored?: boolean;
 }
 
+export const SOUNDING_TARGET = 15_000;
+
 export const CONTRACTS = {
   sounding: {
     name: "Atmospheric Sounding",
     tier: 0,
     tierLabel: "Recovery",
-    goal: "Reach Ap ≥ 15 km (sponsor-funded light vehicle).",
+    goal: "Reach 15 km altitude.",
     hardwareCost: 0,
     propellantCost: 150,
     credits: 450,
@@ -349,6 +351,15 @@ export interface CollectorHoppers {
   propellant: number;
 }
 
+export interface SoundingReport {
+  vehicleName: string;
+  peakAltitude: number;
+  hardwareSpent: number;
+  propellantSpent: number;
+  creditsAwarded: number;
+  researchAwarded: number;
+}
+
 export interface EconomyState {
   credits: number;
   propellant: number;
@@ -373,6 +384,8 @@ export interface EconomyState {
   warpAlert: string;
   blueprints: RocketBlueprint[];
   activeBlueprintId: string;
+  soundingVehicle?: VehicleSpec;
+  soundingReport?: SoundingReport;
   reclaimedTiles: string[];
   clearedTiles?: string[];
   lunar: LunarColony;
@@ -1061,9 +1074,14 @@ export function canLaunchVehicle(state: Program, vehicleSpec: VehicleSpec) {
   };
 }
 
-export function quote(p: Program, job: Job) {
+function stagedVehicle(p: Program, job: Job): VehicleSpec {
+  return job === "sounding" && p.soundingVehicle
+    ? p.soundingVehicle
+    : contractVehicle(p, job);
+}
+
+export function quote(p: Program, job: Job, spec = stagedVehicle(p, job)) {
   const c = CONTRACTS[job];
-  const spec = contractVehicle(p, job);
   const labLv = level(p, "lab");
   const research = Math.round(c.research * (1 + 0.1 * labLv));
   const firstTimeBonus =
@@ -1077,14 +1095,14 @@ export function quote(p: Program, job: Job) {
   };
 }
 
-export function launchIssue(p: Program, job: Sortie): string {
+export function launchIssue(p: Program, job: Sortie, vehicle?: VehicleSpec): string {
   if (job === "practice") return "";
   const c = CONTRACTS[job];
   const mcLv = level(p, "command");
   if (c.tier > mcLv) {
     return `Requires Mission Control Lv ${c.tier}.`;
   }
-  const check = canLaunchVehicle(p, contractVehicle(p, job));
+  const check = canLaunchVehicle(p, vehicle ?? stagedVehicle(p, job));
   return check.ok ? "" : check.reason;
 }
 
@@ -1193,8 +1211,9 @@ export function upgrade(
   return "";
 }
 
-export function prepare(p: Program, job: Sortie): Flight {
+export function prepare(p: Program, job: Sortie, flight = initial()): Flight {
   p.sortie = job;
+  delete p.soundingVehicle;
   p.award = null;
   p.paid = false;
   p.rewarded = false;
@@ -1208,9 +1227,45 @@ export function prepare(p: Program, job: Sortie): Flight {
       );
     }
   }
-  const flight = initial();
   flight.cargo = job === "practice" ? 0 : CONTRACTS[job].cargo;
   return flight;
+}
+
+export function inspectSoundingBlueprint(p: Program, blueprintId: string) {
+  const blueprint = p.blueprints.find((b) => b.id === blueprintId);
+  if (!blueprint) return { vehicle: null, error: "Blueprint not found." };
+  const analysis = analyzeBlueprint(blueprint, getFacilityLimits(p));
+  const vehicle: VehicleSpec = {
+    name: blueprint.name,
+    wetMassTonnes: analysis.wetTonnes,
+    heightMeters: analysis.heightMeters,
+    hardwareCost: analysis.hardwareCost,
+    propellantCost: analysis.propellantCost,
+    cargo: CONTRACTS.sounding.cargo,
+  };
+  let error = "";
+  if (!analysis.canLaunchWithLimits) {
+    error = analysis.warnings.find((w) => w.severity === "error")?.message
+      ?? "Vehicle failed pre-launch checks.";
+  } else if (analysis.stageCount > 2) {
+    error = "Sounding supports up to two flight stages.";
+  } else if (!analysis.stages[0]?.fuelTonnes) {
+    error = "Stage 1 needs propellant to lift off.";
+  } else {
+    error = launchIssue(p, "sounding", vehicle);
+  }
+  return { blueprint, analysis, vehicle, error };
+}
+
+export function prepareSoundingBlueprint(p: Program, blueprintId: string) {
+  const { blueprint, analysis, vehicle, error } = inspectSoundingBlueprint(p, blueprintId);
+  if (error || !vehicle) return { error, flight: null };
+
+  const instance = buildVehicleInstance(blueprint, analysis);
+  const flight = initial(instance.stages, instance.payloadDryKg, instance.name, blueprint.parts);
+  prepare(p, "sounding", flight);
+  p.soundingVehicle = vehicle;
+  return { error: "", flight };
 }
 
 export function prepareBlueprintFlight(
@@ -1262,13 +1317,8 @@ export function prepareBlueprintFlight(
   }
   const instance = buildVehicleInstance(bp, analysis);
   p.activeBlueprintId = bp.id;
-  p.sortie = "practice";
-  p.award = null;
-  p.paid = false;
-  p.rewarded = false;
-  p.inclination = 0;
-  p.leoPassStartSec = null;
   const flight = initial(instance.stages, instance.payloadDryKg, instance.name, bp.parts);
+  prepare(p, "practice", flight);
   return {
     flight,
     error: "",
@@ -1282,12 +1332,20 @@ export function payLaunch(p: Program): string {
   if (p.paid) return "Flight already dispatched.";
   const issue = launchIssue(p, p.sortie);
   if (issue) return issue;
-  const spec = contractVehicle(p, p.sortie);
-  const check = canLaunchVehicle(p, spec);
-  if (!check.ok) return check.reason;
   const q = quote(p, p.sortie);
-  p.credits = Math.max(0, p.credits - check.hardwareCost);
-  p.propellant = Math.max(0, p.propellant - check.propellantCost);
+  const propellantSpent = Math.min(p.propellant, q.propellantCost);
+  p.credits -= q.hardwareCost;
+  p.propellant -= propellantSpent;
+  if (p.sortie === "sounding") {
+    p.soundingReport = {
+      vehicleName: p.soundingVehicle?.name ?? "Sponsored rocket",
+      peakAltitude: 0,
+      hardwareSpent: q.hardwareCost,
+      propellantSpent,
+      creditsAwarded: 0,
+      researchAwarded: 0,
+    };
+  }
   p.award = {
     credits: q.credits,
     research: q.research,
@@ -1306,10 +1364,9 @@ export function latitude(p: Program, f: Flight) {
 export function contractConditionMet(p: Program, f: Flight): boolean {
   const job = p.sortie;
   if (job === "practice") return false;
+  if (job === "sounding") return f.maxAlt >= SOUNDING_TARGET;
   const o = orbit(f);
   switch (job) {
-    case "sounding":
-      return f.maxAlt >= 15000;
     case "hop":
       return f.maxAlt >= AIR && f.stage >= 1;
     case "orbit":
@@ -1353,6 +1410,8 @@ export function settle(p: Program, f: Flight): string {
     unlockLunarColony(p.lunar);
   }
   const job = p.sortie;
+  const report = job === "sounding" && p.paid ? p.soundingReport : undefined;
+  if (report) report.peakAltitude = Math.max(report.peakAltitude, f.maxAlt);
   if (job === "practice" || !p.paid || p.rewarded) return "";
   if (!contractConditionMet(p, f)) return "";
   const booked = p.award;
@@ -1369,6 +1428,10 @@ export function settle(p: Program, f: Flight): string {
   p.rewarded = true;
   p.activeContracts = p.activeContracts.filter((j) => j !== job);
   const gainedC = p.credits - prevCredits;
+  if (report) {
+    report.creditsAwarded = gainedC;
+    report.researchAwarded = booked.research;
+  }
   const capNote = gainedC < totalCredits ? " (capped)" : "";
   return `${CONTRACTS[job].name} complete · +${gainedC.toLocaleString("en-US")} C${capNote} · +${booked.research} RD`;
 }
@@ -1477,6 +1540,38 @@ export function validProgram(value: unknown, f: Flight): value is Program {
     p.collectors.propellant > hopCaps.propellant + 1e-6
   )
     return false;
+
+  const finitePositive = (n: unknown) =>
+    typeof n === "number" && Number.isFinite(n) && n > 0;
+  const vehicle = p.soundingVehicle;
+  if (
+    vehicle !== undefined &&
+    (!vehicle ||
+      p.sortie !== "sounding" ||
+      !f.customStages ||
+      f.vehicleName !== vehicle.name ||
+      typeof vehicle.name !== "string" ||
+      !vehicle.name.length ||
+      !finitePositive(vehicle.wetMassTonnes) ||
+      !finitePositive(vehicle.heightMeters) ||
+      !natural(vehicle.hardwareCost) ||
+      !natural(vehicle.propellantCost) ||
+      vehicle.cargo !== CONTRACTS.sounding.cargo ||
+      vehicle.sponsored !== undefined)
+  ) return false;
+
+  const report = p.soundingReport;
+  if (
+    report !== undefined &&
+    (!report ||
+      typeof report.vehicleName !== "string" ||
+      !report.vehicleName.length ||
+      !(report.peakAltitude === 0 || finitePositive(report.peakAltitude)) ||
+      !natural(report.hardwareSpent) ||
+      !(report.propellantSpent === 0 || finitePositive(report.propellantSpent)) ||
+      !natural(report.creditsAwarded) ||
+      !natural(report.researchAwarded))
+  ) return false;
 
   const expectedCargo =
     p.sortie === "practice" ? 0 : CONTRACTS[p.sortie].cargo;

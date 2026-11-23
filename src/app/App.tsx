@@ -3,7 +3,8 @@ import { CloudSyncPanel } from "./CloudSyncPanel";
 import { LaunchSite } from "./LaunchSite";
 import { Workshop } from "./Workshop";
 import { LunarSite } from "./LunarSite";
-import { CONTRACTS, level, quote } from "../program/program";
+import { SoundingReport } from "./SoundingReport";
+import { CONTRACTS, SOUNDING_TARGET, level, quote } from "../program/program";
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
@@ -15,6 +16,7 @@ import {
   ArrowUpFromLine,
   BookOpen,
   Check,
+  ClipboardList,
   Coins,
   Database,
   Flag,
@@ -39,6 +41,7 @@ import {
   CHUTE_MAX_SPEED,
   burning,
   stagesOf,
+  hasUpperStage,
   thrustToWeight,
   toggleChute,
   toggleLegs,
@@ -87,7 +90,7 @@ export default function App() {
   const pad = s.status === "pad",
     flying = s.status === "flying",
     ended = !pad && !flying,
-    booster = s.stage === 0;
+    booster = s.stage === 0 && hasUpperStage(s);
   const st = stagesOf(s);
   const stageMaxFuel = st[s.stage].fuel;
   const fuelPct =
@@ -98,11 +101,12 @@ export default function App() {
   const isRealContract = sortie !== "practice";
   const launchQuote = isRealContract ? quote(m.mission.program, sortie) : null;
   const trackingLevel = level(m.mission.program, "tracking");
+  const soundingReport = m.mission.program.soundingReport;
 
   function flightStatus() {
     if (pad)
       return isRealContract
-        ? CONTRACTS[sortie].name
+        ? s.vehicleName ?? CONTRACTS[sortie].name
         : s.vehicleName || "Free Simulation";
     if (m.paused) return "Paused";
     if (s.status === "lost") return "Vehicle lost";
@@ -324,24 +328,21 @@ export default function App() {
 
   const objectives = [
     { name: "Lift off", done: !pad },
-    ...(sortie === "recovery"
-      ? [
-          { name: "Reach 20 km", done: s.maxAlt >= 20000 },
-          { name: "Land safely on Earth", done: s.status === "landed" },
-        ]
-      : sortie === "return"
+    ...(sortie === "sounding"
+      ? [{ name: "Reach 15 km", done: s.maxAlt >= SOUNDING_TARGET }]
+      : sortie === "recovery"
         ? [
-            { name: "Separate booster", done: !booster },
-            { name: "Establish orbit", done: s.orbitEarned },
+            { name: "Reach 20 km", done: s.maxAlt >= 20000 },
             { name: "Land safely on Earth", done: s.status === "landed" },
           ]
         : [
-            { name: "Separate booster", done: !booster },
-            ...(sortie === "sounding"
-              ? [{ name: "Reach 15 km", done: s.maxAlt >= 15000 }]
-              : sortie === "hop"
-                ? [{ name: "Reach 30 km", done: s.maxAlt >= AIR }]
-                : [{ name: "Establish orbit", done: s.orbitEarned }]),
+            ...(hasUpperStage(s) ? [{ name: "Separate booster", done: !booster }] : []),
+            ...(sortie === "hop"
+              ? [{ name: "Reach 30 km", done: s.maxAlt >= AIR }]
+              : [{ name: "Establish orbit", done: s.orbitEarned }]),
+            ...(sortie === "return"
+              ? [{ name: "Land safely on Earth", done: s.status === "landed" }]
+              : []),
           ]),
   ];
   const current = objectives.findIndex((t) => !t.done);
@@ -703,6 +704,7 @@ export default function App() {
               menu: "Mission menu",
               plan: "Flight plan",
               log: "Event log",
+              "sounding-report": "Sounding report",
               warp: "Time warp",
               guide: "Flight guide",
               data: "Mission data",
@@ -748,6 +750,12 @@ export default function App() {
                     </button>
                   );
                 })}
+                {soundingReport && (
+                  <button onClick={() => D("sounding-report")}>
+                    <ClipboardList size={19} />
+                    Sounding report
+                  </button>
+                )}
               </div>
               <div className="details">
                 <span>{m.saveStatus}</span>
@@ -773,6 +781,9 @@ export default function App() {
                       : ""}
                 </p>
               )}
+              {sortie === "sounding" && pad && launchQuote && (
+                <p>Payout · {launchQuote.credits} C + {launchQuote.research} RD</p>
+              )}
               <p>{guidance}</p>
               <ol className="steps">
                 {objectives.map((t, i) => (
@@ -785,7 +796,13 @@ export default function App() {
                   </li>
                 ))}
               </ol>
+              {sortie === "sounding" && m.mission.program.paid && soundingReport && (
+                <SoundingReport report={soundingReport} />
+              )}
             </>
+          )}
+          {dialog === "sounding-report" && soundingReport && (
+            <SoundingReport report={soundingReport} />
           )}
           {dialog === "log" && (
             <ul className="events">
