@@ -461,7 +461,7 @@ export default function App() {
                 <Landmark />
               </button>
               <span className="timer">T+ {clock(s.t)}</span>
-              {(!active || m.rate > 1 || canChuteWarp(s)) && (
+              {(!active || m.rate > 1 || Boolean(s.chuteDeployed && flying)) && (
                 <button
                   className={
                     "warp-toggle" + (m.rate > 1 ? " warp-active" : "")
@@ -477,7 +477,7 @@ export default function App() {
                       : "Time warp"
                   }
                   onClick={() => {
-                    if (canChuteWarp(s) && active) {
+                    if (s.chuteDeployed && flying && active) {
                       m.warp(m.rate === 3 ? 1 : 3);
                     } else {
                       D("warp");
@@ -519,7 +519,7 @@ export default function App() {
 
           {(!pad || !active) && (
             <div className="telemetry">
-              {instrument("ALT", distance(m.alt), "km")}
+              {m.alt < 1000 ? instrument("ALT", String(Math.round(m.alt)), "m") : instrument("ALT", distance(m.alt), "km")}
               {instrument(
                 "VEL",
                 Math.round(speed(s)).toLocaleString("en-US"),

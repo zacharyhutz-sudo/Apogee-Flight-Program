@@ -222,6 +222,9 @@ export function useMission() {
   }
 
   function warp(value: number) {
+    if (value === 3 && vessel.current.chuteDeployed && vessel.current.status === "flying") {
+      vessel.current.throttle = 0;
+    }
     const chuteAllowed = value === 3 && canChuteWarp(vessel.current);
     if (value !== 1 && !canWarp(vessel.current) && !chuteAllowed) return;
     if (value > 1 && mission.current.program.warpAlert) {

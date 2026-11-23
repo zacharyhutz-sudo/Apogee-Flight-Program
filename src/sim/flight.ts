@@ -291,6 +291,7 @@ export function toggleChute(s: Flight): "deployed" | "ripped" | "cut" | "blocked
     return "ripped";
   }
   s.chuteDeployed = true;
+  s.throttle = 0;
   s.mode = "manual";
   s.pitch = 0;
   return "deployed";
@@ -415,8 +416,8 @@ export function step(s: Flight, dt = STEP) {
   const chuteHalf = Boolean(s.chuteDeployed && bp.AIR > 0 && alt > CHUTE_FULL_ALT && alt < bp.AIR);
   const chuteDragFactor = chuteFull
     ? midMass * 0.16
-    : chuteHalf
-      ? midMass * 0.0014
+    : chuteHalf && atmoDensity > 0
+      ? midMass * ((0.00125 * 1.225) / Math.max(0.04, atmoDensity))
       : 0;
   const rawDrag =
     (0.5 * atmoDensity * (0.32 * engine.area + chuteDragFactor) * v) / midMass;

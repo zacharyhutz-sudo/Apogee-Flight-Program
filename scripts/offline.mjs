@@ -14,7 +14,10 @@ await writeFile(
   `const prefix='apogee:'+self.registration.scope+':'
 const name=prefix+'${version}'
 const assets=${JSON.stringify(paths.map((p) => "./" + p))}
-self.addEventListener('install',event=>event.waitUntil(caches.open(name).then(c=>c.addAll(assets))))
+self.addEventListener('install',event=>{
+  self.skipWaiting()
+  event.waitUntil(caches.open(name).then(c=>c.addAll(assets)))
+})
 self.addEventListener('activate',event=>event.waitUntil((async()=>{
   for(const k of await caches.keys()) if(k.startsWith(prefix)&&k!==name)await caches.delete(k)
   await self.clients.claim()
@@ -24,6 +27,13 @@ self.addEventListener('fetch',event=>{
   if(req.method!=='GET'||!req.url.startsWith(self.registration.scope))return
   event.respondWith((async()=>{
     const cache=await caches.open(name)
+    if(req.mode==='navigate'){
+      try{
+        const fresh=await fetch(req)
+        if(fresh&&fresh.ok) cache.put(new URL('index.html',self.registration.scope),fresh.clone())
+        return fresh
+      }catch{}
+    }
     const saved=await cache.match(req.mode==='navigate'?new URL('index.html',self.registration.scope):req)
     return saved || fetch(req)
   })())
