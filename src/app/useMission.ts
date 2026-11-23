@@ -9,6 +9,7 @@ import {
   prepareBlueprintFlight,
   quote,
   reclaimTile,
+  clearObstacle,
   settle,
   tickEconomy,
   upgrade,
@@ -376,10 +377,10 @@ export function useMission() {
     return issue;
   }
 
-  function expandOcean(x: number, y: number) {
+  function improveTerrain(x: number, y: number, action: "clear" | "reclaim") {
     if (!ready.current) return "Save is still loading.";
     const p = mission.current.program;
-    const issue = reclaimTile(p, x, y);
+    const issue = action === "clear" ? clearObstacle(p, x, y) : reclaimTile(p, x, y);
     if (!issue) {
       save();
       refresh();
@@ -690,7 +691,7 @@ export function useMission() {
     separate,
     newSortie,
     editSite,
-    expandOcean,
+    improveTerrain,
     openLunar,
     collectLunarFacility,
     upgradeLunarFacility,

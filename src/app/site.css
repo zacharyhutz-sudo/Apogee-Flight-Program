@@ -5,7 +5,7 @@
   overflow: hidden;
 }
 .earth-canvas {
-  background: #227093;
+  background: radial-gradient(ellipse at 50% 47%, #2485a7 8%, #247ea3 38%, #22628b 100%);
   touch-action: none;
   cursor: grab;
 }

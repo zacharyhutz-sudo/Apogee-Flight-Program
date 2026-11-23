@@ -25,6 +25,7 @@ import {
 export const MAX_LEVEL = 4;
 
 export interface Cost {
+  propellant?: number;
   credits: number;
   research: number;
 }
@@ -73,9 +74,9 @@ export const FACILITIES = {
     defaultPos: { x: 1, y: 3 },
     costs: [
       { credits: 0, research: 0 },
-      { credits: 850, research: 0 },
-      { credits: 3400, research: 0 },
-      { credits: 11500, research: 0 },
+      { credits: 750, propellant: 100, research: 0 },
+      { credits: 3000, propellant: 300, research: 0 },
+      { credits: 10500, propellant: 750, research: 0 },
     ],
   },
   refinery: {
@@ -373,6 +374,7 @@ export interface EconomyState {
   blueprints: RocketBlueprint[];
   activeBlueprintId: string;
   reclaimedTiles: string[];
+  clearedTiles?: string[];
   lunar: LunarColony;
 }
 
@@ -443,6 +445,7 @@ export const startProgram = (): Program => {
     blueprints,
     activeBlueprintId: blueprints[0].id,
     reclaimedTiles: [],
+    clearedTiles: [],
     lunar: initialLunarColony(),
   };
 };
@@ -486,7 +489,28 @@ export function tileTerrain(p: Program, x: number, y: number) {
     p.reclaimedTiles.includes(tileKey(x, y))
   )
     return "land";
-  return terrain(x, y);
+  const base = terrain(x, y);
+  if ((base === "grove" || base === "rock") && p.clearedTiles?.includes(tileKey(x, y)))
+    return "land";
+  return base;
+}
+
+export function clearingQuote(p: Program, x: number, y: number) {
+  const ground = tileTerrain(p, x, y);
+  if (ground === "grove") return { name: "Tree grove", action: "Clear trees", propellant: 50 };
+  if (ground === "rock") return { name: "Rock outcrop", action: "Clear rocks", propellant: 100 };
+  return null;
+}
+
+export function clearObstacle(p: Program, x: number, y: number): string {
+  const quote = clearingQuote(p, x, y);
+  if (!quote) return "Select a tree grove or rock outcrop.";
+  const cost = { credits: 0, research: 0, propellant: quote.propellant };
+  const issue = costShortfall(p, cost);
+  if (issue) return issue;
+  spend(p, cost);
+  p.clearedTiles = [...(p.clearedTiles ?? []), tileKey(x, y)];
+  return "";
 }
 
 /** Escalating ocean expansion cost: 100 -> 150 -> 250 -> 400 -> 600 -> 850... */
@@ -526,7 +550,7 @@ export function countBuilt(p: Program, k: Kind): number {
 }
 
 export function extraBuildCost(k: Kind): Cost {
-  if (k === "foundry") return { credits: 350, research: 0 };
+  if (k === "foundry") return { credits: 300, propellant: 75, research: 0 };
   if (k === "refinery") return { credits: 380, research: 0 };
   return FACILITIES[k].costs[0];
 }
@@ -880,6 +904,21 @@ export function tickEconomy(p: Program, dtSimSec: number) {
   p.warpAlert = tickLunarColony(p.lunar, dtSimSec);
 }
 
+export function costShortfall(state: Program, cost: Cost): string {
+  const missing: string[] = [];
+  for (const [key, unit] of [["credits", "C"], ["propellant", "Prop"], ["research", "RD"]] as const) {
+    const deficit = Math.ceil((cost[key] ?? 0) - state[key]);
+    if (deficit > 0) missing.push(deficit.toLocaleString("en-US") + " " + unit);
+  }
+  return missing.length ? "Need " + missing.join(" + ") + " more." : "";
+}
+
+function spend(state: Program, cost: Cost) {
+  state.credits -= cost.credits;
+  state.research -= cost.research;
+  state.propellant -= cost.propellant ?? 0;
+}
+
 export function canAffordUpgrade(
   state: Program,
   buildingId: Kind,
@@ -918,22 +957,8 @@ export function canAffordUpgrade(
       requiredCommandLevel,
     };
   }
-  if (state.credits < cost.credits || state.research < cost.research) {
-    const missing: string[] = [];
-    if (state.credits < cost.credits)
-      missing.push(
-        `${(cost.credits - state.credits).toLocaleString("en-US")} C`,
-      );
-    if (state.research < cost.research)
-      missing.push(`${cost.research - state.research} RD`);
-    return {
-      ok: false,
-      reason: `Need ${missing.join(" + ")} more.`,
-      cost,
-      targetLevel,
-      requiredCommandLevel,
-    };
-  }
+  const reason = costShortfall(state, cost);
+  if (reason) return { ok: false, reason, cost, targetLevel, requiredCommandLevel };
   return {
     ok: true,
     reason: "",
@@ -1129,17 +1154,16 @@ export function place(
   if (builtCount > 0 && builtCount < maxCount) {
     // Building a 2nd Solar Foundry or 2nd Propellant Refinery (allowed at MC Lv 1!)
     const cost = extraBuildCost(k);
-    if (p.credits < cost.credits)
-      return `Need ${(cost.credits - p.credits).toLocaleString("en-US")} C more.`;
-    p.credits = Math.max(0, p.credits - cost.credits);
+    const shortage = costShortfall(p, cost);
+    if (shortage) return shortage;
+    spend(p, cost);
     p.buildings.push({ kind: k, x, y, level: 1 });
     p.buildingLevels = syncBuildingLevels(p.buildings);
     return "";
   }
   const check = canAffordUpgrade(p, k, 0);
   if (!check.ok) return check.reason;
-  p.credits = Math.max(0, p.credits - check.cost.credits);
-  p.research = Math.max(0, p.research - check.cost.research);
+  spend(p, check.cost);
   p.buildings.push({ kind: k, x, y, level: 1 });
   p.buildingLevels = syncBuildingLevels(p.buildings);
   return "";
@@ -1163,8 +1187,7 @@ export function upgrade(
   }
   const check = canAffordUpgrade(p, k, b.level);
   if (!check.ok) return check.reason;
-  p.credits = Math.max(0, p.credits - check.cost.credits);
-  p.research = Math.max(0, p.research - check.cost.research);
+  spend(p, check.cost);
   b.level++;
   p.buildingLevels = syncBuildingLevels(p.buildings);
   return "";
@@ -1379,6 +1402,15 @@ function validBlueprint(bp: unknown): bp is RocketBlueprint {
 export function validProgram(value: unknown, f: Flight): value is Program {
   if (!value || typeof value !== "object") return false;
   const p = value as Program;
+  if (p.clearedTiles !== undefined) {
+    if (!Array.isArray(p.clearedTiles) || p.clearedTiles.length > SIZE * SIZE) return false;
+    const valid = p.clearedTiles.every((key) => {
+      if (typeof key !== "string" || !/^[0-7],[0-7]$/.test(key)) return false;
+      const [x, y] = key.split(",").map(Number);
+      return ["grove", "rock"].includes(terrain(x, y));
+    });
+    if (!valid || new Set(p.clearedTiles).size !== p.clearedTiles.length) return false;
+  }
   const natural = (n: unknown) =>
     typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
   if (

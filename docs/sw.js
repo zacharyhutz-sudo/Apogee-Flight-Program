@@ -1,6 +1,6 @@
 const prefix='apogee:'+self.registration.scope+':'
-const name=prefix+'98f63a6445795043'
-const assets=["./THIRD-PARTY-NOTICES.txt","./art/canopy.png","./art/credits.png","./art/dusk.png","./art/propellant.png","./art/range.png","./art/site.png","./art/space.png","./art/tower.png","./art/upper.png","./art/vehicle.png","./assets/ibm-plex-mono-latin-500-normal-CB9ihrfo.woff","./assets/ibm-plex-mono-latin-500-normal-DSY6xOcd.woff2","./assets/index-BQyw6jf3.css","./assets/index-DLFJJ7kI.js","./assets/phaser-Czz4FBZH.js","./icon-192.png","./icon-512.png","./index.html","./manifest.webmanifest"]
+const name=prefix+'16735dd3b89c2056'
+const assets=["./THIRD-PARTY-NOTICES.txt","./art/canopy.png","./art/credits.png","./art/dusk.png","./art/propellant.png","./art/range.png","./art/site.png","./art/space.png","./art/tower.png","./art/upper.png","./art/vehicle.png","./assets/ibm-plex-mono-latin-500-normal-CB9ihrfo.woff","./assets/ibm-plex-mono-latin-500-normal-DSY6xOcd.woff2","./assets/index-OLEg7HB1.js","./assets/index-OmbjLcx0.css","./assets/phaser-Czz4FBZH.js","./icon-192.png","./icon-512.png","./index.html","./manifest.webmanifest"]
 self.addEventListener('install',event=>{
   self.skipWaiting()
   event.waitUntil(caches.open(name).then(c=>c.addAll(assets)))

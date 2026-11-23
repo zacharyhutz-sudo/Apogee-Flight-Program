@@ -35,6 +35,9 @@ import {
   MAX_LEVEL,
   SIZE,
   canAffordUpgrade,
+  clearingQuote,
+  costShortfall,
+  type Cost,
   canReclaimTile,
   countBuilt,
   extraBuildCost,
@@ -81,6 +84,14 @@ const glyph: Record<Kind, typeof Landmark> = {
 function compactNum(n: number) {
   if (n >= 10000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + "k";
   return Math.floor(n).toLocaleString("en-US");
+}
+
+function price(cost: Cost) {
+  return [
+    cost.credits ? compactNum(cost.credits) + " C" : "",
+    cost.propellant ? compactNum(cost.propellant) + " Prop" : "",
+    cost.research ? compactNum(cost.research) + " RD" : "",
+  ].filter(Boolean).join(" + ");
 }
 
 function freeTile(p: Program, k: Kind): Tile {
@@ -149,6 +160,17 @@ export function LaunchSite({
     !placing &&
     !builtAtTile &&
     canReclaimTile(p, selected!.x, selected!.y);
+  const buttonsDisabled = !m.loaded;
+  const clearing = selected && !builtAtTile ? clearingQuote(p, selected.x, selected.y) : null;
+  const buildCost = placing && !movingFrom && countBuilt(p, placing) > 0 ? extraBuildCost(placing) : null;
+  const buildShortfall = buildCost ? costShortfall(p, buildCost) : "";
+  const clearShortfall = clearing ? costShortfall(p, { ...clearing, credits: 0, research: 0 }) : "";
+  const clearButton = selected && clearing && (
+    <button className="primary grow" disabled={buttonsDisabled || Boolean(clearShortfall)}
+      onClick={() => M(m.improveTerrain(selected.x, selected.y, "clear"))}>
+      {clearing.action} · {clearing.propellant} Prop
+    </button>
+  );
   const expandPrice = reclaimCost(p);
 
   function cancel() {
@@ -268,7 +290,6 @@ export function LaunchSite({
     P(v);
   }
 
-  const buttonsDisabled = !m.loaded;
   const activeLv = builtAtTile ? builtAtTile.level : 0;
   const upgCheck = activeKind
     ? canAffordUpgrade(p, activeKind, activeLv)
@@ -357,7 +378,7 @@ export function LaunchSite({
                         ? "Coastal Ocean"
                         : tileTerrain(p, selected.x, selected.y) === "land"
                           ? "Open plot"
-                          : "Terrain"}
+                          : clearing?.name ?? "Terrain"}
                 </h2>
                 {activeKind && !placing && (
                   <span className="lv-badge">
@@ -372,18 +393,23 @@ export function LaunchSite({
 
             {placing ? (
               <>
-                <p>{issue || "Tap an open plot to place."}</p>
+                <p>{clearing ? (clearShortfall || "Clear this tile to continue.") : issue || buildShortfall || "Tap an open plot to place."}</p>
                 <div className="inspect-actions">
                   <button onClick={cancel}>Cancel</button>
-                  <button
+                  {clearing ? clearButton : <button
                     className="primary"
-                    disabled={Boolean(issue) || buttonsDisabled}
+                    disabled={Boolean(issue || buildShortfall) || buttonsDisabled}
                     onClick={confirmPlacement}
                   >
                     <Check />
-                    Confirm
-                  </button>
+                    Confirm{buildCost ? " · " + price(buildCost) : ""}
+                  </button>}
                 </div>
+              </>
+            ) : clearing ? (
+              <>
+                <p className="inspect-stat">{clearShortfall || "Clear this tile for construction."}</p>
+                <div className="inspect-actions">{clearButton}</div>
               </>
             ) : canExpandSelected ? (
               <>
@@ -398,7 +424,7 @@ export function LaunchSite({
                     className="primary grow"
                     disabled={buttonsDisabled || p.credits < expandPrice}
                     onClick={() => {
-                      const err = m.expandOcean(selected.x, selected.y);
+                      const err = m.improveTerrain(selected.x, selected.y, "reclaim");
                       if (err) M(err);
                       else M("");
                     }}
@@ -429,8 +455,7 @@ export function LaunchSite({
                   </div>
                 )}
                 {upgCheck &&
-                  !upgCheck.ok &&
-                  upgCheck.reason.includes("Mission Control") && (
+                  !upgCheck.ok && (
                     <div className="prereq-tag">
                       <Lock size={13} />
                       {upgCheck.reason}
@@ -469,10 +494,7 @@ export function LaunchSite({
                       }}
                     >
                       {activeLv === 0 ? "Build" : "Upgrade"} ·{" "}
-                      {upgCheck.cost.credits.toLocaleString("en-US")} C
-                      {upgCheck.cost.research > 0
-                        ? ` + ${upgCheck.cost.research} RD`
-                        : ""}
+                      {price(upgCheck.cost)}
                     </button>
                   )}
                 </div>
@@ -672,7 +694,7 @@ export function LaunchSite({
                           </span>
                           <b className={locked ? "locked-badge" : ""}>
                             {canBuildExtra
-                              ? `+${extraBuildCost(k).credits} C`
+                              ? price(extraBuildCost(k))
                               : built
                                 ? `Lv ${built.level}`
                                 : locked

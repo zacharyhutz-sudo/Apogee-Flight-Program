@@ -67,16 +67,21 @@ for i in range(8):
         d.line((46, 85, 54, 85), fill="#449cb8")
         put(i)
         continue
-    green = ["#73977a", "#759b7d", "#709578", "#789d7e"]
-    box(-16, -16, 32, 32, -7, 7, (green[i % 4], "#8f6d4f", "#6e5039"))
+    green = ["#81bd57", "#86c25b", "#79b653", "#88c15a"]
+    box(-16, -16, 32, 32, -7, 7, (green[i % 4], "#c29662", "#976f50"))
     for _ in range(34):
         x = r.randint(-15, 15)
         y = r.randint(-15, 15)
         line(
             (x, y, 0),
             (min(x + 1, 15), y, 0),
-            r.choice(["#86a984", "#729176", "#90ad87", "#65876e"]),
+            r.choice(["#96cd65", "#76b34c", "#a9d56f", "#67a550"]),
         )
+    if i in (1, 3):
+        for fx, fy in [(-6, 9), (-4, 8), (8, -5)]:
+            px, py = iso(fx, fy)
+            d.point((px, py), fill="#47875a")
+            d.line((px, py - 1, px + 1, py - 1), fill="#fff2a3" if i == 1 else "#ffc39c")
     if i == 4:
         face([(-16, -10, 0), (16, -10, 0), (16, 10, 0), (-16, 10, 0)], "#4b5863")
         line((-16, 10, 0), (16, 10, 0), "#cfd8d4")
@@ -84,19 +89,18 @@ for i in range(8):
         for x in range(-16, 16, 9):
             line((x, 0, 0), (x + 4, 0, 0), "#f5c85b")
     if i == 6:
-        for x, y, h in [(-6, -6, 17), (5, -4, 20), (-9, 4, 13), (3, 8, 19)]:
+        # Broad coastal tree crowns with a sunlit upper-left edge and cool undersides.
+        for x, y, h, leaf, light in [(-7, -7, 17, "#26826c", "#66bc78"),
+                                    (5, -5, 21, "#388e53", "#a2ce62"),
+                                    (-8, 5, 14, "#328259", "#6bb859"),
+                                    (4, 8, 16, "#508e48", "#abd167")]:
             cx, cy = iso(x, y)
-            d.line((cx, cy, cx, cy - 8), fill="#6b4b35", width=2)
-            for dh in (0, 4, 8):
-                width = 7 - dh // 3
-                d.polygon(
-                    [(cx, cy - h + dh // 2), (cx - width, cy - 5 - dh // 2), (cx + width, cy - 5 - dh // 2)],
-                    fill="#2b8456",
-                )
-                d.polygon(
-                    [(cx, cy - h + dh // 2), (cx - width, cy - 5 - dh // 2), (cx - 1, cy - 6 - dh // 2)],
-                    fill="#4bc274",
-                )
+            d.ellipse((cx - 3, cy - 1, cx + 7, cy + 2), fill="#689f48")
+            d.rectangle((cx - 1, cy - 8, cx + 1, cy), fill="#765646")
+            crown_y = cy - h + 8
+            d.ellipse((cx - 7, crown_y - 5, cx + 7, crown_y + 5), fill="#24694f")
+            d.ellipse((cx - 8, crown_y - 7, cx + 5, crown_y + 2), fill=leaf)
+            d.ellipse((cx - 6, crown_y - 9, cx + 1, crown_y - 3), fill=light)
     if i == 5:
         for x, y, w, h in [(-5, -6, 8, 8), (4, 1, 7, 6), (-8, 5, 6, 4)]:
             cx, cy = iso(x, y)
@@ -124,7 +128,7 @@ for typ in range(9):
         if typ == 0:  # Mission Control (command)
             box(-11, -10, 22, 20, 2, 8 + tier, steel)
             box(-10, -9, 20, 18, 10 + tier, 2, light)
-            box(-8, -8, 14, 15, 12 + tier, 6 + tier, ("#d2ded8", "#7999a3", "#567582"))
+            box(-8, -8, 14, 15, 12 + tier, 6 + tier, ("#5eacf3", "#347ab9", "#2c5988"))
             for x in [-8, -4, 0, 4]:
                 line((x, 10, 7), (x + 2, 10, 7), "#5be6d4", 2)
             cx, cy = iso(-3, -4, 21 + tier * 2)
@@ -140,8 +144,8 @@ for typ in range(9):
             x, y = iso(-9, 6, 5)
             d.rectangle((x - 3, y - tower_h, x + 3, y), fill="#4a5e6e")
             for k in range(5, tower_h, 6):
-                d.line((x - 3, y - k, x + 3, y - k - 4), fill="#e86f3a")
-                d.line((x - 3, y - k - 4, x + 3, y - k - 4), fill="#ff9e52")
+                d.line((x - 3, y - k, x + 3, y - k - 4), fill="#e5613d")
+                d.line((x - 3, y - k - 4, x + 3, y - k - 4), fill="#ffb174")
             for k in [16, 26]:
                 d.line((x, y - k, x + 10, y - k), fill="#c9d1cc", width=2)
             rx, ry = iso(4, -1, 5)
@@ -158,6 +162,10 @@ for typ in range(9):
             box(-11, -9, 13, 18, 2, 8 + tier, dark)
             tank(5, -5, 2, 5, 16 + tier * 3, "#7cc7d1")
             tank(6, 5, 2, 4, 12 + tier * 2, "#5cb4c2")
+            for tank_x, tank_y, band_h in [(5, -5, 12 + tier * 3), (6, 5, 8 + tier * 2)]:
+                px, py = iso(tank_x, tank_y, 2)
+                d.rectangle((px - 3, py - band_h, px + 3, py - band_h + 2), fill="#1eab9e")
+                d.point((px - 2, py - band_h), fill="#83f2d8")
             # An insulated transfer pipe and a ladder along the processing hall.
             line((-9, 9, 4), (0, 9, 4), "#6addc5", 2)
             line((0, 9, 4), (0, 9, 10 + tier), "#6addc5", 2)
@@ -176,7 +184,7 @@ for typ in range(9):
 
         elif typ == 4:  # Contract Office (office)
             box(-11, -10, 22, 18, 2, 10 + tier * 2, warm)
-            box(-12, -11, 24, 20, 12 + tier * 2, 2, light)
+            box(-12, -11, 24, 20, 12 + tier * 2, 2, ("#ed8865", "#c65e4a", "#98504c"))
             for k in [-8, -3, 2, 7]:
                 line((k, 8, 7), (k + 2, 8, 7), "#64e3d6", 2)
                 if tier >= 1:
@@ -213,7 +221,7 @@ for typ in range(9):
             box(-12, -10, 22, 20, 2, 9 + tier, light)
             box(-13, -11, 24, 22, 11 + tier, 2, steel)
             cx, cy = iso(-3, -2, 13 + tier)
-            d.pieslice((cx - 9, cy - 13, cx + 9, cy + 9), 180, 360, fill="#8ee3dc", outline="#4a8999")
+            d.pieslice((cx - 9, cy - 13, cx + 9, cy + 9), 180, 360, fill="#b99bf3", outline="#7666ac")
             d.arc((cx - 4, cy - 12, cx + 4, cy + 9), 180, 360, fill="#ffffff")
             for k in [-8, -3, 2]:
                 line((k, 10, 7), (k + 3, 10, 7), "#4fa8b8", 2)
@@ -226,9 +234,9 @@ for typ in range(9):
                 box(fx, -7, 3, 3, 9 + tier, 10 + tier, dark)
                 box(fx - 1, -8, 5, 5, 18 + tier * 2, 2, warm)
             for sx in [-11, 4]:
-                face([(sx, -11, 5 + tier), (sx + 7, -11, 5 + tier), (sx + 7, 10, 8 + tier), (sx, 10, 8 + tier)], "#2466a8")
+                face([(sx, -11, 5 + tier), (sx + 7, -11, 5 + tier), (sx + 7, 10, 8 + tier), (sx, 10, 8 + tier)], "#2852a6")
                 for gy in range(-8, 10, 5):
-                    line((sx + 1, gy, 6 + tier), (sx + 6, gy, 6 + tier), "#7cc5ff", 1)
+                    line((sx + 1, gy, 6 + tier), (sx + 6, gy, 6 + tier), "#80cbff", 1)
             for k in [-7, -2, 3]:
                 line((k, 9, 5), (k + 2, 9, 5), "#ffcf70", 2)
 

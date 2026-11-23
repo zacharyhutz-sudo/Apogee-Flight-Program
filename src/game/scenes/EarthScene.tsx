@@ -42,6 +42,10 @@ const project = (x: number, y: number) => ({
   y: (x + y) * 16,
 });
 
+function terrainSignature(p: Program) {
+  return (p.reclaimedTiles ?? []).join("|") + ";" + (p.clearedTiles ?? []).join("|");
+}
+
 interface Props {
   program: Program;
   selected: Tile | null;
@@ -208,13 +212,28 @@ export function EarthScene(props: Props) {
       }
 
       rebuildTerrain(prog: Program) {
-        // Bake the static island once in board coordinates. Only reclamation changes it.
+        // Bake the static island once in board coordinates. Rebuild after clearing or reclaiming land.
         const ground = this.ground;
         const ctx = ground.context;
         const left = 592, top = 224;
         ctx.clearRect(0, 0, ground.width, ground.height);
         const stamp = (frame: number, x: number, y: number) =>
           ground.drawFrame("terrain", frame, left + x - 40, top + y - 80, false);
+        // Overlapping shallow-water contours surround the current island footprint.
+        for (const [radius, color] of [[58, "#2788a4"], [49, "#2798ad"], [41, "#40b2b7"]] as const) {
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          for (let x = 0; x < SIZE; x++) {
+            for (let y = 0; y < SIZE; y++) {
+              if (tileTerrain(prog, x, y) === "water") continue;
+              const pt = project(x, y);
+              const cx = left + pt.x, cy = top + pt.y + 4;
+              ctx.moveTo(cx + radius, cy);
+              ctx.ellipse(cx, cy, radius, radius * 0.52, 0, 0, Math.PI * 2);
+            }
+          }
+          ctx.fill();
+        }
         for (let sum = -8; sum < 24; sum++)
           for (let x = -5; x <= 12; x++) {
             const y = sum - x;
@@ -235,7 +254,7 @@ export function EarthScene(props: Props) {
               // Sparse, reproducible glints break up the repeating diamond grid offshore.
               const seed = ((x + 17) * 73856093 ^ (y + 17) * 19349663) >>> 0;
               if (seed % 4 !== 0) {
-                ctx.fillStyle = seed % 3 ? "#34829a" : "#428da1";
+                ctx.fillStyle = seed % 3 ? "#4999af" : "#61abba";
                 const wx = left + pt.x - 12 + seed % 24;
                 const wy = top + pt.y - 5 + (seed >>> 5) % 10;
                 ctx.fillRect(wx, wy, 3 + (seed >>> 9) % 8, 1);
@@ -245,7 +264,7 @@ export function EarthScene(props: Props) {
               stamp(frame, pt.x, pt.y);
             }
           }
-        ctx.strokeStyle = "#b3dccc";
+        ctx.strokeStyle = "#d2f4d6";
         ctx.lineWidth = 1;
         ctx.beginPath();
         for (let x = 0; x < SIZE; x++)
@@ -274,7 +293,7 @@ export function EarthScene(props: Props) {
         this.ground = this.textures.createCanvas("ground", 1184, 660)!;
         this.board.add(this.add.image(-592, -224, "ground").setOrigin(0));
         this.rebuildTerrain(state.current.program);
-        this.terrainSig = (state.current.program.reclaimedTiles ?? []).join("|");
+        this.terrainSig = terrainSignature(state.current.program);
         this.marker = this.add.graphics();
         this.board.add(this.marker);
         this.buildings = this.add.container(0, 0);
@@ -332,7 +351,7 @@ export function EarthScene(props: Props) {
           .setPosition(Math.round(o.x), Math.round(o.y))
           .setScale(size());
 
-        const tSig = (p.program.reclaimedTiles ?? []).join("|");
+        const tSig = terrainSignature(p.program);
         if (tSig !== this.terrainSig) {
           this.terrainSig = tSig;
           this.rebuildTerrain(p.program);
@@ -595,7 +614,7 @@ export function EarthScene(props: Props) {
     const game = new Phaser.Game({
       type: Phaser.CANVAS,
       parent: el,
-      backgroundColor: "#227093",
+      transparent: true,
       pixelArt: true,
       roundPixels: true,
       width: el.clientWidth,
