@@ -26,32 +26,31 @@ button {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  background: var(--panel-alt);
+  background: linear-gradient(180deg, #347fa4, #256484);
   color: var(--ink);
-  border: 2px solid var(--edge-dark);
-  border-bottom-width: 4px;
+  border: 1px solid #63a4bc;
+  border-bottom: 2px solid #20516d;
   box-shadow: inset 0 1px 0 var(--edge-light);
   border-radius: var(--radius-md);
   font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
   cursor: pointer;
   touch-action: manipulation;
-  transition: transform 60ms ease, border-bottom-width 60ms ease;
+  transition: transform 75ms ease, filter 75ms ease;
 }
 button:disabled {
-  opacity: 0.45;
+  opacity: 0.65;
+  filter: saturate(0.35);
   cursor: default;
 }
 button:enabled:active {
-  transform: translateY(2px);
-  border-bottom-width: 2px;
-  background: #2b3c50;
+  transform: translateY(1px);
+  filter: brightness(.92);
 }
 button:focus-visible,
 select:focus-visible,
 input:focus-visible {
-  outline: 2px solid var(--amber-bright);
+  outline: 3px solid #ffe398;
   outline-offset: 2px;
 }
 button svg {
@@ -486,10 +485,10 @@ nav button,
   background: var(--amber);
 }
 button.primary {
-  background: var(--amber);
-  color: #1a1106;
-  border: 2px solid var(--edge-dark);
-  border-bottom: 4px solid var(--amber-deep);
+  background: linear-gradient(#ffd084, var(--amber));
+  color: #352b23;
+  border: 1px solid #ffe4ad;
+  border-bottom: 2px solid var(--amber-deep);
   min-height: 48px;
   font-weight: 700;
   font-size: 15px;
@@ -894,8 +893,8 @@ dialog ol {
   gap: 0;
   overflow: hidden;
   border-radius: var(--radius-md);
-  background: #172430;
-  border: 1px solid #435565;
+  background: #245c7a;
+  border: 1px solid #73a6b8;
 }
 .topline nav button, .landing-toggles button {
   min-height: 44px;
@@ -930,3 +929,18 @@ dialog ol {
   .map-view .meter { padding-inline: 3px; }
   .map-view .meter strong { font-size: 12px; }
 }
+
+@media (hover: hover) {
+  button:enabled:hover { filter: brightness(1.09); }
+}
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+  button:enabled:active { transform: none; }
+}
+.topline nav .selected, .tray-tabs button.active {
+  color: #e8fff7;
+  background: #23695f;
+  box-shadow: inset 0 -3px #8be3c9;
+}
+.menu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.menu-grid button { gap: 6px; padding-inline: 8px; white-space: nowrap; }

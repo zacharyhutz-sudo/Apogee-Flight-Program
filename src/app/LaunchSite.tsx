@@ -81,9 +81,16 @@ const glyph: Record<Kind, typeof Landmark> = {
   lab: FlaskConical,
 };
 
+const researchFormat = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+
 function compactNum(n: number) {
   if (n >= 10000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + "k";
   return Math.floor(n).toLocaleString("en-US");
+}
+
+function facilitySummary(kind: Kind, level: number) {
+  if (kind === "tracking") return ["Live orbital map", "Moon encounters", "Mars transfers", "Galaxy scanner"][level - 1];
+  return facilityBenefit(kind, level).split(" · ")[0];
 }
 
 function price(cost: Cost) {
@@ -344,10 +351,10 @@ export function LaunchSite({
                 <i style={{ width: propPct + "%" }} />
               </div>
             </div>
-            <div className="res-pill research" title="Research Data">
+            <div className="res-pill research" title={`Research data: ${p.research.toLocaleString("en-US")}`}>
               <div className="res-row">
                 <FlaskConical />
-                <strong>{p.research.toLocaleString("en-US")}</strong>
+                <strong>{p.research < 10000 ? compactNum(p.research) : researchFormat.format(p.research)}</strong>
                 <small>RD</small>
               </div>
             </div>
@@ -461,6 +468,9 @@ export function LaunchSite({
                       {upgCheck.reason}
                     </div>
                   )}
+                {activeLv < MAX_LEVEL && upgCheck && (
+                  <div className="inspect-price"><span>{activeLv === 0 ? "Build cost" : "Upgrade cost"}</span><b>{price(upgCheck.cost)}</b></div>
+                )}
                 <div className="inspect-actions">
                   {builtAtTile && (
                     <button
@@ -476,12 +486,13 @@ export function LaunchSite({
                       aria-label="Collect resources"
                       onClick={() => triggerCollect(activeKind, selected)}
                     >
-                      Collect {collectorStored}
+                      Collect
                     </button>
                   )}
                   {activeLv < MAX_LEVEL && upgCheck && (
                     <button
                       className="primary grow"
+                      aria-label={`${activeLv === 0 ? "Build" : "Upgrade"} · ${price(upgCheck.cost)}`}
                       disabled={buttonsDisabled || !upgCheck.ok}
                       onClick={() => {
                         if (activeLv === 0 && !builtAtTile) {
@@ -493,8 +504,7 @@ export function LaunchSite({
                         }
                       }}
                     >
-                      {activeLv === 0 ? "Build" : "Upgrade"} ·{" "}
-                      {price(upgCheck.cost)}
+                      {activeLv === 0 ? "Build" : "Upgrade"}
                     </button>
                   )}
                 </div>
@@ -636,7 +646,7 @@ export function LaunchSite({
                 onClick={() => pick("practice")}
               >
                 <Rocket />
-                Simulate Free (0 C · 0 Prop · 0 Payout)
+                Free simulation · No cost or payout
               </button>
             </>
           )}
@@ -685,22 +695,15 @@ export function LaunchSite({
                           }}
                         >
                           <Icon />
-                          <span>
-                            <strong>
-                              {FACILITIES[k].name}
-                              {maxNum > 1 ? ` (${builtNum}/${maxNum})` : ""}
-                            </strong>
-                            <small>{facilityBenefit(k, built?.level ?? 1)}</small>
-                          </span>
+                          <strong>{FACILITIES[k].name}</strong>
                           <b className={locked ? "locked-badge" : ""}>
-                            {canBuildExtra
-                              ? price(extraBuildCost(k))
-                              : built
-                                ? `Lv ${built.level}`
-                                : locked
-                                  ? "MC Lv 2"
-                                  : `${FACILITIES[k].costs[0].credits.toLocaleString("en-US")} C`}
+                            {maxNum > 1 ? `${builtNum}/${maxNum}` : built ? `Lv ${built.level}` : locked ? "Locked" : "Build"}
                           </b>
+                          <small>{canBuildExtra
+                            ? `Build second · ${price(extraBuildCost(k))}`
+                            : locked ? "Requires Mission Control Lv 2"
+                            : built ? facilitySummary(k, built.level)
+                            : price(FACILITIES[k].costs[0])}</small>
                         </button>
                       );
                     })}

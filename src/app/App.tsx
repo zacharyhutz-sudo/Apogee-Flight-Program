@@ -716,23 +716,23 @@ export default function App() {
           {dialog === "menu" && (
             <>
               <div className="menu-grid">
-                <button
+                <button aria-label="Earth launch site"
                   onClick={() => {
                     D("");
                     m.visitSite();
                   }}
                 >
                   <Landmark size={19} />
-                  Earth launch site
+                  Earth base
                 </button>
-                <button
+                <button aria-label="Rocket Workshop"
                   onClick={() => {
                     D("");
                     m.openWorkshop();
                   }}
                 >
                   <Wrench size={19} />
-                  Rocket Workshop
+                  Workshop
                 </button>
                 {[
                   [Flag, "Flight plan", "plan"],

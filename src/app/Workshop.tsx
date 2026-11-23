@@ -516,13 +516,15 @@ export function Workshop({
         </button>
         <button
           className="primary launch-btn"
+          aria-label={`Launch · ${analysis.hardwareCost} credits + ${analysis.propellantCost} propellant`}
           disabled={!canAffordReal}
           onClick={() => launchMode("real")}
         >
-          <Rocket size={16} />
-          Launch · <Coins size={13} />
-          {analysis.hardwareCost} · <Flame size={13} />
-          {analysis.propellantCost}
+          <span>Launch</span>
+          <small className="vab-launch-price">
+            <span><Coins />{analysis.hardwareCost}</span>
+            <span><Flame />{analysis.propellantCost}</span>
+          </small>
         </button>
       </footer>
     </main>

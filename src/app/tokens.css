@@ -1,42 +1,45 @@
+@import "@fontsource/barlow/latin-400.css";
+@import "@fontsource/barlow/latin-600.css";
+@import "@fontsource/barlow/latin-700.css";
 @import "@fontsource/ibm-plex-mono/latin-500.css";
 
 :root {
   color-scheme: dark;
-  --font-ui: "Chakra Petch", system-ui, -apple-system, sans-serif;
-  --font-mono: "Space Mono", "IBM Plex Mono", ui-monospace, monospace;
+  --font-ui: "Barlow", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --mono: var(--font-mono);
 
   /* Handcrafted Retro-Indie Aerospace Palette (Solid Matte Hardware, Zero Glassmorphism) */
   --bg-void: #0e151f;
-  --panel: #192431;
-  --panel-alt: #233142;
-  --panel-deep: #111923;
+  --panel: #173f57;
+  --panel-alt: #265e7c;
+  --panel-deep: #123147;
   --surface: var(--panel);
   --surface-solid: var(--panel);
   --surface-raised: var(--panel-alt);
   --glass: var(--panel);
 
   --ink: #f6f1e3;
-  --ink-muted: #9eb2be;
-  --amber: #f28c28;
+  --ink-muted: #c1d9df;
+  --amber: #ffb354;
   --amber-bright: #ffae52;
-  --amber-deep: #9c4f0d;
-  --teal: #4fd1a5;
+  --amber-deep: #b97829;
+  --teal: #70e0c0;
   --teal-deep: #217358;
   --mint: var(--teal);
   --violet: #a79cf5;
   --coral: #e85d56;
   --coral-deep: #8f2d28;
 
-  --edge-dark: #090e14;
-  --edge-light: #ffffff1f;
-  --line: #36495e;
-  --line-strong: #4d6580;
+  --edge-dark: #245369;
+  --edge-light: #c9f5ff40;
+  --line: #427188;
+  --line-strong: #6198ab;
 
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
-  --shadow-panel: 0 5px 0 #090e14cc;
+  --shadow-panel: 0 5px 0 #245369cc;
 
   font-family: var(--font-ui);
   color: var(--ink);

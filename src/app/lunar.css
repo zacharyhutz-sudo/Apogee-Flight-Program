@@ -148,3 +148,27 @@
   min-height: 48px;
   font-size: 13px;
 }
+
+.lunar-res-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, .68fr);
+  max-width: 460px;
+  margin-left: auto;
+}
+.l-pill {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-content: center;
+  gap: 0 3px;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--line-strong);
+  padding: 4px 6px;
+}
+.l-pill small { grid-column: 2; }
+.l-pill strong, .l-pill small { white-space: nowrap; }
+@media (max-width: 420px) {
+  .lunar-top { gap: 5px; }
+  .lunar-res-bar { gap: 3px; }
+  .l-pill { padding-inline: 3px; font-size: 10px; }
+}

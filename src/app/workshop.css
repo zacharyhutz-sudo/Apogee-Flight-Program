@@ -225,3 +225,24 @@
     max-height: 102px;
   }
 }
+
+.part-card { background: #204d68; border-color: #447c97; }
+.part-card-top { text-transform: none; line-height: 1.2; }
+.part-card-top strong { font-family: var(--font-ui); }
+@media (max-width: 480px) {
+  .part-toolbar {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-columns: repeat(4, minmax(44px, auto));
+    grid-template-rows: auto 44px;
+  }
+  .part-toolbar:has([aria-label="Toggle mirror symmetry"]) { grid-template-columns: repeat(5, minmax(44px, auto)); }
+  .part-toolbar-name { grid-area: 1 / 1 / 2 / -1; }
+  .part-toolbar button { grid-row: 2; white-space: nowrap; }
+  .vab-actions button { padding-inline: 5px; gap: 4px; white-space: nowrap; }
+}
+
+.vab-actions .launch-btn { flex-direction: column; gap: 1px; }
+.vab-launch-price, .vab-launch-price span { display: inline-flex; align-items: center; gap: 4px; }
+.vab-launch-price { gap: 10px; font: 500 10px/13px var(--font-mono); }
+.vab-launch-price svg { width: 12px; height: 12px; }
