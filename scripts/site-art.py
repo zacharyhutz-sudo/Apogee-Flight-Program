@@ -12,7 +12,7 @@ W, H = 80, 104
 # 8..43  9 facilities x 4 tiers (command, pad, refinery, tanks, office, vab, tracking, lab, foundry)
 # 44     road lamp
 # 45     Tier 2 locked/unbuilt construction pad footprint
-atlas = Image.new("RGBA", (W * 8, H * 6))
+atlas = Image.new("RGBA", (W * 8, H * 7))
 
 
 def frame(index):
@@ -266,6 +266,39 @@ for px, py in [(-11, -11), (9, -11), (-11, 9), (9, 9)]:
 line((-9, 0, 1), (9, 0, 1), "#c4d6d9", 1)
 line((0, -9, 1), (0, 9, 1), "#c4d6d9", 1)
 put(45)
+
+
+# Frames 46..49: Credit Bank (bank) — armored steel & gold treasury vault across 4 tiers
+for tier in range(4):
+    idx = 46 + tier
+    frame(idx)
+    # Foundation concrete pad
+    box(-13, -13, 26, 26, 0, 2, ("#aebcc2", "#758991", "#536770"))
+    # Armored vault body (grows taller & wider with tier)
+    w = 18 + tier * 2
+    h = 16 + tier * 2
+    ht = 10 + tier * 4
+    ox = -w // 2
+    oy = -h // 2
+    box(ox, oy, w, h, 2, ht, ("#d7e0e2", "#91a4ad", "#627680"))
+    # Gold treasury trim band along roofline
+    box(ox - 1, oy - 1, w + 2, h + 2, 2 + ht, 2, ("#ffe28a", "#f2b544", "#b5741c"))
+    # Reinforced vault door on front-right face
+    door_h = min(ht - 2, 7 + tier)
+    face(
+        [(ox + w, -3, 3), (ox + w, 4, 3), (ox + w, 4, 3 + door_h), (ox + w, -3, 3 + door_h)],
+        "#364857",
+    )
+    line((ox + w, -1, 5), (ox + w, 2, 5), "#ffcf70", 2)
+    # Vault dome / bullion stacks on roof
+    if tier >= 1:
+        box(-4, -4, 8, 8, 4 + ht, 3 + tier, ("#ffcf70", "#e69a2e", "#9e5e12"))
+    else:
+        box(-3, -3, 6, 6, 4 + ht, 2, ("#ffcf70", "#e69a2e", "#9e5e12"))
+    # Level badge pips (1..4 bright gold pips)
+    for i in range(tier + 1):
+        box(10 - i * 4, 12, 2, 2, 2, 2, ("#ffe082", "#f28c28", "#a85610"))
+    put(idx)
 
 atlas.save(out)
 if docs_out.parent.exists():

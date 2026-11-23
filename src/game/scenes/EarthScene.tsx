@@ -33,6 +33,7 @@ const frames: Record<Kind, number> = {
   tracking: 32,
   lab: 36,
   foundry: 40,
+  bank: 46,
 };
 const LAMP_FRAME = 44;
 const LOCKED_PAD_FRAME = 45;
@@ -489,10 +490,7 @@ export function EarthScene(props: Props) {
         const bob = Math.round(Math.sin(time * 0.003) * 1.25);
         badgeHits.length = 0;
 
-        const tanksBuilding = p.program.buildings.find(
-          (b) => b.kind === "tanks",
-        );
-        if (tanksBuilding) {
+        for (const tanksBuilding of p.program.buildings.filter((b) => b.kind === "tanks")) {
           const ratio = Phaser.Math.Clamp(
             p.program.propellant / Math.max(1, storageCaps.propellant),
             0,
@@ -505,12 +503,38 @@ export function EarthScene(props: Props) {
           this.overlay.fillStyle(0x10202b, 0.85);
           this.overlay.fillRoundedRect(bx - 1, by - 1, barW + 2, 5, 2);
           this.overlay.fillStyle(ratio >= 0.99 ? 0xf3a953 : 0x72d6c6, 0.95);
-          this.overlay.fillRect(
-            bx,
-            by,
-            Math.max(1, Math.round(barW * ratio)),
-            3,
+          this.overlay.fillRect(bx, by, Math.max(1, Math.round(barW * ratio)), 3);
+        }
+
+        for (const bankBuilding of p.program.buildings.filter((b) => b.kind === "bank")) {
+          const ratio = Phaser.Math.Clamp(
+            p.program.credits / Math.max(1, storageCaps.credits),
+            0,
+            1,
           );
+          const pt = project(bankBuilding.x, bankBuilding.y);
+          const barW = 24;
+          const bx = pt.x - barW / 2;
+          const by = pt.y - 29 - bankBuilding.level * 2;
+          this.overlay.fillStyle(0x10202b, 0.85);
+          this.overlay.fillRoundedRect(bx - 1, by - 1, barW + 2, 5, 2);
+          this.overlay.fillStyle(ratio >= 0.99 ? 0xff9483 : 0xf5b82e, 0.95);
+          this.overlay.fillRect(bx, by, Math.max(1, Math.round(barW * ratio)), 3);
+        }
+
+        const nowMs = Date.now();
+        for (const b of p.program.buildings) {
+          if (typeof b.upgradingUntilMs !== "number" || b.upgradingUntilMs <= nowMs) continue;
+          const totalMs = Math.max(1000, (b.upgradingDurationSec ?? 60) * 1000);
+          const progress = Phaser.Math.Clamp(1 - (b.upgradingUntilMs - nowMs) / totalMs, 0.04, 1);
+          const pt = project(b.x, b.y);
+          const barW = 28;
+          const bx = pt.x - barW / 2;
+          const by = pt.y - 36 - b.level * 2;
+          this.overlay.fillStyle(0x1a150e, 0.92);
+          this.overlay.fillRoundedRect(bx - 1, by - 1, barW + 2, 6, 2);
+          this.overlay.fillStyle(0xffd166, 1);
+          this.overlay.fillRect(bx, by, Math.max(2, Math.round(barW * progress)), 4);
         }
 
         const drawCollectBubble = (

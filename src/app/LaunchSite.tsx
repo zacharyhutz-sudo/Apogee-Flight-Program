@@ -34,6 +34,7 @@ import {
   FACILITY_KINDS,
   MAX_LEVEL,
   SIZE,
+  activeUpgrades,
   canAffordUpgrade,
   clearingQuote,
   costShortfall,
@@ -43,6 +44,7 @@ import {
   countBuilt,
   extraBuildCost,
   facilityBenefit,
+  formatDuration,
   getCollectorCaps,
   getCreditRatePerHour,
   getPropellantRatePerHour,
@@ -50,6 +52,7 @@ import {
   inspectSoundingBlueprint,
   launchIssue,
   level,
+  maxBuilderSlots,
   maxBuildingCount,
   placement,
   quote,
@@ -66,7 +69,7 @@ import { CloudSyncPanel } from "./CloudSyncPanel";
 import { SoundingReport } from "./SoundingReport";
 
 const BUILD_GROUPS: { title: string; kinds: Kind[] }[] = [
-  { title: "Resources & Storage", kinds: ["foundry", "refinery", "tanks"] },
+  { title: "Resources & Storage", kinds: ["foundry", "refinery", "bank", "tanks"] },
   { title: "Command & Launch", kinds: ["command", "pad", "office"] },
   { title: "Engineering & Tech", kinds: ["vab", "tracking", "lab"] },
 ];
@@ -77,6 +80,7 @@ const glyph: Record<Kind, typeof Landmark> = {
   foundry: Sun,
   refinery: Factory,
   tanks: Flame,
+  bank: Coins,
   office: ClipboardList,
   vab: Hammer,
   tracking: Radar,
@@ -305,9 +309,31 @@ export function LaunchSite({
     P(v);
   }
 
+  const nowMs = Date.now();
+  const busyCrews = activeUpgrades(p, nowMs).length;
+  const totalCrews = maxBuilderSlots(p);
   const activeLv = builtAtTile ? builtAtTile.level : 0;
+  const activeUpgradeRemMs =
+    builtAtTile?.upgradingUntilMs && builtAtTile.upgradingUntilMs > nowMs
+      ? builtAtTile.upgradingUntilMs - nowMs
+      : 0;
+  const activeUpgradePct =
+    activeUpgradeRemMs > 0
+      ? Math.min(
+          100,
+          Math.max(
+            3,
+            Math.round(
+              (1 -
+                activeUpgradeRemMs /
+                  Math.max(1000, (builtAtTile?.upgradingDurationSec ?? 60) * 1000)) *
+                100,
+            ),
+          ),
+        )
+      : 0;
   const upgCheck = activeKind
-    ? canAffordUpgrade(p, activeKind, activeLv)
+    ? canAffordUpgrade(p, activeKind, activeLv, nowMs)
     : null;
   const isCollector = activeKind === "foundry" || activeKind === "refinery";
   const collectorStored =
@@ -469,15 +495,34 @@ export function LaunchSite({
                     <strong>{upgradeStatDelta(activeKind, activeLv)}</strong>
                   </div>
                 )}
-                {upgCheck &&
-                  !upgCheck.ok && (
-                    <div className="prereq-tag">
-                      <Lock size={13} />
-                      {upgCheck.reason}
+                {activeUpgradeRemMs > 0 ? (
+                  <div className="upgrade-progress" role="status">
+                    <div className="upgrade-progress-head">
+                      <span>Upgrading to Lv {activeLv + 1}</span>
+                      <strong>{formatDuration(activeUpgradeRemMs / 1000)}</strong>
                     </div>
-                  )}
-                {activeLv < MAX_LEVEL && upgCheck && (
-                  <div className="inspect-price"><span>{activeLv === 0 ? "Build cost" : "Upgrade cost"}</span><b>{price(upgCheck.cost)}</b></div>
+                    <div className="upgrade-progress-track">
+                      <i style={{ width: activeUpgradePct + "%" }} />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {upgCheck && !upgCheck.ok && (
+                      <div className="prereq-tag">
+                        <Lock size={13} />
+                        {upgCheck.reason}
+                      </div>
+                    )}
+                    {activeLv < MAX_LEVEL && upgCheck && (
+                      <div className="inspect-price">
+                        <span>
+                          {activeLv === 0 ? "Build cost" : "Upgrade cost"} ·{" "}
+                          {formatDuration(upgCheck.durationSec)}
+                        </span>
+                        <b>{price(upgCheck.cost)}</b>
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="inspect-actions">
                   {builtAtTile && (
@@ -497,7 +542,7 @@ export function LaunchSite({
                       Collect
                     </button>
                   )}
-                  {activeLv < MAX_LEVEL && upgCheck && (
+                  {activeLv < MAX_LEVEL && upgCheck && activeUpgradeRemMs === 0 && (
                     <button
                       className="primary grow"
                       aria-label={`${activeLv === 0 ? "Build" : "Upgrade"} · ${price(upgCheck.cost)}`}
@@ -655,6 +700,7 @@ export function LaunchSite({
                             ? ` (+${q.firstTimeBonus.toLocaleString("en-US")} 1st)`
                             : ""}{" "}
                           · +{q.research} RD
+                          {q.isRepeat ? " (Repeat)" : ""}
                         </span>
                         <button
                           className={!reason ? "primary" : ""}
@@ -690,6 +736,12 @@ export function LaunchSite({
 
           {panel === "build" && (
             <div className="facilities-groups">
+              <div className="crew-banner">
+                <span>Engineering Crews</span>
+                <strong>
+                  {totalCrews - busyCrews}/{totalCrews} available
+                </strong>
+              </div>
               {BUILD_GROUPS.map((group) => (
                 <section className="build-group" key={group.title}>
                   <h3 className="build-group-title">{group.title}</h3>

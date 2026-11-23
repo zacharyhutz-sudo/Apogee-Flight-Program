@@ -283,9 +283,7 @@ export function validate(raw: unknown): Snapshot {
         }
         backfillStarterFacilities(program as unknown as Program);
       } else {
-        program.buildingLevels = syncBuildingLevels(
-          program.buildings as Building[],
-        );
+        backfillStarterFacilities(program as unknown as Program);
       }
     }
   }
@@ -299,6 +297,13 @@ export function validate(raw: unknown): Snapshot {
       if (typeof program.completed.lunar_colony !== "number") program.completed.lunar_colony = 0;
     }
     if (!record(program.lunar)) program.lunar = initialLunarColony();
+  }
+  if (record(program) && Array.isArray(program.buildings)) {
+    const pObj = program as unknown as Program;
+    const caps = getStorageCaps(pObj);
+    if (typeof pObj.credits === "number") pObj.credits = clamp(pObj.credits, 0, caps.credits);
+    if (typeof pObj.propellant === "number") pObj.propellant = clamp(pObj.propellant, 0, caps.propellant);
+    if (!record(pObj.contractCooldowns)) pObj.contractCooldowns = {};
   }
   if (!validProgram(program, f)) return invalid();
 

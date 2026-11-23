@@ -2,6 +2,7 @@ import {
   CONTRACTS,
   applyOfflineProgress,
   collectFromBuilding,
+  completeFinishedUpgrades,
   contractVehicle,
   launchIssue,
   payLaunch,
@@ -564,7 +565,6 @@ export function useMission() {
       const s = vessel.current;
       const program = mission.current.program;
       if (!document.hidden && !paused.current && s.status === "flying") {
-        const startTime = s.t;
         const prevFuel = s.fuel[s.stage],
           wasOrbit = s.orbitEarned,
           wasAlt = s.maxAlt;
@@ -596,9 +596,12 @@ export function useMission() {
           } else step(s);
           acc -= STEP;
         }
-        const dtSim = Math.max(0, s.t - startTime);
         dirty.current = true;
-        tickEconomy(program, dtSim);
+        tickEconomy(program, dt);
+        if (completeFinishedUpgrades(program, Date.now()) > 0) {
+          save();
+          refresh();
+        }
         if (program.warpAlert && rate.current > 1) {
           rate.current = 1;
           log(program.warpAlert);
@@ -646,8 +649,14 @@ export function useMission() {
         acc = 0;
         if (!document.hidden && !paused.current && s.status !== "flying") {
           tickEconomy(program, dt);
+          const doneUpgrades = completeFinishedUpgrades(program, Date.now());
           dirty.current = true;
-          if (now - saveAt >= 5000) {
+          if (doneUpgrades > 0) {
+            setNotice("Facility upgrade complete!");
+            save();
+            refresh();
+            saveAt = now;
+          } else if (now - saveAt >= 5000) {
             save();
             saveAt = now;
           }

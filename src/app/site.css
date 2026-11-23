@@ -507,3 +507,45 @@ dialog:has(.facilities-groups) .dialog-head { border-color: #c7d6ce; }
 .sounding-report-btn {
   margin-top: 8px;
 }
+
+.upgrade-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: #271e12;
+  border: 1px solid var(--amber-deep);
+}
+.upgrade-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 700 11px var(--font-mono);
+  color: var(--amber-bright);
+}
+.upgrade-progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #121820;
+  overflow: hidden;
+}
+.upgrade-progress-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--amber), var(--amber-bright));
+}
+.crew-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-deep);
+  border: 1px solid var(--line);
+  font: 700 11px var(--font-mono);
+  color: var(--ink-muted);
+}
+.crew-banner strong {
+  color: var(--amber-bright);
+}

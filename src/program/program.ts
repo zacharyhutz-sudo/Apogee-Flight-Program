@@ -44,13 +44,13 @@ export const FACILITIES = {
     name: "Mission Control",
     shortName: "Control",
     tier: 1,
-    role: "Program tier & facility cap",
+    role: "Program tier, crews & facility cap",
     defaultPos: { x: 2, y: 3 },
     costs: [
       { credits: 0, research: 0 },
-      { credits: 2200, research: 40 },
-      { credits: 9000, research: 180 },
-      { credits: 32000, research: 600 },
+      { credits: 4500, research: 60 },
+      { credits: 18000, research: 260 },
+      { credits: 60000, research: 850 },
     ],
   },
   pad: {
@@ -61,9 +61,9 @@ export const FACILITIES = {
     defaultPos: { x: 5, y: 3 },
     costs: [
       { credits: 0, research: 0 },
-      { credits: 1800, research: 0 },
-      { credits: 7500, research: 0 },
-      { credits: 26000, research: 0 },
+      { credits: 3200, research: 0 },
+      { credits: 14000, research: 0 },
+      { credits: 48000, research: 0 },
     ],
   },
   foundry: {
@@ -74,9 +74,9 @@ export const FACILITIES = {
     defaultPos: { x: 1, y: 3 },
     costs: [
       { credits: 0, research: 0 },
-      { credits: 750, propellant: 100, research: 0 },
-      { credits: 3000, propellant: 300, research: 0 },
-      { credits: 10500, propellant: 750, research: 0 },
+      { credits: 1400, propellant: 150, research: 0 },
+      { credits: 6000, propellant: 450, research: 0 },
+      { credits: 22000, propellant: 1200, research: 0 },
     ],
   },
   refinery: {
@@ -87,9 +87,9 @@ export const FACILITIES = {
     defaultPos: { x: 3, y: 2 },
     costs: [
       { credits: 0, research: 0 },
-      { credits: 900, research: 0 },
-      { credits: 3600, research: 0 },
-      { credits: 12000, research: 0 },
+      { credits: 1600, research: 0 },
+      { credits: 6800, research: 0 },
+      { credits: 24000, research: 0 },
     ],
   },
   tanks: {
@@ -100,22 +100,35 @@ export const FACILITIES = {
     defaultPos: { x: 4, y: 1 },
     costs: [
       { credits: 0, research: 0 },
-      { credits: 1000, research: 0 },
-      { credits: 4200, research: 0 },
-      { credits: 14000, research: 0 },
+      { credits: 1500, research: 0 },
+      { credits: 6500, research: 0 },
+      { credits: 24000, research: 0 },
+    ],
+  },
+  bank: {
+    name: "Credit Bank",
+    shortName: "Bank",
+    tier: 1,
+    role: "Max Credit storage",
+    defaultPos: { x: 3, y: 3 },
+    costs: [
+      { credits: 0, research: 0 },
+      { credits: 1400, research: 0 },
+      { credits: 6000, research: 0 },
+      { credits: 22000, research: 0 },
     ],
   },
   office: {
     name: "Contract Office",
     shortName: "Contracts",
     tier: 1,
-    role: "Credit cap & active slots",
+    role: "Active slots & contract refresh",
     defaultPos: { x: 2, y: 5 },
     costs: [
       { credits: 0, research: 0 },
-      { credits: 1200, research: 0 },
-      { credits: 4800, research: 0 },
-      { credits: 16000, research: 0 },
+      { credits: 2200, research: 0 },
+      { credits: 9000, research: 0 },
+      { credits: 30000, research: 0 },
     ],
   },
   vab: {
@@ -125,10 +138,10 @@ export const FACILITIES = {
     role: "Parts, stages & hardware discount",
     defaultPos: { x: 3, y: 5 },
     costs: [
-      { credits: 1400, research: 0 },
-      { credits: 3200, research: 0 },
-      { credits: 9500, research: 0 },
-      { credits: 28000, research: 0 },
+      { credits: 2400, research: 0 },
+      { credits: 6000, research: 0 },
+      { credits: 18000, research: 0 },
+      { credits: 52000, research: 0 },
     ],
   },
   tracking: {
@@ -138,10 +151,10 @@ export const FACILITIES = {
     role: "Orbital map navigation tools",
     defaultPos: { x: 5, y: 5 },
     costs: [
-      { credits: 1600, research: 0 },
-      { credits: 4500, research: 80 },
-      { credits: 15000, research: 300 },
-      { credits: 45000, research: 900 },
+      { credits: 2800, research: 0 },
+      { credits: 8000, research: 100 },
+      { credits: 26000, research: 360 },
+      { credits: 75000, research: 1100 },
     ],
   },
   lab: {
@@ -151,10 +164,10 @@ export const FACILITIES = {
     role: "Telemetry bonus & tech unlocks",
     defaultPos: { x: 2, y: 1 },
     costs: [
-      { credits: 1500, research: 0 },
-      { credits: 4000, research: 60 },
-      { credits: 13000, research: 250 },
-      { credits: 38000, research: 750 },
+      { credits: 2600, research: 0 },
+      { credits: 7200, research: 80 },
+      { credits: 24000, research: 300 },
+      { credits: 68000, research: 900 },
     ],
   },
 } as const satisfies Record<string, FacilityDef>;
@@ -167,6 +180,7 @@ export const STARTER_KINDS: Kind[] = [
   "foundry",
   "refinery",
   "tanks",
+  "bank",
   "office",
 ];
 export const TIER2_KINDS: Kind[] = ["vab", "tracking", "lab"];
@@ -338,6 +352,10 @@ export interface Building {
   x: number;
   y: number;
   level: number;
+  /** Wall-clock epoch ms when an in-progress upgrade completes. */
+  upgradingUntilMs?: number;
+  /** Total duration in seconds for the active upgrade (for progress bars). */
+  upgradingDurationSec?: number;
 }
 
 export interface Milestones {
@@ -388,6 +406,8 @@ export interface EconomyState {
   soundingReport?: SoundingReport;
   reclaimedTiles: string[];
   clearedTiles?: string[];
+  /** Wall-clock epoch ms when each contract becomes available again. */
+  contractCooldowns?: Partial<Record<Job, number>>;
   lunar: LunarColony;
 }
 
@@ -396,15 +416,19 @@ export type Program = EconomyState;
 const PAD_MASS_BY_LEVEL = [0, 35, 90, 220, 500] as const;
 const PAD_HEIGHT_BY_LEVEL = [0, 42, 56, 74, 96] as const;
 
-// Clash-of-Clans-style collector output per hour & local hopper cap (~2.5-3 hr capacity)
-const FOUNDRY_RATE_BY_LEVEL = [0, 180, 420, 950, 2200] as const;
-const FOUNDRY_HOPPER_BY_LEVEL = [0, 450, 1100, 2500, 6000] as const;
-const REFINERY_RATE_BY_LEVEL = [0, 140, 320, 720, 1650] as const;
-const REFINERY_HOPPER_BY_LEVEL = [0, 350, 850, 2000, 4800] as const;
+// Clash-of-Clans-style collector output per hour & local hopper cap (~4.5 hr capacity)
+const FOUNDRY_RATE_BY_LEVEL = [0, 90, 220, 520, 1200] as const;
+const FOUNDRY_HOPPER_BY_LEVEL = [0, 400, 1000, 2400, 5600] as const;
+const REFINERY_RATE_BY_LEVEL = [0, 80, 190, 440, 1000] as const;
+const REFINERY_HOPPER_BY_LEVEL = [0, 350, 850, 2000, 4600] as const;
 
-const TANK_CAP_BY_LEVEL = [0, 1000, 2800, 7500, 18000] as const;
-const CREDIT_CAP_BY_LEVEL = [0, 5000, 15000, 45000, 150000] as const;
+const TANK_CAP_BY_LEVEL = [0, 750, 2200, 6000, 15000] as const;
+const BANK_CAP_BY_LEVEL = [0, 2000, 7500, 24000, 75000] as const;
 const ACTIVE_CONTRACTS_BY_LEVEL = [0, 1, 2, 3, 4] as const;
+const OFFICE_COOLDOWN_REDUCTION = [0, 0, 0.15, 0.3, 0.45] as const;
+const CONTRACT_COOLDOWN_SEC_BY_TIER = [300, 1200, 2700] as const;
+export const REPEAT_CREDITS_FACTOR = 0.35;
+export const REPEAT_RESEARCH_FACTOR = 0.4;
 const VAB_PARTS_BY_LEVEL = [8, 12, 24, 40, 64] as const;
 const VAB_STAGES_BY_LEVEL = [2, 2, 3, 4, 5] as const;
 const VAB_DISCOUNT_BY_LEVEL = [0, 0, 0.05, 0.1, 0.15] as const;
@@ -418,6 +442,7 @@ export function syncBuildingLevels(buildings: Building[]): Record<Kind, number> 
     foundry: 0,
     refinery: 0,
     tanks: 0,
+    bank: 0,
     office: 0,
     vab: 0,
     tracking: 0,
@@ -436,8 +461,8 @@ export const startProgram = (): Program => {
   }));
   const blueprints = starterBlueprints();
   return {
-    credits: 600,
-    propellant: 900,
+    credits: 300,
+    propellant: 350,
     research: 0,
     collectors: { credits: 0, propellant: 0 },
     lastRealTimestampMs: 0,
@@ -459,6 +484,7 @@ export const startProgram = (): Program => {
     activeBlueprintId: blueprints[0].id,
     reclaimedTiles: [],
     clearedTiles: [],
+    contractCooldowns: {},
     lunar: initialLunarColony(),
   };
 };
@@ -555,7 +581,7 @@ export function reclaimTile(p: Program, x: number, y: number): string {
 }
 
 export function maxBuildingCount(_p: Program, k: Kind): number {
-  return k === "foundry" || k === "refinery" ? 2 : 1;
+  return k === "foundry" || k === "refinery" || k === "bank" ? 2 : 1;
 }
 
 export function countBuilt(p: Program, k: Kind): number {
@@ -563,9 +589,71 @@ export function countBuilt(p: Program, k: Kind): number {
 }
 
 export function extraBuildCost(k: Kind): Cost {
-  if (k === "foundry") return { credits: 300, propellant: 75, research: 0 };
-  if (k === "refinery") return { credits: 380, research: 0 };
+  if (k === "foundry") return { credits: 600, propellant: 100, research: 0 };
+  if (k === "refinery") return { credits: 750, research: 0 };
+  if (k === "bank") return { credits: 650, research: 0 };
   return FACILITIES[k].costs[0];
+}
+
+export function formatDuration(totalSec: number): string {
+  const s = Math.max(0, Math.ceil(totalSec));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const remS = s % 60;
+  if (m < 60) return remS > 0 && m < 10 ? `${m}m ${remS}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+}
+
+export function maxBuilderSlots(p: Program): number {
+  return level(p, "command") >= 3 ? 2 : 1;
+}
+
+export function activeUpgrades(p: Program, nowMs = Date.now()): Building[] {
+  return p.buildings.filter(
+    (b) => typeof b.upgradingUntilMs === "number" && b.upgradingUntilMs > nowMs,
+  );
+}
+
+export function upgradeDurationSec(k: Kind, fromLevel: number): number {
+  if (fromLevel <= 0) return 120;
+  if (fromLevel === 1) return k === "command" ? 900 : 600;
+  if (fromLevel === 2) return k === "command" ? 5400 : 2700;
+  return k === "command" ? 21600 : 10800;
+}
+
+export function completeFinishedUpgrades(p: Program, nowMs = Date.now()): number {
+  let completed = 0;
+  for (const b of p.buildings) {
+    if (typeof b.upgradingUntilMs === "number" && b.upgradingUntilMs <= nowMs) {
+      b.level = Math.min(MAX_LEVEL, b.level + 1);
+      delete b.upgradingUntilMs;
+      delete b.upgradingDurationSec;
+      completed++;
+    }
+  }
+  if (completed > 0) {
+    p.buildingLevels = syncBuildingLevels(p.buildings);
+  }
+  return completed;
+}
+
+export function contractCooldownSec(p: Program, job: Job): number {
+  const tier = CONTRACTS[job].tier;
+  const base = CONTRACT_COOLDOWN_SEC_BY_TIER[tier] ?? 1200;
+  const officeLv = clamp(level(p, "office"), 1, MAX_LEVEL);
+  const reduction = OFFICE_COOLDOWN_REDUCTION[officeLv];
+  return Math.round(base * (1 - reduction));
+}
+
+export function contractCooldownRemainingMs(
+  p: Program,
+  job: Job,
+  nowMs = Date.now(),
+): number {
+  const until = p.contractCooldowns?.[job] ?? 0;
+  return Math.max(0, until - nowMs);
 }
 
 export function placement(
@@ -675,8 +763,12 @@ export function facilityBenefit(k: Kind, n: number): string {
       return `${REFINERY_RATE_BY_LEVEL[lv].toLocaleString("en-US")} Prop/hr · ${REFINERY_HOPPER_BY_LEVEL[lv].toLocaleString("en-US")} hopper`;
     case "tanks":
       return `${TANK_CAP_BY_LEVEL[lv].toLocaleString("en-US")} Prop cap`;
-    case "office":
-      return `${CREDIT_CAP_BY_LEVEL[lv].toLocaleString("en-US")} C cap · ${ACTIVE_CONTRACTS_BY_LEVEL[lv]} active`;
+    case "bank":
+      return `${BANK_CAP_BY_LEVEL[lv].toLocaleString("en-US")} C cap`;
+    case "office": {
+      const red = Math.round(OFFICE_COOLDOWN_REDUCTION[lv] * 100);
+      return `${ACTIVE_CONTRACTS_BY_LEVEL[lv]} active${red ? ` · −${red}% cooldown` : ""}`;
+    }
     case "vab": {
       const c = vabCaps(lv);
       const disc = Math.round(c.discount * 100);
@@ -706,8 +798,12 @@ export function upgradeStatDelta(k: Kind, currentLevel: number): string {
       return `+${(REFINERY_RATE_BY_LEVEL[nxt] - REFINERY_RATE_BY_LEVEL[cur]).toLocaleString("en-US")} Prop/hr · +${(REFINERY_HOPPER_BY_LEVEL[nxt] - REFINERY_HOPPER_BY_LEVEL[cur]).toLocaleString("en-US")} hopper`;
     case "tanks":
       return `+${(TANK_CAP_BY_LEVEL[nxt] - TANK_CAP_BY_LEVEL[cur]).toLocaleString("en-US")} Prop cap`;
-    case "office":
-      return `+${(CREDIT_CAP_BY_LEVEL[nxt] - CREDIT_CAP_BY_LEVEL[cur]).toLocaleString("en-US")} C cap · +1 active contract`;
+    case "bank":
+      return `+${(BANK_CAP_BY_LEVEL[nxt] - BANK_CAP_BY_LEVEL[cur]).toLocaleString("en-US")} C cap`;
+    case "office": {
+      const red = Math.round(OFFICE_COOLDOWN_REDUCTION[nxt] * 100);
+      return `+1 active contract · −${red}% cooldown`;
+    }
     case "vab": {
       const c1 = vabCaps(cur), c2 = vabCaps(nxt);
       return `+${c2.parts - c1.parts} parts · +1 stage · −${Math.round(c2.discount * 100)}% cost`;
@@ -725,10 +821,16 @@ function safeFinite(v: number, fallback = 0): number {
 
 export function getStorageCaps(state: Program) {
   const officeLv = clamp(level(state, "office"), 1, MAX_LEVEL);
-  const tanksLv = clamp(level(state, "tanks"), 1, MAX_LEVEL);
+  let credits = 0;
+  let propellant = 0;
+  for (const b of state.buildings) {
+    const lv = clamp(b.level, 1, MAX_LEVEL);
+    if (b.kind === "bank") credits += BANK_CAP_BY_LEVEL[lv];
+    else if (b.kind === "tanks") propellant += TANK_CAP_BY_LEVEL[lv];
+  }
   return {
-    credits: CREDIT_CAP_BY_LEVEL[officeLv],
-    propellant: TANK_CAP_BY_LEVEL[tanksLv],
+    credits: credits || BANK_CAP_BY_LEVEL[1],
+    propellant: propellant || TANK_CAP_BY_LEVEL[1],
     activeContracts: ACTIVE_CONTRACTS_BY_LEVEL[officeLv],
   };
 }
@@ -823,13 +925,16 @@ export function applyOfflineProgress(state: Program, nowMs: number) {
   if (nextLunar && nextLunar.unlocked) {
     tickLunarColony(nextLunar, elapsedSec);
   }
+  const nextState: Program = {
+    ...state,
+    buildings: structuredClone(state.buildings),
+    collectors: { credits: nextC, propellant: nextP },
+    lunar: nextLunar,
+    lastRealTimestampMs: validNow,
+  };
+  completeFinishedUpgrades(nextState, validNow);
   return {
-    state: {
-      ...state,
-      collectors: { credits: nextC, propellant: nextP },
-      lunar: nextLunar,
-      lastRealTimestampMs: validNow,
-    },
+    state: nextState,
     creditsAdded: Math.floor(nextC - curC),
     propellantAdded: Math.floor(nextP - curP),
   };
@@ -936,6 +1041,7 @@ export function canAffordUpgrade(
   state: Program,
   buildingId: Kind,
   currentLevelOverride?: number,
+  nowMs = Date.now(),
 ) {
   const current =
     currentLevelOverride !== undefined
@@ -950,6 +1056,7 @@ export function canAffordUpgrade(
       : current === 0 && def.tier === 2
         ? 2
         : Math.max(def.tier, targetLevel);
+  const durationSec = current >= MAX_LEVEL ? 0 : upgradeDurationSec(buildingId, current);
 
   if (current >= MAX_LEVEL) {
     return {
@@ -958,6 +1065,7 @@ export function canAffordUpgrade(
       cost: { credits: 0, research: 0 },
       targetLevel: MAX_LEVEL,
       requiredCommandLevel: MAX_LEVEL,
+      durationSec: 0,
     };
   }
   const cost = upgradeCost(buildingId, current);
@@ -968,16 +1076,28 @@ export function canAffordUpgrade(
       cost,
       targetLevel,
       requiredCommandLevel,
+      durationSec,
+    };
+  }
+  if (activeUpgrades(state, nowMs).length >= maxBuilderSlots(state)) {
+    return {
+      ok: false,
+      reason: `All Engineering Crews busy (${activeUpgrades(state, nowMs).length}/${maxBuilderSlots(state)}).`,
+      cost,
+      targetLevel,
+      requiredCommandLevel,
+      durationSec,
     };
   }
   const reason = costShortfall(state, cost);
-  if (reason) return { ok: false, reason, cost, targetLevel, requiredCommandLevel };
+  if (reason) return { ok: false, reason, cost, targetLevel, requiredCommandLevel, durationSec };
   return {
     ok: true,
     reason: "",
     cost,
     targetLevel,
     requiredCommandLevel,
+    durationSec,
   };
 }
 
@@ -1083,24 +1203,41 @@ function stagedVehicle(p: Program, job: Job): VehicleSpec {
 export function quote(p: Program, job: Job, spec = stagedVehicle(p, job)) {
   const c = CONTRACTS[job];
   const labLv = level(p, "lab");
-  const research = Math.round(c.research * (1 + 0.1 * labLv));
+  const isRepeat = (p.completed[job] ?? 0) > 0;
+  const baseCredits = isRepeat
+    ? Math.max(50, Math.round(c.credits * REPEAT_CREDITS_FACTOR))
+    : c.credits;
+  const baseResearch = isRepeat
+    ? Math.max(2, Math.round(c.research * REPEAT_RESEARCH_FACTOR))
+    : c.research;
+  const research = Math.round(baseResearch * (1 + 0.1 * labLv));
   const firstTimeBonus =
     job === "orbit" && !p.milestones.firstOrbit ? c.firstTimeCredits : 0;
   return {
     hardwareCost: spec.hardwareCost,
     propellantCost: spec.propellantCost,
-    credits: c.credits,
+    credits: baseCredits,
     firstTimeBonus,
     research,
+    isRepeat,
   };
 }
 
-export function launchIssue(p: Program, job: Sortie, vehicle?: VehicleSpec): string {
+export function launchIssue(
+  p: Program,
+  job: Sortie,
+  vehicle?: VehicleSpec,
+  nowMs = Date.now(),
+): string {
   if (job === "practice") return "";
   const c = CONTRACTS[job];
   const mcLv = level(p, "command");
   if (c.tier > mcLv) {
     return `Requires Mission Control Lv ${c.tier}.`;
+  }
+  const remMs = contractCooldownRemainingMs(p, job, nowMs);
+  if (remMs > 0) {
+    return `Contract refreshing · ${formatDuration(remMs / 1000)} remaining.`;
   }
   const check = canLaunchVehicle(p, vehicle ?? stagedVehicle(p, job));
   return check.ok ? "" : check.reason;
@@ -1191,7 +1328,9 @@ export function upgrade(
   p: Program,
   k: Kind,
   atTile?: { x: number; y: number } | null,
+  nowMs = Date.now(),
 ): string {
+  completeFinishedUpgrades(p, nowMs);
   const b = atTile
     ? p.buildings.find((x) => x.kind === k && x.x === atTile.x && x.y === atTile.y)
     : p.buildings.find((x) => x.kind === k);
@@ -1203,11 +1342,15 @@ export function upgrade(
         if (!placement(p, k, x, y)) return place(p, k, x, y);
     return "No open plot available.";
   }
-  const check = canAffordUpgrade(p, k, b.level);
+  if (typeof b.upgradingUntilMs === "number" && b.upgradingUntilMs > nowMs) {
+    return `Upgrade in progress (${formatDuration((b.upgradingUntilMs - nowMs) / 1000)} left).`;
+  }
+  const check = canAffordUpgrade(p, k, b.level, nowMs);
   if (!check.ok) return check.reason;
   spend(p, check.cost);
-  b.level++;
-  p.buildingLevels = syncBuildingLevels(p.buildings);
+  const dur = check.durationSec;
+  b.upgradingUntilMs = nowMs + dur * 1000;
+  b.upgradingDurationSec = dur;
   return "";
 }
 
@@ -1427,6 +1570,10 @@ export function settle(p: Program, f: Flight): string {
   p.milestones.firstOrbit ||= job === "orbit";
   p.rewarded = true;
   p.activeContracts = p.activeContracts.filter((j) => j !== job);
+  p.contractCooldowns = {
+    ...(p.contractCooldowns ?? {}),
+    [job]: Date.now() + contractCooldownSec(p, job) * 1000,
+  };
   const gainedC = p.credits - prevCredits;
   if (report) {
     report.creditsAwarded = gainedC;
@@ -1497,7 +1644,7 @@ export function validProgram(value: unknown, f: Flight): value is Program {
     p.simTimeSec < 0 ||
     !Array.isArray(p.buildings) ||
     p.buildings.length < STARTER_KINDS.length ||
-    p.buildings.length > FACILITY_KINDS.length + 2 ||
+    p.buildings.length > FACILITY_KINDS.length + 3 ||
     !p.completed ||
     !CONTRACT_JOBS.every((k) => natural(p.completed[k])) ||
     !Array.isArray(p.activeContracts) ||
