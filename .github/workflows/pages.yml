@@ -5,32 +5,75 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact_name: ${{ steps.artifact.outputs.name }}
+      artifact_id: ${{ steps.upload.outputs.artifact_id }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Name the artifact for this build attempt
+        id: artifact
+        run: echo "name=github-pages-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - name: Upload the Pages artifact
+        id: upload
+        uses: actions/upload-pages-artifact@v5
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/configure-pages@v6
+      - name: Wait for the uploaded artifact to appear in GitHub's API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_ARTIFACT_NAME: ${{ needs.build.outputs.artifact_name }}
+          PAGES_ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+        run: |
+          if [[ -z "$PAGES_ARTIFACT_NAME" || -z "$PAGES_ARTIFACT_ID" ]]; then
+            echo "::error::The build did not return a Pages artifact name and ID."
+            exit 1
+          fi
+          for attempt in {1..12}; do
+            if artifact_ids="$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+              -f name="$PAGES_ARTIFACT_NAME" \
+              --jq '.artifacts[] | select(.expired == false) | .id')" \
+              && [[ "$artifact_ids" == "$PAGES_ARTIFACT_ID" ]]; then
+              echo "Found Pages artifact $PAGES_ARTIFACT_NAME ($PAGES_ARTIFACT_ID)."
+              exit 0
+            fi
+            if [[ "$attempt" -lt 12 ]]; then
+              sleep 5
+            fi
+          done
+          echo "::error::GitHub did not list the expected Pages artifact $PAGES_ARTIFACT_NAME ($PAGES_ARTIFACT_ID) after 12 checks."
+          exit 1
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
         with:
-          node-version: "22"
-          cache: "npm"
-      - run: npm ci
-      - run: npm run build
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: docs
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          artifact_name: ${{ needs.build.outputs.artifact_name }}
