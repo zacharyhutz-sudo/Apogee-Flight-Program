@@ -8,6 +8,7 @@ export const SCALE_HEIGHT = 3200;
 export const MAX_ORBIT_AP = 600000;
 export const CHUTE_MAX_SPEED = 200;
 export const CHUTE_FULL_ALT = 100;
+export const HIGH_WARP_ALT = 1_500_000;
 // SFS-scaled Moon: 85 km radius, 1.62 m/s^2 gravity, 2,400 km orbit, 360 km SOI, vacuum
 export const MOON_R = 85000;
 export const MOON_G0 = 1.62;
@@ -318,6 +319,11 @@ export function burning(s: Flight) {
 export function canWarp(s: Flight) {
   const bp = bodyParams(s.body);
   return s.status === "flying" && !burning(s) && radius(s) > bp.R + bp.AIR + 500;
+}
+
+export function canHighWarp(s: Flight) {
+  const bp = bodyParams(s.body);
+  return canWarp(s) && radius(s) - bp.R >= HIGH_WARP_ALT;
 }
 
 export function canChuteWarp(s: Flight) {

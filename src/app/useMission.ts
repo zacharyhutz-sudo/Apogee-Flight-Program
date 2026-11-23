@@ -26,6 +26,7 @@ import {
   MOON_R,
   bodyParams,
   canChuteWarp,
+  canHighWarp,
   canWarp,
   hasUpperStage,
   thrustToWeight,
@@ -191,6 +192,7 @@ export function useMission() {
     if (!ready.current) return;
     fn(vessel.current);
     if (msg) log(msg);
+    if (rate.current >= 100 && !canHighWarp(vessel.current)) rate.current = canWarp(vessel.current) ? 20 : 1;
     if (rate.current > 1 && !canWarp(vessel.current) && !(rate.current === 3 && canChuteWarp(vessel.current))) rate.current = 1;
     save();
     refresh();
@@ -324,7 +326,8 @@ export function useMission() {
 
   function separate() {
     if (stage(vessel.current)) {
-      if (rate.current > 1 && !canWarp(vessel.current) && !(rate.current === 3 && canChuteWarp(vessel.current))) rate.current = 1;
+      if (rate.current >= 100 && !canHighWarp(vessel.current)) rate.current = canWarp(vessel.current) ? 20 : 1;
+    if (rate.current > 1 && !canWarp(vessel.current) && !(rate.current === 3 && canChuteWarp(vessel.current))) rate.current = 1;
       log("Booster separated. Orbital stage selected.");
       save();
       refresh();
@@ -344,6 +347,7 @@ export function useMission() {
       vessel.current.throttle = 0;
     }
     const chuteAllowed = value === 3 && canChuteWarp(vessel.current);
+    if (value >= 100 && !canHighWarp(vessel.current)) return;
     if (value !== 1 && !canWarp(vessel.current) && !chuteAllowed) return;
     if (value > 1 && mission.current.program.warpAlert) {
       setNotice(mission.current.program.warpAlert);
@@ -572,9 +576,16 @@ export function useMission() {
             }
             if (!canChuteWarp(s)) rate.current = 1;
           } else if (rate.current > 1) {
-            if (!coast(s, STEP * rate.current)) {
+            if (rate.current >= 100 && !canHighWarp(s)) {
+              rate.current = canWarp(s) ? 20 : 1;
+              log("Warp stepped down below 1,500 km.");
+            }
+            if (rate.current > 1 && !coast(s, STEP * rate.current)) {
               rate.current = 1;
               log("Warp ended before atmospheric entry.");
+            } else if (rate.current >= 100 && !canHighWarp(s)) {
+              rate.current = canWarp(s) ? 20 : 1;
+              log("Warp stepped down below 1,500 km.");
             }
           } else if (canWarp(s)) {
             const before = s.t;
