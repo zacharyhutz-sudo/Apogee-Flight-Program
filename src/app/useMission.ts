@@ -40,6 +40,14 @@ import {
   writeSave,
   type Snapshot,
 } from "../persistence/save";
+import {
+  getCloudSession,
+  pullCloudSave,
+  pushCloudSave,
+  signInEmail,
+  signOutCloudSession,
+  signUpEmail,
+} from "../persistence/cloud";
 
 export function useMission() {
   const mission = useRef(fresh()),
@@ -53,6 +61,14 @@ export function useMission() {
   const [, paint] = useState(0),
     refresh = () => paint((v) => v + 1);
   const [notice, setNotice] = useState("");
+  const [cloudEmail, setCloudEmail] = useState<string | null>(
+    () => getCloudSession()?.email ?? null,
+  );
+  const [cloudStatus, setCloudStatus] = useState<string>(() =>
+    getCloudSession() ? "Cloud ready" : "Local only",
+  );
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const lastCloudPushAt = useRef(0);
 
   function install(data: Snapshot) {
     mission.current = data;
@@ -89,6 +105,84 @@ export function useMission() {
       .catch(() =>
         setSaveStatus(journal ? "Backup saved" : "Save unavailable"),
       );
+    const nowMs = Date.now();
+    if (getCloudSession() && nowMs - lastCloudPushAt.current >= 15000) {
+      lastCloudPushAt.current = nowMs;
+      void pushCloudSave(copy)
+        .then(() => setCloudStatus("Cloud synced"))
+        .catch(() => setCloudStatus("Cloud offline"));
+    }
+  }
+
+  async function syncCloudNow(): Promise<string> {
+    if (!getCloudSession()) return "Sign in first to sync.";
+    setCloudBusy(true);
+    setCloudStatus("Syncing...");
+    try {
+      const remote = await pullCloudSave();
+      const local = mission.current;
+      if (remote && remote.revision > local.revision) {
+        const offline = applyOfflineProgress(remote.snapshot.program, Date.now());
+        remote.snapshot.program = offline.state;
+        install(remote.snapshot);
+        save();
+        setCloudStatus("Cloud synced");
+        setNotice("Loaded newer cloud save.");
+        return "Loaded newer cloud save.";
+      }
+      lastCloudPushAt.current = Date.now();
+      await pushCloudSave(structuredClone(local));
+      setCloudStatus("Cloud synced");
+      return "Cloud save up to date.";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Cloud sync failed.";
+      setCloudStatus("Sync error");
+      return msg;
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function signInCloud(email: string, password: string): Promise<string> {
+    setCloudBusy(true);
+    try {
+      const session = await signInEmail(email, password);
+      setCloudEmail(session.email);
+      setCloudStatus("Syncing...");
+      const syncMsg = await syncCloudNow();
+      return syncMsg;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Sign-in failed.";
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function signUpCloud(email: string, password: string): Promise<string> {
+    setCloudBusy(true);
+    try {
+      const res = await signUpEmail(email, password);
+      if (res.session) {
+        setCloudEmail(res.session.email);
+        await syncCloudNow();
+      }
+      return res.message;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Sign-up failed.";
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function signOutCloud(): Promise<void> {
+    setCloudBusy(true);
+    try {
+      await signOutCloudSession();
+      setCloudEmail(null);
+      setCloudStatus("Local only");
+    } finally {
+      setCloudBusy(false);
+    }
   }
 
   function change(fn: (s: Flight) => void, msg?: string) {
@@ -394,6 +488,9 @@ export function useMission() {
       }
       ready.current = true;
       load(true);
+      if (getCloudSession()) {
+        void syncCloudNow();
+      }
       id = requestAnimationFrame(frame);
     }
 
@@ -536,6 +633,10 @@ export function useMission() {
       if (ready.current) {
         mission.current.program.lastRealTimestampMs = Date.now();
         save();
+        if (getCloudSession()) {
+          lastCloudPushAt.current = Date.now();
+          void pushCloudSave(structuredClone(mission.current)).catch(() => {});
+        }
       }
     }
     function visibility() {
@@ -567,6 +668,13 @@ export function useMission() {
     vessel,
     loaded,
     saveStatus,
+    cloudEmail,
+    cloudStatus,
+    cloudBusy,
+    signInCloud,
+    signUpCloud,
+    signOutCloud,
+    syncCloudNow,
     notice,
     setNotice,
     paused: paused.current,

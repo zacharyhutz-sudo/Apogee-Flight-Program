@@ -4,6 +4,7 @@ import {
   Building2,
   Check,
   ClipboardList,
+  Cloud,
   Coins,
   Database,
   Factory,
@@ -56,6 +57,7 @@ import {
 } from "../program/program";
 import type { useMission } from "./useMission";
 import { Dialog } from "./Dialog";
+import { CloudSyncPanel } from "./CloudSyncPanel";
 import "./site.css";
 
 const BUILD_GROUPS: { title: string; kinds: Kind[] }[] = [
@@ -109,7 +111,7 @@ export function LaunchSite({
   const propPct = Math.min(100, (100 * p.propellant) / caps.propellant);
   const credPct = Math.min(100, (100 * p.credits) / caps.credits);
 
-  const [panel, P] = useState<"board" | "build" | "replace" | null>(null);
+  const [panel, P] = useState<"board" | "build" | "replace" | "cloud" | null>(null);
   const [selected, S] = useState<Tile | null>(null);
   const [inspectLocked, setInspectLocked] = useState<Kind | null>(null);
   const [placing, G] = useState<Kind | null>(null);
@@ -261,7 +263,7 @@ export function LaunchSite({
     return () => window.removeEventListener("keydown", key);
   });
 
-  function showPanel(v: "build" | "board") {
+  function showPanel(v: "build" | "board" | "cloud") {
     cancel();
     P(v);
   }
@@ -330,6 +332,16 @@ export function LaunchSite({
             </div>
           </div>
         </header>
+
+        <button
+          className={"site-cloud-btn" + (m.cloudEmail ? " synced" : "")}
+          aria-label="Cloud save"
+          title={m.cloudEmail ? `Cloud synced (${m.cloudEmail})` : "Sign in for cloud save"}
+          onClick={() => showPanel("cloud")}
+        >
+          <Cloud size={18} />
+          <i />
+        </button>
 
         {selected && (
           <section className="inspector" aria-label="Facility inspector">
@@ -529,7 +541,9 @@ export function LaunchSite({
               ? "Contracts"
               : panel === "build"
                 ? "Facilities"
-                : "Replace flight?"
+                : panel === "cloud"
+                  ? "Cloud Save"
+                  : "Replace flight?"
           }
           close={() => P(null)}
         >
@@ -673,6 +687,8 @@ export function LaunchSite({
               ))}
             </div>
           )}
+
+          {panel === "cloud" && <CloudSyncPanel mission={m} />}
 
           {panel === "replace" && (
             <>

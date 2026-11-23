@@ -415,3 +415,30 @@ button.insignia {
   color: var(--teal);
   border-bottom: 2px solid var(--edge-dark);
 }
+
+.site-cloud-btn {
+  position: absolute;
+  top: 56px;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: var(--panel);
+  color: var(--ink-muted);
+}
+.site-cloud-btn.synced {
+  color: var(--teal);
+  border-bottom-color: var(--teal-deep);
+}
+.site-cloud-btn i {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+.site-cloud-btn.synced i {
+  background: var(--teal);
+}

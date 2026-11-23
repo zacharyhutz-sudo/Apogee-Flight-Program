@@ -1,4 +1,5 @@
 import { Dialog } from "./Dialog";
+import { CloudSyncPanel } from "./CloudSyncPanel";
 import { LaunchSite } from "./LaunchSite";
 import { Workshop } from "./Workshop";
 import { LunarSite } from "./LunarSite";
@@ -860,6 +861,7 @@ export default function App() {
           )}
           {dialog === "data" && (
             <>
+              <CloudSyncPanel mission={m} />
               <p>
                 Back up your program and active flight as JSON or restore a
                 previous save.
