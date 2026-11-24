@@ -48,6 +48,7 @@ import {
   toggleChute,
   toggleLegs,
   canChuteWarp,
+  canMidWarp,
   canHighWarp,
   canWarp,
   clamp,
@@ -354,7 +355,7 @@ export default function App() {
         : booster && fuelPct === 0
           ? "Booster empty. Tap Stage."
           : s.orbitEarned
-            ? "Orbit reached. Open Map to coast at 5×–20× (100×/500× above 1,500 km)."
+            ? "Orbit reached. Open Map to coast at 5×–20× (100× above 500 km, 500× above 1,500 km)."
             : "Hold left or right screen edges while thrusting to pitch.";
 
   const pilotDisabled = !m.loaded || ended;
@@ -855,9 +856,11 @@ export default function App() {
                         (m.paused ||
                           (n === 3
                             ? !canChuteWarp(s)
-                            : n >= 100
+                            : n >= 500
                               ? !canHighWarp(s)
-                              : !canWarp(s))))
+                              : n >= 100
+                                ? !canMidWarp(s)
+                                : !canWarp(s))))
                     }
                     onClick={() => {
                       m.warp(n);
@@ -871,15 +874,16 @@ export default function App() {
               {((!canWarp(s) && !canChuteWarp(s)) || m.paused) ? (
                 <p>
                   Warp is available while coasting above 30.5 km (5×/20×), above
-                  1,500 km (100×/500×), or descending under parachute (3×) with
-                  flight running.
+                  500 km (100×), above 1,500 km (500×), or descending under
+                  parachute (3×) with flight running.
                 </p>
               ) : (
                 !canChuteWarp(s) &&
                 !canHighWarp(s) && (
                   <p>
-                    100× and 500× warp unlock while coasting above 1,500 km
-                    altitude.
+                    {!canMidWarp(s)
+                      ? "100× warp unlocks while coasting above 500 km altitude, and 500× unlocks above 1,500 km."
+                      : "500× warp unlocks while coasting above 1,500 km altitude."}
                   </p>
                 )
               )}

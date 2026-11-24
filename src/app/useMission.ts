@@ -32,6 +32,7 @@ import {
   MOON_R,
   bodyParams,
   canChuteWarp,
+  canMidWarp,
   canHighWarp,
   canWarp,
   hasUpperStage,
@@ -200,7 +201,8 @@ export function useMission() {
     if (!ready.current) return;
     fn(vessel.current);
     if (msg) log(msg);
-    if (rate.current >= 100 && !canHighWarp(vessel.current)) rate.current = canWarp(vessel.current) ? 20 : 1;
+    if (rate.current >= 500 && !canHighWarp(vessel.current)) rate.current = canMidWarp(vessel.current) ? 100 : canWarp(vessel.current) ? 20 : 1;
+    if (rate.current >= 100 && !canMidWarp(vessel.current)) rate.current = canWarp(vessel.current) ? 20 : 1;
     if (rate.current > 1 && !canWarp(vessel.current) && !(rate.current === 3 && canChuteWarp(vessel.current))) rate.current = 1;
     save();
     refresh();
@@ -375,7 +377,8 @@ export function useMission() {
 
   function separate() {
     if (stage(vessel.current)) {
-      if (rate.current >= 100 && !canHighWarp(vessel.current)) rate.current = canWarp(vessel.current) ? 20 : 1;
+      if (rate.current >= 500 && !canHighWarp(vessel.current)) rate.current = canMidWarp(vessel.current) ? 100 : canWarp(vessel.current) ? 20 : 1;
+      if (rate.current >= 100 && !canMidWarp(vessel.current)) rate.current = canWarp(vessel.current) ? 20 : 1;
     if (rate.current > 1 && !canWarp(vessel.current) && !(rate.current === 3 && canChuteWarp(vessel.current))) rate.current = 1;
       if (mission.current.program.sortie === "hop" && mission.current.tutorial.status !== "off")
         mission.current.tutorial.stagingSeen = true;
@@ -398,7 +401,8 @@ export function useMission() {
       vessel.current.throttle = 0;
     }
     const chuteAllowed = value === 3 && canChuteWarp(vessel.current);
-    if (value >= 100 && !canHighWarp(vessel.current)) return;
+    if (value >= 500 && !canHighWarp(vessel.current)) return;
+    if (value >= 100 && !canMidWarp(vessel.current)) return;
     if (value !== 1 && !canWarp(vessel.current) && !chuteAllowed) return;
     if (value > 1 && mission.current.program.warpAlert) {
       setNotice(mission.current.program.warpAlert);
@@ -643,16 +647,23 @@ export function useMission() {
             }
             if (!canChuteWarp(s)) rate.current = 1;
           } else if (rate.current > 1) {
-            if (rate.current >= 100 && !canHighWarp(s)) {
-              rate.current = canWarp(s) ? 20 : 1;
+            if (rate.current >= 500 && !canHighWarp(s)) {
+              rate.current = canMidWarp(s) ? 100 : canWarp(s) ? 20 : 1;
               log("Warp stepped down below 1,500 km.");
+            }
+            if (rate.current >= 100 && !canMidWarp(s)) {
+              rate.current = canWarp(s) ? 20 : 1;
+              log("Warp stepped down below 500 km.");
             }
             if (rate.current > 1 && !coast(s, STEP * rate.current)) {
               rate.current = 1;
               log("Warp ended before atmospheric entry.");
-            } else if (rate.current >= 100 && !canHighWarp(s)) {
-              rate.current = canWarp(s) ? 20 : 1;
+            } else if (rate.current >= 500 && !canHighWarp(s)) {
+              rate.current = canMidWarp(s) ? 100 : canWarp(s) ? 20 : 1;
               log("Warp stepped down below 1,500 km.");
+            } else if (rate.current >= 100 && !canMidWarp(s)) {
+              rate.current = canWarp(s) ? 20 : 1;
+              log("Warp stepped down below 500 km.");
             }
           } else if (canWarp(s)) {
             const before = s.t;
