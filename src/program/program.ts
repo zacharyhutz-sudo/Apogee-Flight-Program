@@ -378,7 +378,13 @@ export interface SoundingReport {
   researchAwarded: number;
 }
 
+export type StoreResource = "credits" | "propellant";
+export const NOVA_EXCHANGE_UNITS = 1000;
+export const NOVA_BOOST_MINUTES = 10;
+
 export interface EconomyState {
+  /** Store purchases can take the wallet above the ordinary production limits. */
+  purchasedBalanceLimit?: Partial<Record<StoreResource, number>>;
   credits: number;
   propellant: number;
   research: number;
@@ -835,6 +841,35 @@ export function getStorageCaps(state: Program) {
   };
 }
 
+// A bought balance survives economy ticks and save loading. Production still uses getStorageCaps.
+export function getWalletLimits(p: Program) {
+  const storage = getStorageCaps(p);
+  const bought = p.purchasedBalanceLimit;
+  return {
+    credits: Math.max(storage.credits, safeFinite(bought?.credits ?? 0, 0)),
+    propellant: Math.max(storage.propellant, safeFinite(bought?.propellant ?? 0, 0)),
+  };
+}
+
+export function exchangeNovaShard(p: Program, resource: StoreResource) {
+  const balance = p[resource] + NOVA_EXCHANGE_UNITS;
+  if (balance > Number.MAX_SAFE_INTEGER) return "Balance limit reached.";
+  p[resource] = balance;
+  if (balance > getStorageCaps(p)[resource]) {
+    p.purchasedBalanceLimit = { ...p.purchasedBalanceLimit, [resource]: balance };
+  }
+  return `Added ${NOVA_EXCHANGE_UNITS.toLocaleString("en-US")} ${resource}.`;
+}
+
+export function boostFacility(p: Program, tile: { x: number; y: number }, nowMs = Date.now()) {
+  completeFinishedUpgrades(p, nowMs);
+  const building = p.buildings.find(b => b.x === tile.x && b.y === tile.y);
+  if (!building?.upgradingUntilMs) return "No upgrade in progress.";
+  building.upgradingUntilMs = Math.max(nowMs, building.upgradingUntilMs - NOVA_BOOST_MINUTES * 60000);
+  const completed = completeFinishedUpgrades(p, nowMs);
+  return completed ? "Upgrade complete." : `Upgrade shortened by ${NOVA_BOOST_MINUTES} minutes.`;
+}
+
 export function getCollectorCaps(state: Program) {
   let credits = 0;
   let propellant = 0;
@@ -873,7 +908,7 @@ export function getPropellantRatePerHour(state: Program): number {
  */
 export function advanceEconomyClock(state: Program, dtSimSec: number): Program {
   const dt = Number.isFinite(dtSimSec) && dtSimSec > 0 ? dtSimSec : 0;
-  const storageCaps = getStorageCaps(state);
+  const storageCaps = getWalletLimits(state);
   const hopperCaps = getCollectorCaps(state);
   const creditRatePerSec = getCreditRatePerHour(state) / 3600;
   const propRatePerSec = getPropellantRatePerHour(state) / 3600;
@@ -1248,7 +1283,7 @@ export function applyContractReward(state: Program, contractId: Job) {
   const q = quote(state, contractId);
   const milestoneBonus = q.firstTimeBonus;
   const totalCredits = q.credits + milestoneBonus;
-  const nextCredits = clamp(state.credits + totalCredits, 0, caps.credits);
+  const nextCredits = Math.max(state.credits, Math.min(state.credits + totalCredits, caps.credits));
   const nextResearch = Math.max(0, state.research + q.research);
   const nextCompleted = {
     ...state.completed,
@@ -1597,7 +1632,7 @@ export function settle(p: Program, f: Flight): string {
   const caps = getStorageCaps(p);
   const totalCredits = booked.credits + booked.milestoneBonus;
   const prevCredits = p.credits;
-  p.credits = clamp(p.credits + totalCredits, 0, caps.credits);
+  p.credits = Math.max(p.credits, Math.min(p.credits + totalCredits, caps.credits));
   p.research = Math.max(0, p.research + booked.research);
   p.completed[job] = (p.completed[job] ?? 0) + 1;
   p.milestones.firstSounding ||= job === "sounding";
@@ -1713,7 +1748,7 @@ export function validProgram(value: unknown, f: Flight): value is Program {
   )
     return false;
 
-  const caps = getStorageCaps(p);
+  const caps = getWalletLimits(p);
   const hopCaps = getCollectorCaps(p);
   if (
     p.credits > caps.credits ||

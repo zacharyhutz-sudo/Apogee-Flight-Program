@@ -11,6 +11,8 @@ import {
   Flame,
   FlaskConical,
   Hammer,
+  Gem,
+  Store,
   Landmark,
   Lock,
   Moon,
@@ -33,6 +35,8 @@ import {
   FACILITIES,
   FACILITY_KINDS,
   MAX_LEVEL,
+  NOVA_BOOST_MINUTES,
+  NOVA_EXCHANGE_UNITS,
   SIZE,
   activeUpgrades,
   canAffordUpgrade,
@@ -137,7 +141,7 @@ export function LaunchSite({
   const credPct = Math.min(100, (100 * p.credits) / caps.credits);
 
   const [panel, P] = useState<
-    "board" | "build" | "replace" | "cloud" | "sounding-report" | null
+    "board" | "store" | "build" | "replace" | "cloud" | "sounding-report" | null
   >(null);
   const [selected, S] = useState<Tile | null>(null);
   const [inspectLocked, setInspectLocked] = useState<Kind | null>(null);
@@ -306,7 +310,7 @@ export function LaunchSite({
     return () => window.removeEventListener("keydown", key);
   });
 
-  function showPanel(v: "build" | "board" | "cloud") {
+  function showPanel(v: "build" | "board" | "cloud" | "store") {
     cancel();
     P(v);
   }
@@ -437,6 +441,9 @@ export function LaunchSite({
               <div className="res-track">
                 <i style={{ width: propPct + "%" }} />
               </div>
+            </div>
+            <div className="res-pill nova" title="Nova Shards · Unlimited" aria-label="Nova Shards: unlimited">
+              <div className="res-row"><Gem aria-hidden="true" /><strong>∞</strong><small>Shards</small></div>
             </div>
             <div className="res-pill research" title={`Research data: ${p.research.toLocaleString("en-US")}`}>
               <div className="res-row">
@@ -580,6 +587,13 @@ export function LaunchSite({
                   </>
                 )}
                 <div className="inspect-actions">
+                  {activeUpgradeRemMs > 0 && selected && (
+                    <button className="nova-boost" disabled={buttonsDisabled}
+                      title={`Spend 1 Nova Shard to speed up by ${NOVA_BOOST_MINUTES} minutes`}
+                      onClick={() => M(m.useShard(selected))}>
+                      <Gem size={15} />1 · Speed up {NOVA_BOOST_MINUTES}m
+                    </button>
+                  )}
                   {builtAtTile && (
                     <button
                       aria-label="Move"
@@ -665,6 +679,7 @@ export function LaunchSite({
             <Rocket />
             Pad
           </button>
+          <button disabled={buttonsDisabled} onClick={() => showPanel("store")}><Store />Store</button>
         </div>
       </div>
 
@@ -683,7 +698,7 @@ export function LaunchSite({
         <Dialog
           tone={panel === "replace" ? "warning" : undefined}
           title={
-            panel === "board"
+            panel === "store" ? "Store" : panel === "board"
               ? "Contracts"
               : panel === "build"
                 ? "Facilities"
@@ -695,6 +710,22 @@ export function LaunchSite({
           }
           close={() => P(null)}
         >
+          {panel === "store" && (
+            <div className="nova-store">
+              <div className="nova-wallet"><Gem /><strong>Nova Shards</strong><b>∞</b></div>
+              <p>Unlimited shards for testing. Each shard buys {NOVA_EXCHANGE_UNITS.toLocaleString("en-US")} units, even above storage capacity.</p>
+              {(["credits", "propellant"] as const).map(resource => (
+                <div className="nova-offer" key={resource}>
+                  <img src={import.meta.env.BASE_URL + "art/" + resource + ".png"} alt="" />
+                  <div><strong>{NOVA_EXCHANGE_UNITS.toLocaleString("en-US")} {resource}</strong>
+                    <small>Balance {p[resource].toLocaleString("en-US", { maximumFractionDigits: 0 })}</small></div>
+                  <button aria-label={`Exchange 1 Nova Shard for ${NOVA_EXCHANGE_UNITS} ${resource}`}
+                    onClick={() => M(m.useShard(resource))}><Gem size={15} />1 shard</button>
+                </div>
+              ))}
+              {message && <p role="status">{message}</p>}
+            </div>
+          )}
           {panel === "board" && (
             <>
               {needsFlight && <MiloGuide dismiss={skipTour}>

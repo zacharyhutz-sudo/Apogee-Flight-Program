@@ -2,6 +2,9 @@ import {
   CONTRACTS,
   applyOfflineProgress,
   collectFromBuilding,
+  boostFacility,
+  exchangeNovaShard,
+  type StoreResource,
   completeFinishedUpgrades,
   contractVehicle,
   launchIssue,
@@ -429,6 +432,17 @@ export function useMission() {
     return issue;
   }
 
+  function useShard(action: StoreResource | { x: number; y: number }) {
+    if (!ready.current) return "Save is still loading.";
+    const program = mission.current.program;
+    const message = typeof action === "string"
+      ? exchangeNovaShard(program, action)
+      : boostFacility(program, action);
+    save();
+    refresh();
+    return message;
+  }
+
   function improveTerrain(x: number, y: number, action: "clear" | "reclaim") {
     if (!ready.current) return "Save is still loading.";
     const p = mission.current.program;
@@ -686,6 +700,11 @@ export function useMission() {
         refresh();
         paintAt = now;
       }
+      if (paused.current && mission.current.view === "site" && !document.hidden && now - paintAt >= 1000) {
+        if (completeFinishedUpgrades(program, Date.now()) > 0) save();
+        refresh();
+        paintAt = now;
+      }
       id = requestAnimationFrame(frame);
     }
 
@@ -763,6 +782,7 @@ export function useMission() {
     separate,
     newSortie,
     editSite,
+    useShard,
     improveTerrain,
     openLunar,
     collectLunarFacility,

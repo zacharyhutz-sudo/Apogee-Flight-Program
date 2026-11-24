@@ -549,3 +549,22 @@ dialog:has(.facilities-groups) .dialog-head { border-color: #c7d6ce; }
 .crew-banner strong {
   color: var(--amber-bright);
 }
+.site-top .resource-bar {
+  grid-template-columns: repeat(2,minmax(0,1fr)) minmax(60px,.65fr) minmax(44px,.48fr);
+  width: min(100%, 480px);
+}
+.nova .res-row small { grid-column: 1 / -1; }
+.nova .res-row svg, .nova-wallet svg, .nova-offer button svg, .nova-boost svg { color: #e2a5ff; }
+.nova-store { display: grid; gap: 10px; }
+.nova-store p { margin: 0; font-size: 14px; }
+.nova-wallet, .nova-offer { display: flex; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; }
+.nova-wallet { background: #352947; }
+.nova-wallet b, .nova-offer button { margin-left: auto; }
+.nova-wallet b { font: 700 22px var(--font-mono); }
+.nova-offer img { width: 22px; image-rendering: pixelated; }
+.nova-offer small { display: block; color: var(--ink-muted); }
+.inspector .inspect-actions:has(.nova-boost) { flex-wrap: wrap; }
+@media (max-width: 365px) {
+  .site-top .res-pill { padding-inline: 3px; }
+  .site-game .site-dock button { font-size: 10px; }
+}

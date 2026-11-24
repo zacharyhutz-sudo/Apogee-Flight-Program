@@ -5,6 +5,7 @@ import {
   SIZE,
   STARTER_KINDS,
   getStorageCaps,
+  getWalletLimits,
   placement,
   startProgram,
   syncBuildingLevels,
@@ -327,7 +328,7 @@ export function validate(raw: unknown): Snapshot {
   }
   if (record(program) && Array.isArray(program.buildings)) {
     const pObj = program as unknown as Program;
-    const caps = getStorageCaps(pObj);
+    const caps = getWalletLimits(pObj);
     if (typeof pObj.credits === "number") pObj.credits = clamp(pObj.credits, 0, caps.credits);
     if (typeof pObj.propellant === "number") pObj.propellant = clamp(pObj.propellant, 0, caps.propellant);
     if (!record(pObj.contractCooldowns)) pObj.contractCooldowns = {};
