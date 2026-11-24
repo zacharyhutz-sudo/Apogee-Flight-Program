@@ -18,6 +18,7 @@ import {
   Moon,
   Move,
   Radar,
+  RefreshCw,
   Rocket,
   Sun,
   Waves,
@@ -35,6 +36,7 @@ import {
   FACILITIES,
   FACILITY_KINDS,
   MAX_LEVEL,
+  MODIFIER_META,
   NOVA_BOOST_MINUTES,
   NOVA_EXCHANGE_UNITS,
   SIZE,
@@ -44,6 +46,7 @@ import {
   costShortfall,
   contractCooldownRemainingMs,
   contractVehicle,
+  ensureRotatingBoard,
   type Cost,
   canReclaimTile,
   countBuilt,
@@ -60,14 +63,15 @@ import {
   placement,
   quote,
   reclaimCost,
+  rerollCostCredits,
   tileTerrain,
   upgradeStatDelta,
   type Job,
   type Kind,
-  type Sortie,
   type Program,
+  type RotatingContract,
 } from "../program/program";
-import type { useMission } from "./useMission";
+import type { PendingContract, useMission } from "./useMission";
 import { MiloGuide } from "./MiloGuide";
 import { Dialog } from "./Dialog";
 import { CloudSyncPanel } from "./CloudSyncPanel";
@@ -128,7 +132,7 @@ export function LaunchSite({
 }: {
   mission: ReturnType<typeof useMission>;
   onFlight: () => void;
-  onWorkshop: (job?: Job) => void;
+  onWorkshop: (contract?: PendingContract) => void;
   onLunar: () => void;
 }) {
   const p = m.mission.program,
@@ -147,7 +151,8 @@ export function LaunchSite({
   const [inspectLocked, setInspectLocked] = useState<Kind | null>(null);
   const [placing, G] = useState<Kind | null>(null);
   const [movingFrom, setMovingFrom] = useState<Tile | null>(null);
-  const [pending, Q] = useState<Sortie>("practice");
+  const [pending, Q] = useState<Job | "practice">("practice");
+  const [boardNotice, setBoardNotice] = useState("");
   const [message, M] = useState("");
   const [burst, setBurst] = useState<CollectBurst | null>(null);
 
@@ -255,10 +260,10 @@ export function LaunchSite({
     P(null);
   }
 
-  function pick(job: Sortie) {
+  function pick(job: Job | "practice") {
     if (job !== "practice") {
       P(null);
-      onWorkshop(job);
+      onWorkshop({ kind: "fixed", job });
       return;
     }
     Q(job);
@@ -267,6 +272,11 @@ export function LaunchSite({
       return;
     }
     if (m.newSortie(job)) P(null);
+  }
+
+  function pickRotating(offer: RotatingContract) {
+    P(null);
+    onWorkshop({ kind: "rotating", offer });
   }
 
   function confirmPlacement() {
@@ -313,6 +323,8 @@ export function LaunchSite({
 
   function showPanel(v: "build" | "board" | "cloud" | "store") {
     cancel();
+    setBoardNotice("");
+    if (v === "board") m.refreshRotatingBoard();
     P(v);
   }
 
@@ -758,6 +770,95 @@ export function LaunchSite({
                 <Rocket />
                 Free simulation · No cost or payout
               </button>
+              {(() => {
+                const board = ensureRotatingBoard(p, nowMs);
+                const rerollPrice = rerollCostCredits(board);
+                const refreshLeftSec = Math.max(0, Math.ceil((board.nextRefreshAtMs - nowMs) / 1000));
+                const labLv = level(p, "lab");
+                return (
+                  <section className="rotating-section" aria-label="Rotating contracts">
+                    <div className="rotating-head">
+                      <div>
+                        <h3 className="contract-section-title">Rotating Contracts</h3>
+                        <small>Refreshes in {formatDuration(refreshLeftSec)}</small>
+                      </div>
+                      <button
+                        type="button"
+                        className="reroll-btn"
+                        disabled={rerollPrice > 0 && p.credits < rerollPrice}
+                        onClick={() => setBoardNotice(m.rerollContracts())}
+                      >
+                        <RefreshCw size={13} />
+                        {rerollPrice === 0 ? "Reroll · Free" : `Reroll · ${rerollPrice} C`}
+                      </button>
+                    </div>
+                    {boardNotice && <p className="lock-note" role="alert">{boardNotice}</p>}
+                    <div className="contract-list">
+                      {board.offers.map((offer) => {
+                        const rdTotal = Math.round(offer.research * (1 + 0.1 * labLv));
+                        const expSec = Math.max(0, Math.ceil((offer.expiresAtMs - nowMs) / 1000));
+                        return (
+                          <article className="contract contract-rotating" key={offer.id}>
+                            <header>
+                              <h3>{offer.name}</h3>
+                              <span className={"tier-chip tier-" + offer.tier}>
+                                Tier {offer.tier} · {formatDuration(expSec)}
+                              </span>
+                            </header>
+                            <p>{offer.goal}</p>
+                            {offer.modifiers.length > 0 && (
+                              <div className="mod-strip">
+                                {offer.modifiers.map((mod) => (
+                                  <span
+                                    key={mod}
+                                    className={"mod-chip mod-" + MODIFIER_META[mod].type}
+                                    title={MODIFIER_META[mod].summary}
+                                  >
+                                    {MODIFIER_META[mod].label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            <div className="cost-strip">
+                              {offer.cargoKg > 0 && (
+                                <span>
+                                  <Database size={13} />
+                                  +{(offer.cargoKg / 1000).toFixed(1)} t cargo
+                                </span>
+                              )}
+                              {offer.maxWetTonnes !== undefined && (
+                                <span>≤ {offer.maxWetTonnes} t wet</span>
+                              )}
+                              {offer.maxStages !== undefined && (
+                                <span>1 stage max</span>
+                              )}
+                              {offer.maxParts !== undefined && (
+                                <span>≤ {offer.maxParts} parts</span>
+                              )}
+                              {offer.hardwareDiscount !== undefined && (
+                                <span>−{Math.round(offer.hardwareDiscount * 100)}% hardware</span>
+                              )}
+                            </div>
+                            <div className="mission-row">
+                              <span className="payout-chip">
+                                +{offer.credits.toLocaleString("en-US")} C · +{rdTotal} RD
+                              </span>
+                              <button
+                                className="primary"
+                                aria-label={"Accept " + offer.name}
+                                onClick={() => pickRotating(offer)}
+                              >
+                                VAB <ArrowRight />
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })()}
+              <h3 className="contract-section-title">Program Milestones</h3>
               <div className="contract-list">
                 {CONTRACT_JOBS.map((job) => {
                   const c = CONTRACTS[job];

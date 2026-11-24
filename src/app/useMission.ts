@@ -7,20 +7,24 @@ import {
   type StoreResource,
   completeFinishedUpgrades,
   contractVehicle,
+  ensureRotatingBoard,
   launchIssue,
   payLaunch,
   place,
   prepare,
   prepareBlueprintFlight,
   prepareContractBlueprint,
+  prepareRotatingContractBlueprint,
   prepareSoundingBlueprint,
   reclaimTile,
+  rerollRotatingBoard,
   clearObstacle,
   settle,
   tickEconomy,
   upgrade,
   type Job,
   type Kind,
+  type RotatingContract,
   type Sortie,
 } from "../program/program";
 import type { RocketBlueprint } from "../program/workshop";
@@ -60,6 +64,14 @@ import {
   signUpEmail,
 } from "../persistence/cloud";
 
+export type PendingContract =
+  | { kind: "fixed"; job: Job }
+  | { kind: "rotating"; offer: RotatingContract };
+
+export type PendingContract =
+  | { kind: "fixed"; job: Job }
+  | { kind: "rotating"; offer: RotatingContract };
+
 export function useMission() {
   const mission = useRef(fresh()),
     vessel = useRef<Flight>(mission.current.flight);
@@ -72,7 +84,7 @@ export function useMission() {
   const [, paint] = useState(0),
     refresh = () => paint((v) => v + 1);
   const [notice, setNotice] = useState("");
-  const [pendingContract, setPendingContract] = useState<Job | null>(null);
+  const [pendingContract, setPendingContract] = useState<PendingContract | null>(null);
   const [cloudEmail, setCloudEmail] = useState<string | null>(
     () => getCloudSession()?.email ?? null,
   );
@@ -275,14 +287,31 @@ export function useMission() {
     }
   }
 
-  function openWorkshop(job?: Job) {
+  function openWorkshop(contract?: PendingContract) {
     if (!ready.current) return;
     if (vessel.current.status === "flying") paused.current = true;
     rate.current = 1;
-    setPendingContract(job ?? null);
+    setPendingContract(contract ?? null);
     change(() => {
       mission.current.view = "workshop";
     });
+  }
+
+  function refreshRotatingBoard() {
+    if (!ready.current) return;
+    ensureRotatingBoard(mission.current.program, Date.now());
+    save();
+    refresh();
+  }
+
+  function rerollContracts(): string {
+    if (!ready.current) return "Save is still loading.";
+    const err = rerollRotatingBoard(mission.current.program, Date.now());
+    if (!err) {
+      save();
+      refresh();
+    }
+    return err;
   }
 
   function stageContract(job: Job, blueprintId?: string): string {
@@ -313,6 +342,26 @@ export function useMission() {
     if (issue) return issue;
     if (!newSortie(job)) return "Unable to stage contract.";
     setPendingContract(null);
+    return "";
+  }
+
+  function stageRotatingContract(offer: RotatingContract, blueprintId: string): string {
+    if (!ready.current) return "Save is still loading.";
+    const data = mission.current;
+    const result = prepareRotatingContractBlueprint(data.program, offer, blueprintId);
+    if (!result.flight) return result.error || "Unable to stage vehicle.";
+    data.flight = result.flight;
+    data.log = [
+      {
+        t: 0,
+        text: `${result.flight.vehicleName ?? offer.name} staged for ${offer.name}.`.slice(0, 180),
+      },
+    ];
+    data.view = "flight";
+    setPendingContract(null);
+    install(data);
+    setNotice("");
+    save();
     return "";
   }
 
@@ -412,7 +461,7 @@ export function useMission() {
     refresh();
   }
 
-  function newSortie(job: Sortie, soundingBlueprintId = "") {
+  function newSortie(job: Job | "practice", soundingBlueprintId = "") {
     if (!ready.current) return false;
     const data = mission.current;
     if (job === "sounding" && soundingBlueprintId) {
@@ -826,6 +875,9 @@ export function useMission() {
     pendingContract,
     clearPendingContract: () => setPendingContract(null),
     stageContract,
+    stageRotatingContract,
+    refreshRotatingBoard,
+    rerollContracts,
     selectBlueprint,
     saveBlueprint,
     deleteBlueprint,

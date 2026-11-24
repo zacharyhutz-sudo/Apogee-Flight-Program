@@ -30,9 +30,12 @@ import {
 } from "../program/workshop";
 import {
   CONTRACTS,
+  MODIFIER_META,
   contractVehicle,
   getFacilityLimits,
   inspectContractBlueprint,
+  inspectRotatingBlueprint,
+  level,
   quote,
 } from "../program/program";
 import { MiloGuide } from "./MiloGuide";
@@ -81,20 +84,40 @@ export function Workshop({
   const [dialogError, setDialogError] = useState("");
   const [replaceTarget, setReplaceTarget] = useState<{ useBlueprint: boolean } | null>(null);
 
-  const contractJob = m.pendingContract;
-  const contractDef = contractJob ? CONTRACTS[contractJob] : null;
-  const contractQuote = contractJob
-    ? quote(p, contractJob, contractVehicle(p, contractJob))
-    : null;
-  const contractCheck = useMemo(
-    () => (contractJob ? inspectContractBlueprint(p, contractJob, activeBp.id) : null),
-    [contractJob, p, activeBp, p.credits, p.propellant],
-  );
+  const pendingContract = m.pendingContract;
+  const fixedJob = pendingContract?.kind === "fixed" ? pendingContract.job : null;
+  const rotatingOffer = pendingContract?.kind === "rotating" ? pendingContract.offer : null;
+  const contractName = fixedJob
+    ? CONTRACTS[fixedJob].name
+    : rotatingOffer
+      ? rotatingOffer.name
+      : null;
+  const contractGoal = fixedJob
+    ? CONTRACTS[fixedJob].goal
+    : rotatingOffer
+      ? rotatingOffer.goal
+      : null;
+  const contractPayout = fixedJob
+    ? (() => {
+        const q = quote(p, fixedJob, contractVehicle(p, fixedJob));
+        return { credits: q.credits, research: q.research };
+      })()
+    : rotatingOffer
+      ? {
+          credits: rotatingOffer.credits,
+          research: Math.round(rotatingOffer.research * (1 + 0.1 * level(p, "lab"))),
+        }
+      : null;
+  const contractCheck = useMemo(() => {
+    if (fixedJob) return inspectContractBlueprint(p, fixedJob, activeBp.id);
+    if (rotatingOffer) return inspectRotatingBlueprint(p, rotatingOffer, activeBp.id);
+    return null;
+  }, [fixedJob, rotatingOffer, p, activeBp, p.credits, p.propellant]);
   const soundingGuide =
     m.loaded &&
     tutorial.status === "active" &&
     !p.milestones.firstSounding &&
-    contractJob === "sounding";
+    fixedJob === "sounding";
 
   const analysis = useMemo(
     () => analyzeBlueprint(activeBp, limits),
@@ -272,12 +295,15 @@ export function Workshop({
   }
 
   function stageSelectedContract(useBlueprint: boolean, confirmed = false) {
-    if (!contractJob) return;
+    if (!pendingContract) return;
     if (!confirmed && m.mission.flight.status !== "pad") {
       setReplaceTarget({ useBlueprint });
       return;
     }
-    const err = m.stageContract(contractJob, useBlueprint ? activeBp.id : undefined);
+    const err =
+      pendingContract.kind === "fixed"
+        ? m.stageContract(pendingContract.job, useBlueprint ? activeBp.id : undefined)
+        : m.stageRotatingContract(pendingContract.offer, activeBp.id);
     setReplaceTarget(null);
     if (err) setNotice(err);
   }
@@ -362,17 +388,30 @@ export function Workshop({
         </div>
       </header>
 
-      {contractDef && contractQuote && (
+      {contractName && contractGoal && contractPayout && (
         <section className="vab-contract-banner" aria-label="Selected contract">
           <div className="vab-contract-info">
             <div className="vab-contract-head">
               <ClipboardList size={14} />
-              <strong>{contractDef.name}</strong>
+              <strong>{contractName}</strong>
               <span className="vab-contract-payout">
-                +{contractQuote.credits.toLocaleString("en-US")} C · +{contractQuote.research} RD
+                +{contractPayout.credits.toLocaleString("en-US")} C · +{contractPayout.research} RD
               </span>
             </div>
-            <p>{contractDef.goal}</p>
+            <p>{contractGoal}</p>
+            {rotatingOffer && rotatingOffer.modifiers.length > 0 && (
+              <div className="vab-mod-strip">
+                {rotatingOffer.modifiers.map((mod) => (
+                  <span
+                    key={mod}
+                    className={"mod-chip mod-" + MODIFIER_META[mod].type}
+                    title={MODIFIER_META[mod].summary}
+                  >
+                    {MODIFIER_META[mod].label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -687,7 +726,7 @@ export function Workshop({
       </section>
 
       <footer className="vab-actions">
-        {contractJob === "sounding" ? (
+        {fixedJob === "sounding" ? (
           <>
             <button
               className="sim-btn"
@@ -700,7 +739,7 @@ export function Workshop({
             </button>
             <button
               className="primary launch-btn"
-              aria-label={`Fly ${contractDef?.name} with ${activeBp.name}`}
+              aria-label={`Fly ${contractName} with ${activeBp.name}`}
               disabled={Boolean(contractCheck?.error)}
               onClick={() => stageSelectedContract(true)}
             >
@@ -708,7 +747,7 @@ export function Workshop({
               <small className="vab-launch-price">
                 <span>
                   <Coins />
-                  {analysis.hardwareCost}
+                  {contractCheck?.vehicle?.hardwareCost ?? analysis.hardwareCost}
                 </span>
                 <span>
                   <Flame />
@@ -717,7 +756,7 @@ export function Workshop({
               </small>
             </button>
           </>
-        ) : contractJob ? (
+        ) : pendingContract ? (
           <>
             <button
               className="sim-btn"
@@ -729,7 +768,7 @@ export function Workshop({
             </button>
             <button
               className="primary launch-btn"
-              aria-label={`Fly ${contractDef?.name} with ${activeBp.name}`}
+              aria-label={`Fly ${contractName} with ${activeBp.name}`}
               disabled={Boolean(contractCheck?.error)}
               onClick={() => stageSelectedContract(true)}
             >
@@ -737,7 +776,7 @@ export function Workshop({
               <small className="vab-launch-price">
                 <span>
                   <Coins />
-                  {analysis.hardwareCost}
+                  {contractCheck?.vehicle?.hardwareCost ?? analysis.hardwareCost}
                 </span>
                 <span>
                   <Flame />
@@ -778,12 +817,12 @@ export function Workshop({
         )}
       </footer>
 
-      {replaceTarget && contractDef && (
+      {replaceTarget && contractName && (
         <Dialog tone="warning" title="Replace flight?" close={() => setReplaceTarget(null)}>
           <p>
             Retire the active vehicle and stage{" "}
             {replaceTarget.useBlueprint ? activeBp.name : "the Sponsored Rocket"} for{" "}
-            {contractDef.name}?
+            {contractName}?
           </p>
           <button
             className="primary"

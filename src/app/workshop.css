@@ -70,6 +70,12 @@
   font: 500 12px/1.25 var(--font-ui);
   color: var(--ink-muted);
 }
+.vab-mod-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
 .vab-contract-clear {
   flex: none;
   width: 36px;

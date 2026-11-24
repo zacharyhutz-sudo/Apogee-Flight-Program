@@ -6,7 +6,7 @@ import { LaunchSite } from "./LaunchSite";
 import { Workshop } from "./Workshop";
 import { LunarSite } from "./LunarSite";
 import { SoundingReport } from "./SoundingReport";
-import { CONTRACTS, contractTasks, level, quote, type ContractTask } from "../program/program";
+import { CONTRACTS, activeContractInfo, contractTasks, level, type ContractTask } from "../program/program";
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
@@ -102,15 +102,16 @@ export default function App() {
   const twr = thrustToWeight(s);
   const lowThrust = pad && twr <= 1;
   const sortie = m.mission.program.sortie;
-  const isRealContract = sortie !== "practice";
-  const launchQuote = isRealContract ? quote(m.mission.program, sortie) : null;
+  const contractInfo = activeContractInfo(m.mission.program);
+  const isRealContract = Boolean(contractInfo);
+  const launchQuote = contractInfo;
   const trackingLevel = level(m.mission.program, "tracking");
   const soundingReport = m.mission.program.soundingReport;
 
   function flightStatus() {
     if (pad)
       return isRealContract
-        ? s.vehicleName ?? CONTRACTS[sortie].name
+        ? s.vehicleName ?? contractInfo!.name
         : s.vehicleName || "Free Simulation";
     if (m.paused) return "Paused";
     if (s.status === "lost") return "Vehicle lost";
@@ -585,7 +586,7 @@ export default function App() {
           {active && isRealContract ? (
             <div className="contract-briefing">
               <section className="contract-checklist" aria-label="Active contract">
-                <h2>{CONTRACTS[sortie].name}</h2>
+                <h2>{contractInfo!.name}</h2>
                 <ul>
                   {objectives.map(task => (
                     <li key={task.name}>
@@ -798,11 +799,11 @@ export default function App() {
           {dialog === "plan" && (
             <>
               <h3>
-                {isRealContract ? CONTRACTS[sortie].name : "Free simulation"}
+                {contractInfo ? contractInfo.name : "Free simulation"}
               </h3>
-              {isRealContract && launchQuote && (
+              {contractInfo && launchQuote && (
                 <p>
-                  {CONTRACTS[sortie].goal}{" "}
+                  {contractInfo.goal}{" "}
                   {m.mission.program.rewarded
                     ? "Reward collected."
                     : pad

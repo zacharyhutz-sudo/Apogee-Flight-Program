@@ -3,10 +3,32 @@ import {
   initial,
   orbit,
   stable,
+  stagesOf,
   radius,
   clamp,
   type Flight,
 } from "../sim/flight.ts";
+import {
+  MODIFIER_META,
+  generateRotatingOffers,
+  isValidRotatingContract,
+  rerollCostCredits,
+  rotatingRefreshSec,
+  rotatingSlotCount,
+  type ModifierId,
+  type RotatingBoardState,
+  type RotatingContract,
+} from "./rotating.ts";
+
+export {
+  MODIFIER_META,
+  rerollCostCredits,
+  rotatingRefreshSec,
+  rotatingSlotCount,
+  type ModifierId,
+  type RotatingBoardState,
+  type RotatingContract,
+};
 import {
   initialLunarColony,
   tickLunarColony,
@@ -345,7 +367,7 @@ export const CONTRACTS = {
 
 export type Job = keyof typeof CONTRACTS;
 export const CONTRACT_JOBS = Object.keys(CONTRACTS) as Job[];
-export type Sortie = Job | "practice";
+export type Sortie = Job | "practice" | "rotating";
 
 export interface Building {
   kind: Kind;
@@ -410,6 +432,8 @@ export interface EconomyState {
   activeBlueprintId: string;
   soundingVehicle?: VehicleSpec;
   contractVehicle?: VehicleSpec;
+  activeRotating?: RotatingContract;
+  rotatingBoard?: RotatingBoardState;
   soundingReport?: SoundingReport;
   reclaimedTiles: string[];
   clearedTiles?: string[];
@@ -1261,6 +1285,162 @@ export function quote(p: Program, job: Job, spec = stagedVehicle(p, job)) {
   };
 }
 
+export function ensureRotatingBoard(
+  p: Program,
+  nowMs = Date.now(),
+  rng: () => number = Math.random,
+): RotatingBoardState {
+  const mcLv = Math.max(1, level(p, "command"));
+  const officeLv = Math.max(1, level(p, "office"));
+  const cur = p.rotatingBoard;
+  if (cur && nowMs < cur.nextRefreshAtMs) {
+    const live = cur.offers.filter((o) => o.expiresAtMs > nowMs);
+    if (live.length > 0) {
+      if (live.length !== cur.offers.length) cur.offers = live;
+      return cur;
+    }
+  }
+  const next: RotatingBoardState = {
+    offers: generateRotatingOffers(mcLv, officeLv, nowMs, rng),
+    nextRefreshAtMs: nowMs + rotatingRefreshSec(officeLv) * 1000,
+    freeRerollsUsed: 0,
+    rerollCount: 0,
+  };
+  p.rotatingBoard = next;
+  return next;
+}
+
+export function rerollRotatingBoard(
+  p: Program,
+  nowMs = Date.now(),
+  rng: () => number = Math.random,
+): string {
+  const board = ensureRotatingBoard(p, nowMs, rng);
+  const cost = rerollCostCredits(board);
+  if (cost > 0 && p.credits < cost) {
+    return `Need ${(cost - p.credits).toLocaleString("en-US")} C more to reroll.`;
+  }
+  if (cost > 0) p.credits = Math.max(0, p.credits - cost);
+  else board.freeRerollsUsed += 1;
+  board.rerollCount += 1;
+  const mcLv = Math.max(1, level(p, "command"));
+  const officeLv = Math.max(1, level(p, "office"));
+  board.offers = generateRotatingOffers(mcLv, officeLv, nowMs, rng);
+  return "";
+}
+
+export function activeContractInfo(p: Program) {
+  if (p.sortie === "practice") return null;
+  if (p.sortie === "rotating") {
+    const offer = p.activeRotating;
+    if (!offer) return null;
+    const labLv = level(p, "lab");
+    const vehicle = p.contractVehicle;
+    return {
+      name: offer.name,
+      goal: offer.goal,
+      credits: offer.credits,
+      research: Math.round(offer.research * (1 + 0.1 * labLv)),
+      firstTimeBonus: 0,
+      hardwareCost: vehicle?.hardwareCost ?? 0,
+      propellantCost: vehicle?.propellantCost ?? 0,
+      isRepeat: false,
+      modifiers: offer.modifiers,
+    };
+  }
+  const c = CONTRACTS[p.sortie];
+  const q = quote(p, p.sortie);
+  return {
+    name: c.name,
+    goal: c.goal,
+    credits: q.credits,
+    research: q.research,
+    firstTimeBonus: q.firstTimeBonus,
+    hardwareCost: q.hardwareCost,
+    propellantCost: q.propellantCost,
+    isRepeat: q.isRepeat,
+    modifiers: [] as ModifierId[],
+  };
+}
+
+export function ensureRotatingBoard(
+  p: Program,
+  nowMs = Date.now(),
+  rng: () => number = Math.random,
+): RotatingBoardState {
+  const mcLv = Math.max(1, level(p, "command"));
+  const officeLv = Math.max(1, level(p, "office"));
+  const cur = p.rotatingBoard;
+  if (cur && nowMs < cur.nextRefreshAtMs) {
+    const live = cur.offers.filter((o) => o.expiresAtMs > nowMs);
+    if (live.length > 0) {
+      if (live.length !== cur.offers.length) cur.offers = live;
+      return cur;
+    }
+  }
+  const next: RotatingBoardState = {
+    offers: generateRotatingOffers(mcLv, officeLv, nowMs, rng),
+    nextRefreshAtMs: nowMs + rotatingRefreshSec(officeLv) * 1000,
+    freeRerollsUsed: 0,
+    rerollCount: 0,
+  };
+  p.rotatingBoard = next;
+  return next;
+}
+
+export function rerollRotatingBoard(
+  p: Program,
+  nowMs = Date.now(),
+  rng: () => number = Math.random,
+): string {
+  const board = ensureRotatingBoard(p, nowMs, rng);
+  const cost = rerollCostCredits(board);
+  if (cost > 0 && p.credits < cost) {
+    return `Need ${(cost - p.credits).toLocaleString("en-US")} C more to reroll.`;
+  }
+  if (cost > 0) p.credits = Math.max(0, p.credits - cost);
+  else board.freeRerollsUsed += 1;
+  board.rerollCount += 1;
+  const mcLv = Math.max(1, level(p, "command"));
+  const officeLv = Math.max(1, level(p, "office"));
+  board.offers = generateRotatingOffers(mcLv, officeLv, nowMs, rng);
+  return "";
+}
+
+export function activeContractInfo(p: Program) {
+  if (p.sortie === "practice") return null;
+  if (p.sortie === "rotating") {
+    const offer = p.activeRotating;
+    if (!offer) return null;
+    const labLv = level(p, "lab");
+    const vehicle = p.contractVehicle;
+    return {
+      name: offer.name,
+      goal: offer.goal,
+      credits: offer.credits,
+      research: Math.round(offer.research * (1 + 0.1 * labLv)),
+      firstTimeBonus: 0,
+      hardwareCost: vehicle?.hardwareCost ?? 0,
+      propellantCost: vehicle?.propellantCost ?? 0,
+      isRepeat: false,
+      modifiers: offer.modifiers,
+    };
+  }
+  const c = CONTRACTS[p.sortie];
+  const q = quote(p, p.sortie);
+  return {
+    name: c.name,
+    goal: c.goal,
+    credits: q.credits,
+    research: q.research,
+    firstTimeBonus: q.firstTimeBonus,
+    hardwareCost: q.hardwareCost,
+    propellantCost: q.propellantCost,
+    isRepeat: q.isRepeat,
+    modifiers: [] as ModifierId[],
+  };
+}
+
 export function launchIssue(
   p: Program,
   job: Sortie,
@@ -1268,6 +1448,20 @@ export function launchIssue(
   nowMs = Date.now(),
 ): string {
   if (job === "practice") return "";
+  if (job === "rotating") {
+    if (!p.activeRotating) return "No rotating contract selected.";
+    const v = vehicle ?? p.contractVehicle;
+    if (!v) return "Select a rocket blueprint in the VAB.";
+    const check = canLaunchVehicle(p, v);
+    return check.ok ? "" : check.reason;
+  }
+  if (job === "rotating") {
+    if (!p.activeRotating) return "No rotating contract selected.";
+    const v = vehicle ?? p.contractVehicle;
+    if (!v) return "Select a rocket blueprint in the VAB.";
+    const check = canLaunchVehicle(p, v);
+    return check.ok ? "" : check.reason;
+  }
   const c = CONTRACTS[job];
   const mcLv = level(p, "command");
   if (c.tier > mcLv) {
@@ -1396,12 +1590,13 @@ export function prepare(p: Program, job: Sortie, flight = initial()): Flight {
   p.sortie = job;
   delete p.soundingVehicle;
   delete p.contractVehicle;
+  delete p.activeRotating;
   p.award = null;
   p.paid = false;
   p.rewarded = false;
   p.inclination = 0;
   p.leoPassStartSec = null;
-  if (job !== "practice") {
+  if (job !== "practice" && job !== "rotating") {
     const caps = getStorageCaps(p);
     if (!p.activeContracts.includes(job)) {
       p.activeContracts = [...p.activeContracts, job].slice(
@@ -1409,7 +1604,7 @@ export function prepare(p: Program, job: Sortie, flight = initial()): Flight {
       );
     }
   }
-  flight.cargo = job === "practice" ? 0 : CONTRACTS[job].cargo;
+  flight.cargo = job === "practice" || job === "rotating" ? 0 : CONTRACTS[job].cargo;
   return flight;
 }
 
@@ -1449,6 +1644,120 @@ export function prepareContractBlueprint(p: Program, job: Job, blueprintId: stri
   prepare(p, job, flight);
   if (job === "sounding") p.soundingVehicle = vehicle;
   else p.contractVehicle = vehicle;
+  return { error: "", flight };
+}
+
+export function inspectRotatingBlueprint(
+  p: Program,
+  offer: RotatingContract,
+  blueprintId: string,
+) {
+  const blueprint = p.blueprints.find((b) => b.id === blueprintId);
+  if (!blueprint) return { vehicle: null, error: "Blueprint not found." };
+  const analysis = analyzeBlueprint(blueprint, getFacilityLimits(p));
+  const subsidy = offer.hardwareDiscount ?? 0;
+  const hardwareCost = Math.max(0, Math.round(analysis.hardwareCost * (1 - subsidy)));
+  const vehicle: VehicleSpec = {
+    name: blueprint.name,
+    wetMassTonnes: analysis.wetTonnes,
+    heightMeters: analysis.heightMeters,
+    hardwareCost,
+    propellantCost: analysis.propellantCost,
+    cargo: offer.cargoKg,
+  };
+  let error = "";
+  if (!analysis.canLaunchWithLimits) {
+    error = analysis.warnings.find((w) => w.severity === "error")?.message
+      ?? "Vehicle failed pre-launch checks.";
+  } else if (analysis.stageCount > 2) {
+    error = "Flight supports up to two flight stages.";
+  } else if (!analysis.stages[0]?.fuelTonnes) {
+    error = "Stage 1 needs propellant to lift off.";
+  } else if (offer.maxWetTonnes !== undefined && analysis.wetTonnes > offer.maxWetTonnes) {
+    error = `Exceeds Featherweight cap (≤ ${offer.maxWetTonnes} t).`;
+  } else if (offer.maxStages !== undefined && analysis.stageCount > offer.maxStages) {
+    error = `Single-Stage modifier allows ${offer.maxStages} stage max.`;
+  } else if (offer.maxParts !== undefined && analysis.partCount > offer.maxParts) {
+    error = `Minimalist modifier allows ${offer.maxParts} parts max.`;
+  } else {
+    const check = canLaunchVehicle(p, vehicle);
+    if (!check.ok) error = check.reason;
+  }
+  return { blueprint, analysis, vehicle, error };
+}
+
+export function prepareRotatingContractBlueprint(
+  p: Program,
+  offer: RotatingContract,
+  blueprintId: string,
+) {
+  const { blueprint, analysis, vehicle, error } = inspectRotatingBlueprint(p, offer, blueprintId);
+  if (error || !vehicle || !blueprint || !analysis) return { error, flight: null };
+
+  const instance = buildVehicleInstance(blueprint, analysis);
+  p.activeBlueprintId = blueprint.id;
+  const flight = initial(instance.stages, instance.payloadDryKg, instance.name, blueprint.parts);
+  prepare(p, "rotating", flight);
+  flight.cargo = offer.cargoKg;
+  p.activeRotating = structuredClone(offer);
+  p.contractVehicle = vehicle;
+  return { error: "", flight };
+}
+
+export function inspectRotatingBlueprint(
+  p: Program,
+  offer: RotatingContract,
+  blueprintId: string,
+) {
+  const blueprint = p.blueprints.find((b) => b.id === blueprintId);
+  if (!blueprint) return { vehicle: null, error: "Blueprint not found." };
+  const analysis = analyzeBlueprint(blueprint, getFacilityLimits(p));
+  const subsidy = offer.hardwareDiscount ?? 0;
+  const hardwareCost = Math.max(0, Math.round(analysis.hardwareCost * (1 - subsidy)));
+  const vehicle: VehicleSpec = {
+    name: blueprint.name,
+    wetMassTonnes: analysis.wetTonnes,
+    heightMeters: analysis.heightMeters,
+    hardwareCost,
+    propellantCost: analysis.propellantCost,
+    cargo: offer.cargoKg,
+  };
+  let error = "";
+  if (!analysis.canLaunchWithLimits) {
+    error = analysis.warnings.find((w) => w.severity === "error")?.message
+      ?? "Vehicle failed pre-launch checks.";
+  } else if (analysis.stageCount > 2) {
+    error = "Flight supports up to two flight stages.";
+  } else if (!analysis.stages[0]?.fuelTonnes) {
+    error = "Stage 1 needs propellant to lift off.";
+  } else if (offer.maxWetTonnes !== undefined && analysis.wetTonnes > offer.maxWetTonnes) {
+    error = `Exceeds Featherweight cap (≤ ${offer.maxWetTonnes} t).`;
+  } else if (offer.maxStages !== undefined && analysis.stageCount > offer.maxStages) {
+    error = `Single-Stage modifier allows ${offer.maxStages} stage max.`;
+  } else if (offer.maxParts !== undefined && analysis.partCount > offer.maxParts) {
+    error = `Minimalist modifier allows ${offer.maxParts} parts max.`;
+  } else {
+    const check = canLaunchVehicle(p, vehicle);
+    if (!check.ok) error = check.reason;
+  }
+  return { blueprint, analysis, vehicle, error };
+}
+
+export function prepareRotatingContractBlueprint(
+  p: Program,
+  offer: RotatingContract,
+  blueprintId: string,
+) {
+  const { blueprint, analysis, vehicle, error } = inspectRotatingBlueprint(p, offer, blueprintId);
+  if (error || !vehicle || !blueprint || !analysis) return { error, flight: null };
+
+  const instance = buildVehicleInstance(blueprint, analysis);
+  p.activeBlueprintId = blueprint.id;
+  const flight = initial(instance.stages, instance.payloadDryKg, instance.name, blueprint.parts);
+  prepare(p, "rotating", flight);
+  flight.cargo = offer.cargoKg;
+  p.activeRotating = structuredClone(offer);
+  p.contractVehicle = vehicle;
   return { error: "", flight };
 }
 
@@ -1524,6 +1833,20 @@ export function payLaunch(p: Program): string {
   if (p.paid) return "Flight already dispatched.";
   const issue = launchIssue(p, p.sortie);
   if (issue) return issue;
+  if (p.sortie === "rotating") {
+    const info = activeContractInfo(p);
+    if (!info) return "No rotating contract selected.";
+    const propellantSpent = Math.min(p.propellant, info.propellantCost);
+    p.credits -= info.hardwareCost;
+    p.propellant -= propellantSpent;
+    p.award = {
+      credits: info.credits,
+      research: info.research,
+      milestoneBonus: 0,
+    };
+    p.paid = true;
+    return "";
+  }
   const q = quote(p, p.sortie);
   const propellantSpent = Math.min(p.propellant, q.propellantCost);
   p.credits -= q.hardwareCost;
@@ -1619,14 +1942,69 @@ export function contractTasks(p: Program, f: Flight): ContractTask[] {
           remainingSeconds: Math.max(0, Math.ceil(LEO_PASS_SECONDS - elapsed)) },
       ];
     }
+    case "rotating": {
+      const offer = p.activeRotating;
+      if (!offer) return [];
+      const tasks: ContractTask[] = [];
+      const { pe, ap } = orbit(f);
+      if (offer.precisionBandM) {
+        const { min, max } = offer.precisionBandM;
+        const inBand = f.status === "flying" && stable(f) && pe >= min && ap <= max;
+        const elapsed = inBand && p.leoPassStartSec !== null ? Math.max(0, f.t - p.leoPassStartSec) : 0;
+        tasks.push(
+          { name: `Hold ${Math.round(min / 1000)}–${Math.round(max / 1000)} km orbit`, done: inBand },
+          {
+            name: "Maintain for one pass",
+            done: elapsed >= LEO_PASS_SECONDS,
+            remainingSeconds: Math.max(0, Math.ceil(LEO_PASS_SECONDS - elapsed)),
+          },
+        );
+      } else {
+        if (offer.targetPeM !== undefined) {
+          tasks.push(
+            { name: "Establish stable orbit", done: f.orbitEarned },
+            { name: `Hold periapsis ≥ ${Math.round(offer.targetPeM / 1000)} km`, done: pe >= offer.targetPeM },
+          );
+        }
+        if (offer.targetApM !== undefined) {
+          const done = offer.targetPeM !== undefined ? ap >= offer.targetApM : f.maxAlt >= offer.targetApM;
+          tasks.push({ name: `Reach Ap ≥ ${Math.round(offer.targetApM / 1000)} km`, done });
+        }
+      }
+      if (offer.requireMoonSoi) {
+        tasks.push({ name: "Enter lunar influence", done: Boolean(f.moonVisited || f.body === "moon") });
+      }
+      if (offer.requireMoonLanding) {
+        tasks.push({ name: "Land on the Moon", done: f.body === "moon" && f.status === "landed" });
+      }
+      if (offer.requireLanding) {
+        tasks.push({ name: "Land safely on Earth", done: f.body === "earth" && f.status === "landed" });
+      }
+      if (offer.minFuelFrac !== undefined) {
+        const st = stagesOf(f);
+        const cap = st[f.stage]?.fuel ?? 0;
+        const frac = cap > 0 ? f.fuel[f.stage] / cap : 0;
+        tasks.push({
+          name: `Keep ≥ ${Math.round(offer.minFuelFrac * 100)}% fuel reserve`,
+          done: frac >= offer.minFuelFrac,
+        });
+      }
+      if (offer.maxTimeSec !== undefined) {
+        tasks.push({
+          name: `Finish within ${formatDuration(offer.maxTimeSec)}`,
+          done: f.t <= offer.maxTimeSec,
+        });
+      }
+      return tasks;
+    }
   }
 }
 
 export function contractConditionMet(p: Program, f: Flight): boolean {
   const tasks = contractTasks(p, f);
-  if (p.sortie === "leo") {
+  if (p.sortie === "leo" || (p.sortie === "rotating" && p.activeRotating?.precisionBandM)) {
     // Only the simulation advances or resets the pass, even when the HUD is closed.
-    if (tasks[0].done) p.leoPassStartSec ??= f.t;
+    if (tasks[0]?.done) p.leoPassStartSec ??= f.t;
     else p.leoPassStartSec = null;
   }
   return tasks.length > 0 && tasks.every(task => task.done);
@@ -1648,22 +2026,30 @@ export function settle(p: Program, f: Flight): string {
   const prevCredits = p.credits;
   p.credits = Math.max(p.credits, Math.min(p.credits + totalCredits, caps.credits));
   p.research = Math.max(0, p.research + booked.research);
+  p.rewarded = true;
+  const gainedC = p.credits - prevCredits;
+  const capNote = gainedC < totalCredits ? " (capped)" : "";
+  if (job === "rotating") {
+    const offerName = p.activeRotating?.name ?? "Rotating contract";
+    const offerId = p.activeRotating?.id;
+    if (offerId && p.rotatingBoard) {
+      p.rotatingBoard.offers = p.rotatingBoard.offers.filter((o) => o.id !== offerId);
+    }
+    return `${offerName} complete · +${gainedC.toLocaleString("en-US")} C${capNote} · +${booked.research} RD`;
+  }
   p.completed[job] = (p.completed[job] ?? 0) + 1;
   p.milestones.firstSounding ||= job === "sounding";
   p.milestones.firstKarman ||= job === "hop";
   p.milestones.firstOrbit ||= job === "orbit";
-  p.rewarded = true;
   p.activeContracts = p.activeContracts.filter((j) => j !== job);
   p.contractCooldowns = {
     ...(p.contractCooldowns ?? {}),
     [job]: Date.now() + contractCooldownSec(p, job) * 1000,
   };
-  const gainedC = p.credits - prevCredits;
   if (report) {
     report.creditsAwarded = gainedC;
     report.researchAwarded = booked.research;
   }
-  const capNote = gainedC < totalCredits ? " (capped)" : "";
   return `${CONTRACTS[job].name} complete · +${gainedC.toLocaleString("en-US")} C${capNote} · +${booked.research} RD`;
 }
 
@@ -1737,7 +2123,7 @@ export function validProgram(value: unknown, f: Flight): value is Program {
     typeof p.milestones.firstSounding !== "boolean" ||
     typeof p.milestones.firstKarman !== "boolean" ||
     typeof p.milestones.firstOrbit !== "boolean" ||
-    !(p.sortie === "practice" || Object.hasOwn(CONTRACTS, p.sortie)) ||
+    !(p.sortie === "practice" || p.sortie === "rotating" || Object.hasOwn(CONTRACTS, p.sortie)) ||
     typeof p.paid !== "boolean" ||
     typeof p.rewarded !== "boolean" ||
     !Array.isArray(p.blueprints) ||
@@ -1795,12 +2181,39 @@ export function validProgram(value: unknown, f: Flight): value is Program {
     (p.sortie !== "sounding" || !validCustomVehicle(vehicle, CONTRACTS.sounding.cargo))
   ) return false;
 
+  if (p.sortie === "rotating" && !isValidRotatingContract(p.activeRotating)) {
+    return false;
+  }
+  if (p.activeRotating !== undefined && !isValidRotatingContract(p.activeRotating)) {
+    return false;
+  }
+  if (p.rotatingBoard !== undefined) {
+    const rb = p.rotatingBoard;
+    if (
+      !rb ||
+      !Array.isArray(rb.offers) ||
+      !rb.offers.every(isValidRotatingContract) ||
+      typeof rb.nextRefreshAtMs !== "number" ||
+      !Number.isFinite(rb.nextRefreshAtMs) ||
+      !natural(rb.freeRerollsUsed) ||
+      !natural(rb.rerollCount)
+    )
+      return false;
+  }
+
+  const expectedCargo =
+    p.sortie === "practice"
+      ? 0
+      : p.sortie === "rotating"
+        ? (p.activeRotating?.cargoKg ?? -1)
+        : CONTRACTS[p.sortie].cargo;
+
   const stagedContractVehicle = p.contractVehicle;
   if (
     stagedContractVehicle !== undefined &&
     (p.sortie === "practice" ||
       p.sortie === "sounding" ||
-      !validCustomVehicle(stagedContractVehicle, CONTRACTS[p.sortie].cargo))
+      !validCustomVehicle(stagedContractVehicle, expectedCargo))
   ) return false;
 
   const report = p.soundingReport;
@@ -1816,8 +2229,6 @@ export function validProgram(value: unknown, f: Flight): value is Program {
       !natural(report.researchAwarded))
   ) return false;
 
-  const expectedCargo =
-    p.sortie === "practice" ? 0 : CONTRACTS[p.sortie].cargo;
   if (f.cargo !== expectedCargo) return false;
 
   if (p.paid) {
@@ -1833,5 +2244,6 @@ export function validProgram(value: unknown, f: Flight): value is Program {
 
   if (p.sortie === "practice") return !p.paid && !p.rewarded;
   if (p.paid !== (f.status !== "pad")) return false;
+  if (p.sortie === "rotating") return !p.rewarded || p.paid;
   return !p.rewarded || (p.paid && p.completed[p.sortie] > 0);
 }
