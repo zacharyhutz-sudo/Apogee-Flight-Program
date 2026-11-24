@@ -53,6 +53,7 @@ interface Props {
   placing: Kind | null;
   movingFrom?: Tile | null;
   onTile: (t: Tile) => void;
+  guideFoundries?: boolean;
   collectBurst?: CollectBurst | null;
   zoom?: number;
   recenter?: number;
@@ -592,6 +593,13 @@ export function EarthScene(props: Props) {
 
         this.marker.clear();
         this.ghost.setVisible(false);
+        if (p.guideFoundries) {
+          for (const b of p.program.buildings.filter(b => b.kind === "foundry")) {
+            const pos = project(b.x, b.y);
+            this.marker.lineStyle(2, 0xffcf79, 1)
+              .strokeCircle(pos.x, pos.y - 42 - b.level * 2 + bob, 16);
+          }
+        }
         if (p.placing) {
           for (let tx = 0; tx < SIZE; tx++)
             for (let ty = 0; ty < SIZE; ty++) {

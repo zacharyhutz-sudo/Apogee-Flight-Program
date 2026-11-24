@@ -1,3 +1,5 @@
+import { flightPrompt } from "./miloFlight";
+import { MiloGuide } from "./MiloGuide";
 import { Dialog } from "./Dialog";
 import { CloudSyncPanel } from "./CloudSyncPanel";
 import { LaunchSite } from "./LaunchSite";
@@ -374,8 +376,9 @@ export default function App() {
           ? "Stage"
           : primaryLabel();
 
+  const radio = m.loaded && !dialog ? flightPrompt(m.mission, m.paused) : null;
   const instrument = (label: string, value: string, unit: string) => (
-    <div className="meter" key={label}>
+    <div className="meter" key={label} data-milo-focus={label === "ALT" && radio?.target === "altitude"}>
       <span>{label}</span>
       <strong>
         {value}
@@ -458,6 +461,7 @@ export default function App() {
               <button
                 className="insignia"
                 aria-label="Earth launch site"
+                data-milo-focus={radio?.target === "base"}
                 title="Base"
                 onClick={m.visitSite}
               >
@@ -509,6 +513,7 @@ export default function App() {
               {flying && (
                 <button
                   aria-label={m.paused ? "Resume" : "Pause"}
+                  data-milo-focus={radio?.target === "resume"}
                   title={m.paused ? "Resume" : "Pause"}
                   onClick={m.togglePause}
                 >
@@ -554,7 +559,7 @@ export default function App() {
                 </>
               )}
               {!pad && (
-                <div className="meter fuel-meter">
+                <div className="meter fuel-meter" data-milo-focus={radio?.target === "fuel"}>
                   <span>S{s.stage + 1} fuel</span>
                   <strong>{Math.ceil(fuelPct)}<small>%</small></strong>
                   <div className="fuel-track" aria-hidden="true">
@@ -565,8 +570,13 @@ export default function App() {
             </div>
           )}
 
+          {radio && <div className="flight-milo"><MiloGuide
+            dismissLabel={sortie === "hop" ? "Dismiss staging lesson" : "Hide tutorial"}
+            dismiss={() => m.updateTutorial(sortie === "hop" ? { stagingSeen: true } : { status: "off" })}>
+            {radio.text}
+          </MiloGuide></div>}
           <div className="hud-bottom">
-            <label className="thrust">
+            <label className="thrust" data-milo-focus={radio?.target === "throttle"}>
               <span className="control-label">Thr</span>
               <b>{Math.round(s.throttle * 100)}%</b>
               <input
@@ -649,6 +659,7 @@ export default function App() {
 
                 <button
                   className="primary"
+                  data-milo-focus={radio?.target === "command"}
                   aria-label={primaryLabel()}
                   disabled={
                     !m.loaded || lowThrust || (flying && !booster && !fuelPct)
@@ -684,7 +695,7 @@ export default function App() {
           </div>
         </div>
 
-        {m.notice && (
+        {m.notice && !(radio && m.notice.startsWith(CONTRACTS.sounding.name + " complete")) && (
           <div className="notice" role="alert">
             <TriangleAlert size={16} />
             {m.notice}

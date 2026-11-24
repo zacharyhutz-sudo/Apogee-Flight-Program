@@ -30,7 +30,33 @@ export interface Entry {
   text: string;
 }
 
+export interface Tutorial {
+  status: "welcome" | "active" | "complete" | "off";
+  collectionTip: boolean;
+  workshop: "offer" | "picker" | "done";
+  stagingSeen: boolean;
+}
+
+function tutorialDefaults(status: Tutorial["status"]): Tutorial {
+  return { status, collectionTip: false, workshop: "offer", stagingSeen: false };
+}
+
+function readTutorial(raw: unknown): Tutorial {
+  // Older programs can invite Milo from Earth. Never interrupt their current flight.
+  if (!record(raw)) return tutorialDefaults("off");
+  const { status, collectionTip, workshop, stagingSeen } = raw;
+  if (status !== "welcome" && status !== "active" && status !== "complete" && status !== "off")
+    return tutorialDefaults("off");
+  return {
+    status,
+    collectionTip: collectionTip === true,
+    workshop: workshop === "picker" || workshop === "done" ? workshop : "offer",
+    stagingSeen: stagingSeen === true,
+  };
+}
+
 export interface Snapshot {
+  tutorial: Tutorial;
   version: 7;
   program: Program;
   revision: number;
@@ -40,6 +66,7 @@ export interface Snapshot {
 }
 
 export const fresh = (): Snapshot => ({
+  tutorial: tutorialDefaults("welcome"),
   version: 7,
   program: startProgram(),
   revision: 0,
@@ -311,6 +338,7 @@ export function validate(raw: unknown): Snapshot {
     version: 7,
     program,
     flight: f,
+    tutorial: readTutorial(raw.tutorial),
     view: raw.view as Snapshot["view"],
     log: structuredClone(raw.log) as Entry[],
     revision: Number(raw.revision),

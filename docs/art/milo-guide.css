@@ -1,64 +1,72 @@
-/* Phase 1: a passive portrait, outside the simulator's React state.
-   The page shell owns this markup so source and static builds share it.
-   CSS follows the current screen without a timer or DOM observer. */
-.milo-guide {
-  --milo-size: 112px;
-  display: none;
-  position: fixed;
-  top: calc(clamp(10px, 2.2vmin, 20px) + env(safe-area-inset-top) + 62px);
-  left: calc(clamp(10px, 2.2vmin, 20px) + env(safe-area-inset-left));
-  width: var(--milo-size);
-  margin: 0;
-  gap: 2px;
-  justify-items: center;
-  pointer-events: none;
-  user-select: none;
-  z-index: 1;
+.milo-card, .milo-invite {
+  --signal: #ffd18a;
+  color: #f6f1e6;
+  background: #152631;
+  border: 2px solid #597785;
+  border-left: 4px solid var(--signal);
+  border-radius: 5px;
+  box-shadow: 0 3px 0 #091118, 0 5px 14px #06101842;
+  text-align: left;
 }
-
-/* Keep the welcome face on Earth range and clear it while inspecting or
-   placing a facility, or while any dialog is open. */
-body:has(.site-game):not(:has(.inspector, dialog[open])) > .milo-guide {
-  display: grid;
+.milo-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 9px;
+  max-width: 100%;
+  box-sizing: border-box;
+  font: 500 14px/1.3 var(--font-ui, system-ui);
 }
-
-.milo-guide__face {
+.milo-face {
+  flex: none;
   display: block;
-  width: var(--milo-size);
-  height: var(--milo-size);
+  width: 46px;
+  height: 46px;
   background: url("./milo-voss.png") 0 0 / 200% 200% no-repeat;
   image-rendering: pixelated;
   animation: milo-blink 4.6s step-end infinite;
 }
-
-.milo-guide figcaption {
-  box-sizing: border-box;
-  max-width: 100%;
-  padding: 5px 7px;
-  border: 1px solid #506782;
-  border-bottom: 3px solid #070b10;
-  border-radius: 3px;
-  background: #111a26;
-  color: #f4efe6;
-  font: 500 11px/1.3 var(--font-mono, ui-monospace, monospace);
-  letter-spacing: .025em;
-  white-space: nowrap;
-}
-
-/* The 2 x 2 atlas runs open -> half -> closed -> half -> open.
-   Most of the loop is a still, open-eyed face. */
 @keyframes milo-blink {
-  0%, 79%, 86%, 100% { background-position: 0 0; }
-  80% { background-position: 100% 0; }
-  82% { background-position: 0 100%; }
-  84% { background-position: 100% 100%; }
+  0%,79%,86%,100% {background-position:0 0}
+  80% {background-position:100% 0}
+  82% {background-position:0 100%}
+  84% {background-position:100% 100%}
 }
-
-@media (max-width: 600px), (max-height: 475px) {
-  .milo-guide { --milo-size: 88px; }
-  .milo-guide figcaption { font-size: 10px; padding-inline: 5px; }
+.milo-copy { flex: 1; min-width: 0; }
+.milo-copy > strong { display:block; color: var(--signal); font: 700 11px/1.3 var(--font-mono, monospace); }
+.milo-card .milo-copy p { margin: 3px 0 0; color: #f6f1e6; font: inherit; }
+.milo-actions { display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
+.milo-card button { min-height:44px; pointer-events:auto; }
+.milo-card .milo-close { flex:none; width:44px; min-width:44px; padding:0; color:#d9e3e3; background:transparent; box-shadow:none; border:0; }
+.site-milo { position:absolute; z-index:2; left:var(--l); bottom:calc(var(--b) + 73px); width:min(348px, calc(100% - var(--l) - var(--r))); pointer-events:none; }
+.site-milo .milo-actions, .site-milo button { pointer-events:auto; }
+button.milo-invite { display:inline-flex; align-items:center; gap:5px; padding:0 8px 0 2px; min-height:44px; color:#f6f1e6; background:#152631; }
+.milo-invite .milo-face {width:36px; height:36px;}
+.flight-milo { position:relative; z-index:2; margin-top:6px; width:min(320px,100%); pointer-events:none; }
+.flight-milo .milo-face { width:30px; height:30px; }
+.flight-milo .milo-card { align-items:center; padding:4px 6px; font-size:13px; }
+.flight-milo .milo-close { pointer-events:auto; }
+dialog .milo-card, .inspector .milo-card { margin:6px 0; }
+.workshop-game > .milo-card { flex:none; align-self:stretch; }
+[data-milo-focus="true"] { outline: 2px solid #ffcf79 !important; outline-offset:-3px; box-shadow:inset 0 0 0 4px #4c371c !important; }
+@media (max-height:475px) and (orientation:landscape) {
+  .site-milo { left:auto; right:var(--r); width:min(44%,340px); }
+  .flight-milo { width:min(36vw,320px); }
+  .milo-card { padding:4px 6px; gap:5px; font-size:13px; }
+  .workshop-game > .milo-card .milo-face { width:32px; height:32px; }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .milo-guide__face { animation: none; background-position: 0 0; }
+@media (prefers-reduced-motion:reduce) { .milo-face {animation:none;} }
+.site-milo .milo-card:has(.primary) .milo-face { width:62px; height:62px; }
+.site-dock button[data-milo-focus="true"], .command-card button[data-milo-focus="true"] { position:relative; }
+.site-dock button[data-milo-focus="true"]::after, .command-card button[data-milo-focus="true"]::after {
+  content:"";
+  position:absolute;
+  pointer-events:none;
+  width:16px;
+  height:11px;
+  left:calc(50% - 8px);
+  top:-15px;
+  background:#ffd18a;
+  clip-path:polygon(0 0,100% 0,100% 32%,75% 32%,75% 63%,60% 63%,60% 100%,40% 100%,40% 63%,25% 63%,25% 32%,0 32%);
 }

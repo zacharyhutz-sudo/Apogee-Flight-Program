@@ -64,6 +64,7 @@ import {
   type Program,
 } from "../program/program";
 import type { useMission } from "./useMission";
+import { MiloGuide } from "./MiloGuide";
 import { Dialog } from "./Dialog";
 import { CloudSyncPanel } from "./CloudSyncPanel";
 import { SoundingReport } from "./SoundingReport";
@@ -268,6 +269,7 @@ export function LaunchSite({
     const result = m.editSite(placing, selected, movingFrom);
     if (result) M(result);
     else {
+      if (buildingLesson && placing === "foundry" && !movingFrom) S(null);
       G(null);
       setMovingFrom(null);
       M("");
@@ -307,6 +309,56 @@ export function LaunchSite({
   function showPanel(v: "build" | "board" | "cloud") {
     cancel();
     P(v);
+  }
+
+  const tutorial = m.mission.tutorial;
+  const touring = m.loaded && tutorial.status === "active";
+  const needsFlight = touring && !p.milestones.firstSounding;
+  const resumeFlight = needsFlight && p.sortie === "sounding" &&
+    (flight.status === "pad" || flight.status === "flying");
+  const buildingLesson = touring && p.milestones.firstSounding;
+  const hasTwoFoundries = countBuilt(p, "foundry") >= 2;
+  const secondCost = extraBuildCost("foundry");
+  const shortage = costShortfall(p, secondCost);
+  const collectTip = tutorial.status === "complete" && tutorial.collectionTip &&
+    p.collectors.credits >= 1 && p.credits < caps.credits;
+  const skipTour = () => m.updateTutorial({ status: "off", collectionTip: false });
+  const finishTour = () => m.updateTutorial({ status: "complete", collectionTip: true });
+
+  function siteGuide() {
+    if (!m.loaded) return null;
+    if (tutorial.status === "welcome")
+      return <MiloGuide title="Milo Voss · Range crew" actions={<>
+        <button className="primary" onClick={() => m.updateTutorial({ status: "active" })}>Let’s fly</button>
+        <button onClick={skipTour}>Skip tutorial</button>
+      </>}>See that pad? Let’s put something in the sky.</MiloGuide>;
+    if (needsFlight)
+      return <MiloGuide dismiss={skipTour}>{resumeFlight
+        ? "Your sounding rocket is ready on the flight deck. Tap Pad to return."
+        : "Open Contracts. I’ve lined up a first flight for us."}</MiloGuide>;
+    if (buildingLesson && hasTwoFoundries)
+      return <MiloGuide actions={<button className="primary" onClick={finishTour}>Got it</button>}>
+        Two foundries on the range! When a credit badge appears, tap either foundry to collect.
+      </MiloGuide>;
+    if (buildingLesson)
+      return <MiloGuide actions={<button onClick={() => {
+        if (placing === "foundry" && !movingFrom) cancel();
+        finishTour();
+      }}>Keep my resources</button>} dismiss={skipTour}>
+        {shortage ? shortage + " You can save this build for later."
+          : placing === "foundry" && !movingFrom
+            ? "Pick an open plot or use the one marked on the map. Tap Confirm to build."
+            : "Open Build and choose Solar Foundry. A second one earns credits faster."}
+      </MiloGuide>;
+    if (collectTip)
+      return <MiloGuide dismissLabel="Dismiss collection tip" dismiss={() => m.updateTutorial({ collectionTip: false })}>
+        Credits ready! Tap the gold badge over a Solar Foundry to move them into your bank.
+      </MiloGuide>;
+    if (selected) return null;
+    return <button className="milo-invite" aria-label="Ask Milo for guidance"
+      onClick={() => m.updateTutorial({ status: "active" })}>
+      <span className="milo-face" aria-hidden="true" />Ask Milo
+    </button>;
   }
 
   const nowMs = Date.now();
@@ -358,6 +410,7 @@ export function LaunchSite({
         movingFrom={movingFrom}
         onTile={chooseTile}
         collectBurst={burst}
+        guideFoundries={m.loaded && collectTip && !panel && !placing}
       />
       <div className="site-vignette" />
       <div className="site-hud">
@@ -432,6 +485,7 @@ export function LaunchSite({
               </button>
             </header>
 
+            {!panel && siteGuide()}
             {placing ? (
               <>
                 <p>{clearing ? (clearShortfall || "Clear this tile to continue.") : issue || buildShortfall || "Tap an open plot to place."}</p>
@@ -440,6 +494,7 @@ export function LaunchSite({
                   {clearing ? clearButton : <button
                     className="primary"
                     disabled={Boolean(issue || buildShortfall) || buttonsDisabled}
+                    data-milo-focus={buildingLesson && placing === "foundry" && !movingFrom && !issue && !buildShortfall}
                     onClick={confirmPlacement}
                   >
                     <Check />
@@ -579,7 +634,7 @@ export function LaunchSite({
               Moon
             </button>
           )}
-          <button className="secondary" disabled={buttonsDisabled} onClick={() => showPanel("build")}>
+          <button className="secondary" data-milo-focus={!panel && buildingLesson && !hasTwoFoundries && !placing && !shortage} disabled={buttonsDisabled} onClick={() => showPanel("build")}>
             <Building2 />
             Build
           </button>
@@ -595,12 +650,14 @@ export function LaunchSite({
           <button
             className="primary"
             disabled={buttonsDisabled}
+            data-milo-focus={!panel && needsFlight && !resumeFlight}
             onClick={() => showPanel("board")}
           >
             <ClipboardList />
             Contracts
           </button>
           <button
+            data-milo-focus={!panel && resumeFlight}
             aria-label="Flight deck"
             disabled={buttonsDisabled}
             onClick={onFlight}
@@ -610,6 +667,8 @@ export function LaunchSite({
           </button>
         </div>
       </div>
+
+      {!panel && !selected && <div className="site-milo">{siteGuide()}</div>}
 
       {m.notice && (
         <div className="site-toast" role="status">
@@ -638,6 +697,9 @@ export function LaunchSite({
         >
           {panel === "board" && (
             <>
+              {needsFlight && <MiloGuide dismiss={skipTour}>
+                The sponsor supplies the rocket. We supply the fuel. Pick Atmospheric Sounding and tap Fly to stage it.
+              </MiloGuide>}
               <div className="contract-list">
                 {CONTRACT_JOBS.map((job) => {
                   const c = CONTRACTS[job];
@@ -705,6 +767,7 @@ export function LaunchSite({
                         <button
                           className={!reason ? "primary" : ""}
                           disabled={Boolean(reason)}
+                          data-milo-focus={needsFlight && job === "sounding" && !reason}
                           aria-label={"Accept " + c.name}
                           onClick={() => pick(job)}
                         >
@@ -736,6 +799,9 @@ export function LaunchSite({
 
           {panel === "build" && (
             <div className="facilities-groups">
+              {buildingLesson && !hasTwoFoundries && <MiloGuide dismiss={skipTour}>
+                Choose Solar Foundry under Resources &amp; Storage. The second one costs {price(secondCost)}.
+              </MiloGuide>}
               <div className="crew-banner">
                 <span>Engineering Crews</span>
                 <strong>
@@ -761,6 +827,7 @@ export function LaunchSite({
                       return (
                         <button
                           key={k}
+                          data-milo-focus={buildingLesson && k === "foundry" && canBuildExtra}
                           aria-label={
                             canBuildExtra
                               ? `Build 2nd ${FACILITIES[k].name}`
@@ -812,6 +879,9 @@ export function LaunchSite({
 
           {panel === "replace" && (
             <>
+              {needsFlight && pending === "sounding" && <MiloGuide dismiss={skipTour}>
+                Prepare flight retires the previous vehicle and rolls your sounding rocket onto the pad.
+              </MiloGuide>}
               <p>
                 Retire the active vehicle and stage{" "}
                 {pending === "practice"

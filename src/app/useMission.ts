@@ -43,6 +43,7 @@ import {
   readSave,
   writeSave,
   type Snapshot,
+  type Tutorial,
 } from "../persistence/save";
 import {
   getCloudSession,
@@ -199,11 +200,19 @@ export function useMission() {
     refresh();
   }
 
+  function updateTutorial(patch: Partial<Tutorial>) {
+    if (!ready.current) return;
+    Object.assign(mission.current.tutorial, patch);
+    save();
+    refresh();
+  }
+
   function collectFacility(kind: Kind) {
     if (!ready.current)
       return { collected: 0, resource: null as "credits" | "propellant" | null, reason: "" };
     const res = collectFromBuilding(mission.current.program, kind);
     if (res.collected > 0) {
+      if (kind === "foundry") mission.current.tutorial.collectionTip = false;
       save();
       refresh();
     } else if (res.reason) {
@@ -329,6 +338,8 @@ export function useMission() {
     if (stage(vessel.current)) {
       if (rate.current >= 100 && !canHighWarp(vessel.current)) rate.current = canWarp(vessel.current) ? 20 : 1;
     if (rate.current > 1 && !canWarp(vessel.current) && !(rate.current === 3 && canChuteWarp(vessel.current))) rate.current = 1;
+      if (mission.current.program.sortie === "hop" && mission.current.tutorial.status !== "off")
+        mission.current.tutorial.stagingSeen = true;
       log("Booster separated. Orbital stage selected.");
       save();
       refresh();
@@ -477,6 +488,11 @@ export function useMission() {
 
   function visitSite() {
     if (!ready.current) return;
+    // Milo has already read this payout in flight. Clear its duplicate before
+    // the Earth scene puts a tappable collector badge beneath the toast.
+    const { program, tutorial } = mission.current;
+    if (tutorial.status === "active" && program.sortie === "sounding" && program.rewarded)
+      setNotice(current => current.startsWith(CONTRACTS.sounding.name + " complete") ? "" : current);
     if (vessel.current.status === "flying") paused.current = true;
     rate.current = 1;
     change(() => {
@@ -736,6 +752,7 @@ export function useMission() {
     rate: rate.current,
     change,
     collectFacility,
+    updateTutorial,
     launch,
     launchFreeSim,
     openWorkshop,

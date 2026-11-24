@@ -26,6 +26,7 @@ import {
   type RocketBlueprint,
 } from "../program/workshop";
 import { getFacilityLimits } from "../program/program";
+import { MiloGuide } from "./MiloGuide";
 import { Dialog } from "./Dialog";
 import {
   PartPixelThumb,
@@ -54,6 +55,10 @@ export function Workshop({
   onSite: () => void;
 }) {
   const p = m.mission.program;
+  const tutorial = m.mission.tutorial;
+  const lesson = m.loaded && (tutorial.status === "active" || tutorial.status === "complete") &&
+    tutorial.workshop !== "done";
+  const dismissLesson = () => m.updateTutorial({ workshop: "done" });
   const limits = getFacilityLimits(p);
   const activeBp =
     p.blueprints.find((b) => b.id === p.activeBlueprintId) ?? p.blueprints[0];
@@ -205,6 +210,7 @@ export function Workshop({
     setSaveDialogOpen(false);
     setSelectedUid(null);
     setNotice("");
+    if (lesson) m.updateTutorial({ workshop: "picker" });
     setSavedMsg(`Saved "${clean}" to rocket designs.`);
   }
 
@@ -284,10 +290,12 @@ export function Workshop({
 
         <div className="bp-picker">
           <select
+            data-milo-focus={lesson && tutorial.workshop === "picker"}
             aria-label="Select blueprint"
             value={activeBp.id}
             onChange={(e) => {
               m.selectBlueprint(e.target.value);
+              if (lesson && tutorial.workshop === "picker") dismissLesson();
               setSelectedUid(null);
               setNotice("");
               setSavedMsg("");
@@ -301,6 +309,7 @@ export function Workshop({
           </select>
           <button
             className="save-bp-btn"
+            data-milo-focus={lesson && tutorial.workshop === "offer"}
             aria-label="Save rocket design"
             title="Save rocket design"
             onClick={openSaveDialog}
@@ -317,6 +326,10 @@ export function Workshop({
         </div>
       </header>
 
+      {lesson && !saveDialogOpen && <MiloGuide dismissLabel="Dismiss design lesson" dismiss={dismissLesson}>
+        {tutorial.workshop === "picker" ? "Your saved design is selected above. Open the dropdown to switch rockets."
+          : "Like this design? Tap the save icon beside its name to keep a named copy."}
+      </MiloGuide>}
       <div className="vab-metrics" aria-label="Vehicle engineering readouts">
         <div className="vab-stat">
           <span>MASS</span>
@@ -639,6 +652,10 @@ export function Workshop({
 
       {saveDialogOpen && (
         <Dialog title="Save Rocket Design" close={() => setSaveDialogOpen(false)}>
+          {lesson && <MiloGuide dismissLabel="Dismiss design lesson" dismiss={dismissLesson}>
+            {p.blueprints.length < MAX_BLUEPRINTS ? "Give the rocket a name and choose Save as New."
+              : "All design slots are full. Update Current to keep changes to this design."}
+          </MiloGuide>}
           <form className="save-bp-form" onSubmit={saveAsNewDesign}>
             <label className="save-bp-label" htmlFor="bp-name-input">
               Design Name
@@ -675,6 +692,7 @@ export function Workshop({
 
             <div className="dialog-actions">
               <button
+                data-milo-focus={lesson && p.blueprints.length < MAX_BLUEPRINTS}
                 type="submit"
                 className="primary"
                 disabled={p.blueprints.length >= MAX_BLUEPRINTS}
