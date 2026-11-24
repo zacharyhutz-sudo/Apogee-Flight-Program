@@ -358,11 +358,25 @@ export function LaunchSite({
       return <MiloGuide dismissLabel="Dismiss collection tip" dismiss={() => m.updateTutorial({ collectionTip: false })}>
         Credits ready! Tap the gold badge over a Solar Foundry to move them into your bank.
       </MiloGuide>;
-    if (selected || tutorial.status !== "off") return null;
-    return <button className="milo-invite" aria-label="Ask Milo for guidance"
-      onClick={() => m.updateTutorial({ status: "active" })}>
-      <span className="milo-face" aria-hidden="true" />Ask Milo
-    </button>;
+    if (selected || tutorial.status !== "off" || tutorial.hideInvite) return null;
+    return (
+      <div className="milo-invite">
+        <button
+          className="milo-invite-open"
+          aria-label="Ask Milo for guidance"
+          onClick={() => m.updateTutorial({ status: "active", hideInvite: false })}
+        >
+          <span className="milo-face" aria-hidden="true" />Ask Milo
+        </button>
+        <button
+          className="milo-close milo-invite-close"
+          aria-label="Remove Ask Milo button"
+          onClick={() => m.updateTutorial({ status: "off", collectionTip: false, hideInvite: true })}
+        >
+          <X size={16} />
+        </button>
+      </div>
+    );
   }
 
   const nowMs = Date.now();

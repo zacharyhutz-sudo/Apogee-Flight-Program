@@ -15,7 +15,7 @@ test("new programs welcome Milo, older saves opt in and each lesson survives exp
   assert.equal(corrupt.tutorial.status, "off");
   assert.deepEqual(corrupt.program, validate(s).program);
   for (const status of ["welcome", "active", "complete", "off"]) {
-    Object.assign(s.tutorial, { status, workshop: "picker", stagingSeen: true, collectionTip: true });
+    Object.assign(s.tutorial, { status, workshop: "picker", stagingSeen: true, collectionTip: true, hideInvite: status === "off" });
     assert.deepEqual(validate(s).tutorial, s.tutorial);
   }
 });

@@ -993,7 +993,7 @@ export function collectResource(
       return {
         state,
         collected: 0,
-        reason: "Credit storage full — upgrade Contract Office or spend Credits.",
+        reason: "Credit storage full — upgrade Credit Bank to store more credits.",
       };
     }
     const take = Math.min(available, room);
@@ -1088,9 +1088,11 @@ export function canAffordUpgrade(
   const requiredCommandLevel =
     buildingId === "command"
       ? current
-      : current === 0 && def.tier === 2
-        ? 2
-        : Math.max(def.tier, targetLevel);
+      : buildingId === "bank"
+        ? Math.max(1, targetLevel - 1)
+        : current === 0 && def.tier === 2
+          ? 2
+          : Math.max(def.tier, targetLevel);
   const durationSec = current >= MAX_LEVEL ? 0 : upgradeDurationSec(buildingId, current);
 
   if (current >= MAX_LEVEL) {

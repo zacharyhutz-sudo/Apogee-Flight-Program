@@ -36,16 +36,17 @@ export interface Tutorial {
   collectionTip: boolean;
   workshop: "offer" | "picker" | "done";
   stagingSeen: boolean;
+  hideInvite: boolean;
 }
 
 function tutorialDefaults(status: Tutorial["status"]): Tutorial {
-  return { status, collectionTip: false, workshop: "offer", stagingSeen: false };
+  return { status, collectionTip: false, workshop: "offer", stagingSeen: false, hideInvite: false };
 }
 
 function readTutorial(raw: unknown): Tutorial {
   // Older programs can invite Milo from Earth. Never interrupt their current flight.
   if (!record(raw)) return tutorialDefaults("off");
-  const { status, collectionTip, workshop, stagingSeen } = raw;
+  const { status, collectionTip, workshop, stagingSeen, hideInvite } = raw;
   if (status !== "welcome" && status !== "active" && status !== "complete" && status !== "off")
     return tutorialDefaults("off");
   return {
@@ -53,6 +54,7 @@ function readTutorial(raw: unknown): Tutorial {
     collectionTip: collectionTip === true,
     workshop: workshop === "picker" || workshop === "done" ? workshop : "offer",
     stagingSeen: stagingSeen === true,
+    hideInvite: hideInvite === true,
   };
 }
 

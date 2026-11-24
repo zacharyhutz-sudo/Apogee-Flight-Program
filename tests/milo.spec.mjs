@@ -108,6 +108,21 @@ test("legacy programs opt in, skip silently, and learn to save a named rocket", 
   expect((await saved(page)).tutorial.workshop).toBe("done");
 });
 
+test("Ask Milo button can be removed without completing the tutorial", async ({ page }) => {
+  const s = fresh();
+  s.tutorial.status = "off";
+  await seed(page, s);
+  await page.goto("./");
+  await expect(button(page, "Ask Milo for guidance")).toBeVisible();
+  await button(page, "Remove Ask Milo button").click();
+  await expect(button(page, "Ask Milo for guidance")).toHaveCount(0);
+  const data = await saved(page);
+  expect(data.tutorial.status).toBe("off");
+  expect(data.tutorial.hideInvite).toBe(true);
+  await page.reload();
+  await expect(button(page, "Ask Milo for guidance")).toHaveCount(0);
+});
+
 test("a shortfall offers an exit without spending or repeating the payout", async ({page}) => {
   const s = launchSnapshot("sounding");
   for (let i = 0; i < 12000 && !s.program.rewarded; i++) { step(s.flight); settle(s.program, s.flight); }

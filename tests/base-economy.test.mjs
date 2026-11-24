@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clearObstacle, place, placement, reclaimCost, reclaimTile, startProgram,
-  terrain, tileTerrain, upgrade, upgradeCost } from "../src/program/program.ts";
+import { canAffordUpgrade, clearObstacle, collectResource, getStorageCaps, place, placement,
+  reclaimCost, reclaimTile, startProgram, terrain, tileTerrain, upgrade, upgradeCost } from "../src/program/program.ts";
 import { fresh, validate } from "../src/persistence/save.ts";
 
 test("old saves can clear a grove and rocks, build, reload and reclaim the coast independently", () => {
@@ -75,4 +75,31 @@ test("foundry purchases charge each resource once, preserve free moves and level
     assert.deepEqual([p.credits, p.propellant], [0, 0]);
   }
   assert.deepEqual(p.buildings.filter(b => b.kind === "foundry").map(b => b.level), [1, 4]);
+});
+
+test("credit bank can upgrade one level ahead of mission control and full-storage prompt names Credit Bank", () => {
+  const p = startProgram();
+  const cmd = p.buildings.find(b => b.kind === "command");
+  const bank = p.buildings.find(b => b.kind === "bank");
+
+  // Full credit storage prompt names Credit Bank
+  p.credits = getStorageCaps(p).credits;
+  p.collectors.credits = 100;
+  const fullRes = collectResource(p, "credits");
+  assert.equal(fullRes.collected, 0);
+  assert.equal(fullRes.reason, "Credit storage full — upgrade Credit Bank to store more credits.");
+
+  // MC Lv 1 allows Bank Lv 2 (1,400 C), blocks Bank Lv 3
+  p.credits = 1400;
+  assert.equal(canAffordUpgrade(p, "bank", 1).ok, true);
+  assert.equal(canAffordUpgrade(p, "bank", 2).ok, false);
+  assert.match(canAffordUpgrade(p, "bank", 2).reason, /Mission Control Lv 2/);
+
+  // MC Lv 2 allows Bank Lv 3 (6,000 C) so players can hold 24,000 C for MC Lv 3 (18,000 C)
+  cmd.level = 2;
+  bank.level = 2;
+  p.credits = 6000;
+  assert.equal(canAffordUpgrade(p, "bank", 2).ok, true);
+  assert.equal(canAffordUpgrade(p, "bank", 3).ok, false);
+  assert.match(canAffordUpgrade(p, "bank", 3).reason, /Mission Control Lv 3/);
 });
