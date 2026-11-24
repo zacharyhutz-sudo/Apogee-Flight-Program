@@ -78,6 +78,10 @@ test("Milo guides a new program through a paid flight, reload and a single found
   await island.click({ position: badge });
   await expect(guide(page)).toHaveCount(0);
   expect((await saved(page)).program.credits).toBeGreaterThan(150);
+  await expect(button(page, "Ask Milo for guidance")).toHaveCount(0);
+  await page.reload();
+  await expect(button(page, "Flight deck")).toBeEnabled();
+  await expect(button(page, "Ask Milo for guidance")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

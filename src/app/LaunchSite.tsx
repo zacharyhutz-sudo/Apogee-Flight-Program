@@ -354,7 +354,7 @@ export function LaunchSite({
       return <MiloGuide dismissLabel="Dismiss collection tip" dismiss={() => m.updateTutorial({ collectionTip: false })}>
         Credits ready! Tap the gold badge over a Solar Foundry to move them into your bank.
       </MiloGuide>;
-    if (selected) return null;
+    if (selected || tutorial.status !== "off") return null;
     return <button className="milo-invite" aria-label="Ask Milo for guidance"
       onClick={() => m.updateTutorial({ status: "active" })}>
       <span className="milo-face" aria-hidden="true" />Ask Milo
