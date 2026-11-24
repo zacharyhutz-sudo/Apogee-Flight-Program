@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canAffordUpgrade, clearObstacle, collectResource, getStorageCaps, place, placement,
+import { canAffordUpgrade, clearObstacle, collectResource, getStorageCaps,
+  inspectContractBlueprint, place, placement, prepareContractBlueprint,
   reclaimCost, reclaimTile, startProgram, terrain, tileTerrain, upgrade, upgradeCost } from "../src/program/program.ts";
 import { fresh, validate } from "../src/persistence/save.ts";
 
@@ -102,4 +103,21 @@ test("credit bank can upgrade one level ahead of mission control and full-storag
   assert.equal(canAffordUpgrade(p, "bank", 2).ok, true);
   assert.equal(canAffordUpgrade(p, "bank", 3).ok, false);
   assert.match(canAffordUpgrade(p, "bank", 3).reason, /Mission Control Lv 3/);
+});
+
+test("any contract can stage a custom VAB blueprint and survive save validation", () => {
+  const save = fresh();
+  const p = save.program;
+  p.credits = 2000;
+  p.propellant = 750;
+  const bpId = p.blueprints[0].id;
+  const check = inspectContractBlueprint(p, "hop", bpId);
+  assert.equal(check.error, "");
+  const staged = prepareContractBlueprint(p, "hop", bpId);
+  assert.equal(staged.error, "");
+  assert.ok(staged.flight);
+  save.flight = staged.flight;
+  const restored = validate(JSON.parse(JSON.stringify(save)));
+  assert.equal(restored.program.sortie, "hop");
+  assert.equal(restored.program.contractVehicle?.name, p.blueprints[0].name);
 });

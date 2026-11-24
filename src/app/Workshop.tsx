@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  ClipboardList,
   Coins,
   Copy,
   Flame,
@@ -10,11 +11,13 @@ import {
   Layers2,
   Lock,
   Plus,
+  Rocket,
   Save,
   Split,
   Trash2,
   TriangleAlert,
   Wrench,
+  X,
 } from "lucide-react";
 import {
   PARTS,
@@ -25,7 +28,13 @@ import {
   type PlacedPart,
   type RocketBlueprint,
 } from "../program/workshop";
-import { getFacilityLimits } from "../program/program";
+import {
+  CONTRACTS,
+  contractVehicle,
+  getFacilityLimits,
+  inspectContractBlueprint,
+  quote,
+} from "../program/program";
 import { MiloGuide } from "./MiloGuide";
 import { Dialog } from "./Dialog";
 import {
@@ -70,6 +79,22 @@ export function Workshop({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [dialogError, setDialogError] = useState("");
+  const [replaceTarget, setReplaceTarget] = useState<{ useBlueprint: boolean } | null>(null);
+
+  const contractJob = m.pendingContract;
+  const contractDef = contractJob ? CONTRACTS[contractJob] : null;
+  const contractQuote = contractJob
+    ? quote(p, contractJob, contractVehicle(p, contractJob))
+    : null;
+  const contractCheck = useMemo(
+    () => (contractJob ? inspectContractBlueprint(p, contractJob, activeBp.id) : null),
+    [contractJob, p, activeBp, p.credits, p.propellant],
+  );
+  const soundingGuide =
+    m.loaded &&
+    tutorial.status === "active" &&
+    !p.milestones.firstSounding &&
+    contractJob === "sounding";
 
   const analysis = useMemo(
     () => analyzeBlueprint(activeBp, limits),
@@ -246,6 +271,17 @@ export function Workshop({
     if (err) setNotice(err);
   }
 
+  function stageSelectedContract(useBlueprint: boolean, confirmed = false) {
+    if (!contractJob) return;
+    if (!confirmed && m.mission.flight.status !== "pad") {
+      setReplaceTarget({ useBlueprint });
+      return;
+    }
+    const err = m.stageContract(contractJob, useBlueprint ? activeBp.id : undefined);
+    setReplaceTarget(null);
+    if (err) setNotice(err);
+  }
+
   // Compute pixel-grid-aligned SVG stack geometry (top to bottom)
   const scalePx = 5.4;
   const centerParts = activeBp.parts.filter((pt) => {
@@ -326,7 +362,36 @@ export function Workshop({
         </div>
       </header>
 
-      {lesson && !saveDialogOpen && <MiloGuide dismissLabel="Dismiss design lesson" dismiss={dismissLesson}>
+      {contractDef && contractQuote && (
+        <section className="vab-contract-banner" aria-label="Selected contract">
+          <div className="vab-contract-info">
+            <div className="vab-contract-head">
+              <ClipboardList size={14} />
+              <strong>{contractDef.name}</strong>
+              <span className="vab-contract-payout">
+                +{contractQuote.credits.toLocaleString("en-US")} C · +{contractQuote.research} RD
+              </span>
+            </div>
+            <p>{contractDef.goal}</p>
+          </div>
+          <button
+            type="button"
+            className="vab-contract-clear"
+            aria-label="Clear selected contract"
+            onClick={m.clearPendingContract}
+          >
+            <X size={15} />
+          </button>
+        </section>
+      )}
+
+      {soundingGuide && !saveDialogOpen && (
+        <MiloGuide dismiss={() => m.updateTutorial({ status: "off", collectionTip: false })}>
+          Pick or build a rocket here, or tap Sponsored Rocket to launch for 0 credits.
+        </MiloGuide>
+      )}
+
+      {!soundingGuide && lesson && !saveDialogOpen && <MiloGuide dismissLabel="Dismiss design lesson" dismiss={dismissLesson}>
         {tutorial.workshop === "picker" ? "Your saved design is selected above. Open the dropdown to switch rockets."
           : "Like this design? Tap the save icon beside its name to keep a named copy."}
       </MiloGuide>}
@@ -557,10 +622,10 @@ export function Workshop({
         </div>
       )}
 
-      {(analysis.warnings.length > 0 || notice) && (
+      {(analysis.warnings.length > 0 || notice || contractCheck?.error) && (
         <div className="vab-warnings" role="status">
           <TriangleAlert size={14} />
-          <span>{notice || analysis.warnings[0].message}</span>
+          <span>{notice || contractCheck?.error || analysis.warnings[0].message}</span>
         </div>
       )}
 
@@ -622,33 +687,112 @@ export function Workshop({
       </section>
 
       <footer className="vab-actions">
-        <button
-          className="sim-btn"
-          disabled={!analysis.canSimulate}
-          onClick={() => launchMode("practice")}
-        >
-          <Wrench size={16} />
-          Simulate Free
-        </button>
-        <button
-          className="primary launch-btn"
-          aria-label={`Launch · ${analysis.hardwareCost} credits + ${analysis.propellantCost} propellant`}
-          disabled={!canAffordReal}
-          onClick={() => launchMode("real")}
-        >
-          <span>Launch</span>
-          <small className="vab-launch-price">
-            <span>
-              <Coins />
-              {analysis.hardwareCost}
-            </span>
-            <span>
-              <Flame />
-              {analysis.propellantCost}
-            </span>
-          </small>
-        </button>
+        {contractJob === "sounding" ? (
+          <>
+            <button
+              className="sim-btn"
+              data-milo-focus={soundingGuide}
+              aria-label="Fly Sponsored Rocket"
+              onClick={() => stageSelectedContract(false)}
+            >
+              <Rocket size={16} />
+              Sponsored (0 C)
+            </button>
+            <button
+              className="primary launch-btn"
+              aria-label={`Fly ${contractDef?.name} with ${activeBp.name}`}
+              disabled={Boolean(contractCheck?.error)}
+              onClick={() => stageSelectedContract(true)}
+            >
+              <span>Fly Blueprint</span>
+              <small className="vab-launch-price">
+                <span>
+                  <Coins />
+                  {analysis.hardwareCost}
+                </span>
+                <span>
+                  <Flame />
+                  {analysis.propellantCost}
+                </span>
+              </small>
+            </button>
+          </>
+        ) : contractJob ? (
+          <>
+            <button
+              className="sim-btn"
+              disabled={!analysis.canSimulate}
+              onClick={() => launchMode("practice")}
+            >
+              <Wrench size={16} />
+              Simulate Free
+            </button>
+            <button
+              className="primary launch-btn"
+              aria-label={`Fly ${contractDef?.name} with ${activeBp.name}`}
+              disabled={Boolean(contractCheck?.error)}
+              onClick={() => stageSelectedContract(true)}
+            >
+              <span>Fly Contract</span>
+              <small className="vab-launch-price">
+                <span>
+                  <Coins />
+                  {analysis.hardwareCost}
+                </span>
+                <span>
+                  <Flame />
+                  {analysis.propellantCost}
+                </span>
+              </small>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              className="sim-btn"
+              disabled={!analysis.canSimulate}
+              onClick={() => launchMode("practice")}
+            >
+              <Wrench size={16} />
+              Simulate Free
+            </button>
+            <button
+              className="primary launch-btn"
+              aria-label={`Launch · ${analysis.hardwareCost} credits + ${analysis.propellantCost} propellant`}
+              disabled={!canAffordReal}
+              onClick={() => launchMode("real")}
+            >
+              <span>Launch</span>
+              <small className="vab-launch-price">
+                <span>
+                  <Coins />
+                  {analysis.hardwareCost}
+                </span>
+                <span>
+                  <Flame />
+                  {analysis.propellantCost}
+                </span>
+              </small>
+            </button>
+          </>
+        )}
       </footer>
+
+      {replaceTarget && contractDef && (
+        <Dialog tone="warning" title="Replace flight?" close={() => setReplaceTarget(null)}>
+          <p>
+            Retire the active vehicle and stage{" "}
+            {replaceTarget.useBlueprint ? activeBp.name : "the Sponsored Rocket"} for{" "}
+            {contractDef.name}?
+          </p>
+          <button
+            className="primary"
+            onClick={() => stageSelectedContract(replaceTarget.useBlueprint, true)}
+          >
+            Prepare flight
+          </button>
+        </Dialog>
+      )}
 
       {saveDialogOpen && (
         <Dialog title="Save Rocket Design" close={() => setSaveDialogOpen(false)}>

@@ -34,6 +34,53 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+.vab-contract-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--panel);
+  border: 2px solid var(--edge-dark);
+  border-left: 4px solid var(--amber-bright);
+  border-radius: var(--radius-md);
+}
+.vab-contract-info {
+  min-width: 0;
+  flex: 1;
+}
+.vab-contract-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font: 700 12px/1.2 var(--font-ui);
+  color: var(--ink);
+}
+.vab-contract-head svg {
+  color: var(--amber-bright);
+  flex: none;
+}
+.vab-contract-payout {
+  font: 700 11px var(--font-mono);
+  color: var(--mint, #72d6c6);
+}
+.vab-contract-info p {
+  margin: 3px 0 0;
+  font: 500 12px/1.25 var(--font-ui);
+  color: var(--ink-muted);
+}
+.vab-contract-clear {
+  flex: none;
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--ink-muted);
+}
 .vab-metrics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

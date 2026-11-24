@@ -44,6 +44,7 @@ test("Milo guides a new program through a paid flight, reload and a single found
   await expect(button(page, "Contracts")).toHaveAttribute("data-milo-focus", "true");
   await button(page, "Contracts").click();
   await button(page, "Accept Atmospheric Sounding").click();
+  await button(page, "Fly Sponsored Rocket").click();
   await expect(guide(page)).toContainText("tap Launch");
   await page.getByLabel("Throttle", {exact:true}).press("Home");
   await expect(guide(page)).toContainText("Raise the throttle");
@@ -80,7 +81,7 @@ test("Milo guides a new program through a paid flight, reload and a single found
   expect((await saved(page)).program.credits).toBeGreaterThan(150);
   await expect(button(page, "Ask Milo for guidance")).toHaveCount(0);
   await page.reload();
-  await expect(button(page, "Flight deck")).toBeEnabled();
+  await expect(button(page, "Contracts")).toBeEnabled();
   await expect(button(page, "Ask Milo for guidance")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -152,6 +153,7 @@ test("a failed sounding flight can be restaged from the contract board", async (
   await button(page, "Earth launch site").click();
   await button(page, "Contracts").click();
   await button(page, "Accept Atmospheric Sounding").click();
+  await button(page, "Fly Sponsored Rocket").click();
   await button(page, "Prepare flight").click();
   await expect(button(page, "Launch vehicle")).toBeEnabled();
 });

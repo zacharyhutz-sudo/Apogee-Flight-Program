@@ -12,12 +12,14 @@ import {
   place,
   prepare,
   prepareBlueprintFlight,
+  prepareContractBlueprint,
   prepareSoundingBlueprint,
   reclaimTile,
   clearObstacle,
   settle,
   tickEconomy,
   upgrade,
+  type Job,
   type Kind,
   type Sortie,
 } from "../program/program";
@@ -69,6 +71,7 @@ export function useMission() {
   const [, paint] = useState(0),
     refresh = () => paint((v) => v + 1);
   const [notice, setNotice] = useState("");
+  const [pendingContract, setPendingContract] = useState<Job | null>(null);
   const [cloudEmail, setCloudEmail] = useState<string | null>(
     () => getCloudSession()?.email ?? null,
   );
@@ -249,7 +252,8 @@ export function useMission() {
     const data = mission.current;
     if (data.program.sortie !== "practice" || vessel.current.status !== "pad") {
       const customSounding =
-        data.program.soundingVehicle && vessel.current.status === "pad";
+        (data.program.soundingVehicle || data.program.contractVehicle) &&
+        vessel.current.status === "pad";
       data.flight = prepare(
         data.program,
         "practice",
@@ -269,13 +273,45 @@ export function useMission() {
     }
   }
 
-  function openWorkshop() {
+  function openWorkshop(job?: Job) {
     if (!ready.current) return;
     if (vessel.current.status === "flying") paused.current = true;
     rate.current = 1;
+    setPendingContract(job ?? null);
     change(() => {
       mission.current.view = "workshop";
     });
+  }
+
+  function stageContract(job: Job, blueprintId?: string): string {
+    if (!ready.current) return "Save is still loading.";
+    const data = mission.current;
+    if (blueprintId) {
+      const result = prepareContractBlueprint(data.program, job, blueprintId);
+      if (!result.flight) return result.error || "Unable to stage vehicle.";
+      data.flight = result.flight;
+      data.log = [
+        {
+          t: 0,
+          text: `${result.flight.vehicleName ?? CONTRACTS[job].name} staged for ${CONTRACTS[job].name}.`.slice(0, 180),
+        },
+      ];
+      data.view = "flight";
+      setPendingContract(null);
+      install(data);
+      setNotice("");
+      save();
+      return "";
+    }
+    const issue = launchIssue(
+      data.program,
+      job,
+      job === "sounding" ? contractVehicle(data.program, job) : undefined,
+    );
+    if (issue) return issue;
+    if (!newSortie(job)) return "Unable to stage contract.";
+    setPendingContract(null);
+    return "";
   }
 
   function selectBlueprint(id: string) {
@@ -509,6 +545,7 @@ export function useMission() {
       setNotice(current => current.startsWith(CONTRACTS.sounding.name + " complete") ? "" : current);
     if (vessel.current.status === "flying") paused.current = true;
     rate.current = 1;
+    setPendingContract(null);
     change(() => {
       mission.current.view = "site";
     });
@@ -775,6 +812,9 @@ export function useMission() {
     launch,
     launchFreeSim,
     openWorkshop,
+    pendingContract,
+    clearPendingContract: () => setPendingContract(null),
+    stageContract,
     selectBlueprint,
     saveBlueprint,
     deleteBlueprint,

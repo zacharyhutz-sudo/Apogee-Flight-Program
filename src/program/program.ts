@@ -409,6 +409,7 @@ export interface EconomyState {
   blueprints: RocketBlueprint[];
   activeBlueprintId: string;
   soundingVehicle?: VehicleSpec;
+  contractVehicle?: VehicleSpec;
   soundingReport?: SoundingReport;
   reclaimedTiles: string[];
   clearedTiles?: string[];
@@ -1232,9 +1233,9 @@ export function canLaunchVehicle(state: Program, vehicleSpec: VehicleSpec) {
 }
 
 function stagedVehicle(p: Program, job: Job): VehicleSpec {
-  return job === "sounding" && p.soundingVehicle
-    ? p.soundingVehicle
-    : contractVehicle(p, job);
+  if (job === "sounding" && p.soundingVehicle) return p.soundingVehicle;
+  if (job !== "sounding" && p.contractVehicle) return p.contractVehicle;
+  return contractVehicle(p, job);
 }
 
 export function quote(p: Program, job: Job, spec = stagedVehicle(p, job)) {
@@ -1394,6 +1395,7 @@ export function upgrade(
 export function prepare(p: Program, job: Sortie, flight = initial()): Flight {
   p.sortie = job;
   delete p.soundingVehicle;
+  delete p.contractVehicle;
   p.award = null;
   p.paid = false;
   p.rewarded = false;
@@ -1411,7 +1413,7 @@ export function prepare(p: Program, job: Sortie, flight = initial()): Flight {
   return flight;
 }
 
-export function inspectSoundingBlueprint(p: Program, blueprintId: string) {
+export function inspectContractBlueprint(p: Program, job: Job, blueprintId: string) {
   const blueprint = p.blueprints.find((b) => b.id === blueprintId);
   if (!blueprint) return { vehicle: null, error: "Blueprint not found." };
   const analysis = analyzeBlueprint(blueprint, getFacilityLimits(p));
@@ -1421,31 +1423,41 @@ export function inspectSoundingBlueprint(p: Program, blueprintId: string) {
     heightMeters: analysis.heightMeters,
     hardwareCost: analysis.hardwareCost,
     propellantCost: analysis.propellantCost,
-    cargo: CONTRACTS.sounding.cargo,
+    cargo: CONTRACTS[job].cargo,
   };
   let error = "";
   if (!analysis.canLaunchWithLimits) {
     error = analysis.warnings.find((w) => w.severity === "error")?.message
       ?? "Vehicle failed pre-launch checks.";
   } else if (analysis.stageCount > 2) {
-    error = "Sounding supports up to two flight stages.";
+    error = "Flight supports up to two flight stages.";
   } else if (!analysis.stages[0]?.fuelTonnes) {
     error = "Stage 1 needs propellant to lift off.";
   } else {
-    error = launchIssue(p, "sounding", vehicle);
+    error = launchIssue(p, job, vehicle);
   }
   return { blueprint, analysis, vehicle, error };
 }
 
-export function prepareSoundingBlueprint(p: Program, blueprintId: string) {
-  const { blueprint, analysis, vehicle, error } = inspectSoundingBlueprint(p, blueprintId);
-  if (error || !vehicle) return { error, flight: null };
+export function prepareContractBlueprint(p: Program, job: Job, blueprintId: string) {
+  const { blueprint, analysis, vehicle, error } = inspectContractBlueprint(p, job, blueprintId);
+  if (error || !vehicle || !blueprint || !analysis) return { error, flight: null };
 
   const instance = buildVehicleInstance(blueprint, analysis);
+  p.activeBlueprintId = blueprint.id;
   const flight = initial(instance.stages, instance.payloadDryKg, instance.name, blueprint.parts);
-  prepare(p, "sounding", flight);
-  p.soundingVehicle = vehicle;
+  prepare(p, job, flight);
+  if (job === "sounding") p.soundingVehicle = vehicle;
+  else p.contractVehicle = vehicle;
   return { error: "", flight };
+}
+
+export function inspectSoundingBlueprint(p: Program, blueprintId: string) {
+  return inspectContractBlueprint(p, "sounding", blueprintId);
+}
+
+export function prepareSoundingBlueprint(p: Program, blueprintId: string) {
+  return prepareContractBlueprint(p, "sounding", blueprintId);
 }
 
 export function prepareBlueprintFlight(
@@ -1762,21 +1774,33 @@ export function validProgram(value: unknown, f: Flight): value is Program {
 
   const finitePositive = (n: unknown) =>
     typeof n === "number" && Number.isFinite(n) && n > 0;
+  const validCustomVehicle = (vehicle: VehicleSpec, expectedCargo: number) =>
+    Boolean(
+      vehicle &&
+        f.customStages &&
+        f.vehicleName === vehicle.name &&
+        typeof vehicle.name === "string" &&
+        vehicle.name.length > 0 &&
+        finitePositive(vehicle.wetMassTonnes) &&
+        finitePositive(vehicle.heightMeters) &&
+        natural(vehicle.hardwareCost) &&
+        natural(vehicle.propellantCost) &&
+        vehicle.cargo === expectedCargo &&
+        vehicle.sponsored === undefined,
+    );
+
   const vehicle = p.soundingVehicle;
   if (
     vehicle !== undefined &&
-    (!vehicle ||
-      p.sortie !== "sounding" ||
-      !f.customStages ||
-      f.vehicleName !== vehicle.name ||
-      typeof vehicle.name !== "string" ||
-      !vehicle.name.length ||
-      !finitePositive(vehicle.wetMassTonnes) ||
-      !finitePositive(vehicle.heightMeters) ||
-      !natural(vehicle.hardwareCost) ||
-      !natural(vehicle.propellantCost) ||
-      vehicle.cargo !== CONTRACTS.sounding.cargo ||
-      vehicle.sponsored !== undefined)
+    (p.sortie !== "sounding" || !validCustomVehicle(vehicle, CONTRACTS.sounding.cargo))
+  ) return false;
+
+  const stagedContractVehicle = p.contractVehicle;
+  if (
+    stagedContractVehicle !== undefined &&
+    (p.sortie === "practice" ||
+      p.sortie === "sounding" ||
+      !validCustomVehicle(stagedContractVehicle, CONTRACTS[p.sortie].cargo))
   ) return false;
 
   const report = p.soundingReport;

@@ -13,6 +13,7 @@ test("the active contract checks off in the launch HUD and clears for a free fli
   await button("Let’s fly").click();
   await button("Contracts").click();
   await button("Accept Atmospheric Sounding").click();
+  await button("Fly Sponsored Rocket").click();
   await expect(panel.getByRole("heading")).toHaveText("Atmospheric Sounding");
   await expect(checkbox("Lift off")).not.toBeChecked();
   await expect(checkbox("Reach 15 km")).not.toBeChecked();

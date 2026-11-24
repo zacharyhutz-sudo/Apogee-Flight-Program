@@ -9,7 +9,7 @@ test("a fourth resource digit leaves the HUD stationary and all facility rows fi
     localStorage.setItem("apogee-v1:" + scope, JSON.stringify(snapshot));
   }, save);
   await page.goto("./");
-  await expect(page.getByRole("button", { name: "Flight deck" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Contracts" })).toBeEnabled();
   const island = page.locator(".earth-canvas canvas");
   await expect(island).toBeVisible();
   await page.evaluate(() => document.fonts.ready);

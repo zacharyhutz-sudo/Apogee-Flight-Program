@@ -42,6 +42,7 @@ import {
   canAffordUpgrade,
   clearingQuote,
   costShortfall,
+  contractCooldownRemainingMs,
   contractVehicle,
   type Cost,
   canReclaimTile,
@@ -53,8 +54,6 @@ import {
   getCreditRatePerHour,
   getPropellantRatePerHour,
   getStorageCaps,
-  inspectSoundingBlueprint,
-  launchIssue,
   level,
   maxBuilderSlots,
   maxBuildingCount,
@@ -63,6 +62,7 @@ import {
   reclaimCost,
   tileTerrain,
   upgradeStatDelta,
+  type Job,
   type Kind,
   type Sortie,
   type Program,
@@ -128,7 +128,7 @@ export function LaunchSite({
 }: {
   mission: ReturnType<typeof useMission>;
   onFlight: () => void;
-  onWorkshop: () => void;
+  onWorkshop: (job?: Job) => void;
   onLunar: () => void;
 }) {
   const p = m.mission.program,
@@ -148,10 +148,6 @@ export function LaunchSite({
   const [placing, G] = useState<Kind | null>(null);
   const [movingFrom, setMovingFrom] = useState<Tile | null>(null);
   const [pending, Q] = useState<Sortie>("practice");
-  const [soundingBlueprintId, setSoundingBlueprintId] = useState("");
-  const soundingChoice = soundingBlueprintId
-    ? inspectSoundingBlueprint(p, soundingBlueprintId)
-    : null;
   const [message, M] = useState("");
   const [burst, setBurst] = useState<CollectBurst | null>(null);
 
@@ -260,12 +256,17 @@ export function LaunchSite({
   }
 
   function pick(job: Sortie) {
+    if (job !== "practice") {
+      P(null);
+      onWorkshop(job);
+      return;
+    }
     Q(job);
     if (flight.status !== "pad") {
       P("replace");
       return;
     }
-    if (m.newSortie(job, soundingBlueprintId)) P(null);
+    if (m.newSortie(job)) P(null);
   }
 
   function confirmPlacement() {
@@ -318,6 +319,9 @@ export function LaunchSite({
   const tutorial = m.mission.tutorial;
   const touring = m.loaded && tutorial.status === "active";
   const needsFlight = touring && !p.milestones.firstSounding;
+  const hasActiveFlight =
+    flight.status === "flying" ||
+    (flight.status === "pad" && p.sortie !== "practice");
   const resumeFlight = needsFlight && p.sortie === "sounding" &&
     (flight.status === "pad" || flight.status === "flying");
   const buildingLesson = touring && p.milestones.firstSounding;
@@ -338,7 +342,7 @@ export function LaunchSite({
       </>}>See that pad? Let’s put something in the sky.</MiloGuide>;
     if (needsFlight)
       return <MiloGuide dismiss={skipTour}>{resumeFlight
-        ? "Your sounding rocket is ready on the flight deck. Tap Pad to return."
+        ? "Your sounding rocket is ready on the flight deck. Tap Resume to return."
         : "Open Contracts. I’ve lined up a first flight for us."}</MiloGuide>;
     if (buildingLesson && hasTwoFoundries)
       return <MiloGuide actions={<button className="primary" onClick={finishTour}>Got it</button>}>
@@ -670,7 +674,7 @@ export function LaunchSite({
             className="secondary"
             aria-label="Rocket Workshop"
             disabled={buttonsDisabled}
-            onClick={onWorkshop}
+            onClick={() => onWorkshop()}
           >
             <Wrench />
             VAB
@@ -684,15 +688,17 @@ export function LaunchSite({
             <ClipboardList />
             Contracts
           </button>
-          <button
-            data-milo-focus={!panel && resumeFlight}
-            aria-label="Flight deck"
-            disabled={buttonsDisabled}
-            onClick={onFlight}
-          >
-            <Rocket />
-            Pad
-          </button>
+          {hasActiveFlight && (
+            <button
+              data-milo-focus={!panel && resumeFlight}
+              aria-label="Resume flight"
+              disabled={buttonsDisabled}
+              onClick={onFlight}
+            >
+              <Rocket />
+              Resume
+            </button>
+          )}
           <button disabled={buttonsDisabled} onClick={() => showPanel("store")}><Store />Store</button>
         </div>
       </div>
@@ -743,15 +749,28 @@ export function LaunchSite({
           {panel === "board" && (
             <>
               {needsFlight && <MiloGuide dismiss={skipTour}>
-                The sponsor supplies the rocket. We supply the fuel. Pick Atmospheric Sounding and tap Fly to stage it.
+                The sponsor supplies the rocket. We supply the fuel. Pick Atmospheric Sounding to choose a rocket in the VAB.
               </MiloGuide>}
+              <button
+                className="practice-btn"
+                onClick={() => pick("practice")}
+              >
+                <Rocket />
+                Free simulation · No cost or payout
+              </button>
               <div className="contract-list">
                 {CONTRACT_JOBS.map((job) => {
                   const c = CONTRACTS[job];
-                  const choice = job === "sounding" ? soundingChoice : null;
-                  const vehicle = choice?.vehicle ?? contractVehicle(p, job);
+                  const vehicle = contractVehicle(p, job);
                   const q = quote(p, job, vehicle);
-                  const reason = choice ? choice.error : launchIssue(p, job, vehicle);
+                  const mcLv = level(p, "command");
+                  const remMs = contractCooldownRemainingMs(p, job, nowMs);
+                  const reason =
+                    c.tier > mcLv
+                      ? `Requires Mission Control Lv ${c.tier}.`
+                      : remMs > 0
+                        ? `Contract refreshing · ${formatDuration(remMs / 1000)} remaining.`
+                        : "";
                   return (
                     <article
                       className={
@@ -766,34 +785,18 @@ export function LaunchSite({
                         </span>
                       </header>
                       <p>{c.goal}</p>
-                      {job === "sounding" && (
-                        <label className="sounding-vehicle">
-                          Vehicle
-                          <select
-                            value={soundingBlueprintId}
-                            onChange={(e) => setSoundingBlueprintId(e.target.value)}
-                          >
-                            <option value="">Sponsored rocket</option>
-                            <optgroup label="Workshop blueprints">
-                              {p.blueprints.map((blueprint) => (
-                                <option key={blueprint.id} value={blueprint.id}>
-                                  {blueprint.name} (v{blueprint.version})
-                                </option>
-                              ))}
-                            </optgroup>
-                          </select>
-                        </label>
-                      )}
                       <div className="cost-strip">
                         <span>
                           <Coins size={13} />
                           {vehicle.sponsored
                             ? "0 C (Sponsored)"
-                            : `${q.hardwareCost.toLocaleString("en-US")} C`}
+                            : `~${q.hardwareCost.toLocaleString("en-US")} C`}
                         </span>
                         <span>
                           <Flame size={13} />
-                          {q.propellantCost.toLocaleString("en-US")} Prop
+                          {vehicle.sponsored
+                            ? `${q.propellantCost.toLocaleString("en-US")} Prop`
+                            : `~${q.propellantCost.toLocaleString("en-US")} Prop`}
                         </span>
                         <span>
                           <Database size={13} />
@@ -816,7 +819,7 @@ export function LaunchSite({
                           aria-label={"Accept " + c.name}
                           onClick={() => pick(job)}
                         >
-                          Fly <ArrowRight />
+                          VAB <ArrowRight />
                         </button>
                       </div>
                       {reason && <small className="lock-note">{reason}</small>}
@@ -832,13 +835,6 @@ export function LaunchSite({
                   );
                 })}
               </div>
-              <button
-                className="practice-btn"
-                onClick={() => pick("practice")}
-              >
-                <Rocket />
-                Free simulation · No cost or payout
-              </button>
             </>
           )}
 
@@ -931,18 +927,12 @@ export function LaunchSite({
                 Retire the active vehicle and stage{" "}
                 {pending === "practice"
                   ? "a free simulation"
-                  : pending === "sounding" && soundingChoice?.vehicle
-                    ? soundingChoice.vehicle.name + " for Atmospheric Sounding"
-                    : CONTRACTS[pending].name}?
+                  : CONTRACTS[pending].name}?
               </p>
-              {pending === "sounding" && soundingChoice?.error && (
-                <small className="lock-note">{soundingChoice.error}</small>
-              )}
               <button
                 className="primary"
-                disabled={pending === "sounding" && Boolean(soundingChoice?.error)}
                 onClick={() => {
-                  if (m.newSortie(pending, soundingBlueprintId)) P(null);
+                  if (m.newSortie(pending)) P(null);
                 }}
               >
                 Prepare flight
