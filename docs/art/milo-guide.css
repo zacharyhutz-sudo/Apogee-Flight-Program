@@ -1,0 +1,64 @@
+/* Phase 1: a passive portrait, outside the simulator's React state.
+   The page shell owns this markup so source and static builds share it.
+   CSS follows the current screen without a timer or DOM observer. */
+.milo-guide {
+  --milo-size: 112px;
+  display: none;
+  position: fixed;
+  top: calc(clamp(10px, 2.2vmin, 20px) + env(safe-area-inset-top) + 62px);
+  left: calc(clamp(10px, 2.2vmin, 20px) + env(safe-area-inset-left));
+  width: var(--milo-size);
+  margin: 0;
+  gap: 2px;
+  justify-items: center;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+
+/* Keep the welcome face on Earth range and clear it while inspecting or
+   placing a facility, or while any dialog is open. */
+body:has(.site-game):not(:has(.inspector, dialog[open])) > .milo-guide {
+  display: grid;
+}
+
+.milo-guide__face {
+  display: block;
+  width: var(--milo-size);
+  height: var(--milo-size);
+  background: url("./milo-voss.png") 0 0 / 200% 200% no-repeat;
+  image-rendering: pixelated;
+  animation: milo-blink 4.6s step-end infinite;
+}
+
+.milo-guide figcaption {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 5px 7px;
+  border: 1px solid #506782;
+  border-bottom: 3px solid #070b10;
+  border-radius: 3px;
+  background: #111a26;
+  color: #f4efe6;
+  font: 500 11px/1.3 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .025em;
+  white-space: nowrap;
+}
+
+/* The 2 x 2 atlas runs open -> half -> closed -> half -> open.
+   Most of the loop is a still, open-eyed face. */
+@keyframes milo-blink {
+  0%, 79%, 86%, 100% { background-position: 0 0; }
+  80% { background-position: 100% 0; }
+  82% { background-position: 0 100%; }
+  84% { background-position: 100% 100%; }
+}
+
+@media (max-width: 600px), (max-height: 475px) {
+  .milo-guide { --milo-size: 88px; }
+  .milo-guide figcaption { font-size: 10px; padding-inline: 5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .milo-guide__face { animation: none; background-position: 0 0; }
+}
