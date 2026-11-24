@@ -1504,48 +1504,83 @@ export function latitude(p: Program, f: Flight) {
     : 0;
 }
 
-export function contractConditionMet(p: Program, f: Flight): boolean {
-  const job = p.sortie;
-  if (job === "practice") return false;
-  if (job === "sounding") return f.maxAlt >= SOUNDING_TARGET;
-  const o = orbit(f);
-  switch (job) {
+const LEO_PASS_SECONDS = 1300;
+
+function inPrecisionOrbit(f: Flight) {
+  const { pe, ap } = orbit(f);
+  return f.status === "flying" && stable(f) && pe >= 54000 && ap <= 66000;
+}
+
+export interface ContractTask {
+  name: string;
+  done: boolean;
+  remainingSeconds?: number;
+}
+
+// A read-only view of the same requirements used to settle the current sortie.
+export function contractTasks(p: Program, f: Flight): ContractTask[] {
+  switch (p.sortie) {
+    case "practice":
+      return [];
+    case "sounding":
+      return [{ name: `Reach ${SOUNDING_TARGET / 1000} km`, done: f.maxAlt >= SOUNDING_TARGET }];
     case "hop":
-      return f.maxAlt >= AIR && f.stage >= 1;
-    case "orbit":
-      return f.orbitEarned && o.pe >= AIR && o.ap >= 38000;
+      return [
+        { name: `Reach ${AIR / 1000} km`, done: f.maxAlt >= AIR },
+        { name: "Separate booster", done: f.stage >= 1 },
+      ];
+    case "orbit": {
+      const { pe, ap } = orbit(f);
+      return [
+        { name: "Establish stable orbit", done: f.orbitEarned },
+        { name: "Hold periapsis ≥ 30 km", done: pe >= AIR },
+        { name: "Hold apoapsis ≥ 38 km", done: ap >= 38000 },
+      ];
+    }
     case "recovery":
-      return f.maxAlt >= 20000 && f.status === "landed";
+      return [
+        { name: "Reach 20 km", done: f.maxAlt >= 20000 },
+        { name: "Land safely", done: f.status === "landed" },
+      ];
     case "return":
-      return f.orbitEarned && f.status === "landed";
+      return [
+        { name: "Establish stable orbit", done: f.orbitEarned },
+        { name: "Land safely", done: f.status === "landed" },
+      ];
     case "lunar_flyby":
-      return Boolean(f.moonVisited || f.body === "moon");
+      return [{ name: "Enter lunar influence", done: Boolean(f.moonVisited || f.body === "moon") }];
     case "lunar_colony":
-      return f.body === "moon" && f.status === "landed";
-    case "relay":
-      return (
-        f.status === "flying" &&
-        o.pe >= 35000 &&
-        Number.isFinite(o.ap) &&
-        o.ap >= 250000
-      );
+      return [
+        { name: "Enter lunar influence", done: Boolean(f.moonVisited || f.body === "moon") },
+        { name: "Land on the Moon", done: f.body === "moon" && f.status === "landed" },
+      ];
+    case "relay": {
+      const { pe, ap } = orbit(f);
+      return [
+        { name: "Hold periapsis ≥ 35 km", done: f.status === "flying" && pe >= 35000 },
+        { name: "Hold apoapsis ≥ 250 km", done: f.status === "flying" && Number.isFinite(ap) && ap >= 250000 },
+      ];
+    }
     case "leo": {
-      const inBand =
-        f.status === "flying" &&
-        stable(f) &&
-        o.pe >= 54000 &&
-        o.ap <= 66000;
-      if (!inBand) {
-        p.leoPassStartSec = null;
-        return false;
-      }
-      if (p.leoPassStartSec === null) {
-        p.leoPassStartSec = f.t;
-        return false;
-      }
-      return f.t - p.leoPassStartSec >= 1300;
+      const inBand = inPrecisionOrbit(f);
+      const elapsed = inBand && p.leoPassStartSec !== null ? Math.max(0, f.t - p.leoPassStartSec) : 0;
+      return [
+        { name: "Hold a 54–66 km orbit", done: inBand },
+        { name: "Maintain for one pass", done: elapsed >= LEO_PASS_SECONDS,
+          remainingSeconds: Math.max(0, Math.ceil(LEO_PASS_SECONDS - elapsed)) },
+      ];
     }
   }
+}
+
+export function contractConditionMet(p: Program, f: Flight): boolean {
+  const tasks = contractTasks(p, f);
+  if (p.sortie === "leo") {
+    // Only the simulation advances or resets the pass, even when the HUD is closed.
+    if (tasks[0].done) p.leoPassStartSec ??= f.t;
+    else p.leoPassStartSec = null;
+  }
+  return tasks.length > 0 && tasks.every(task => task.done);
 }
 
 export function settle(p: Program, f: Flight): string {

@@ -198,3 +198,48 @@ dialog[data-tone="warning"] > button { width: 100%; }
 }
 .lunar-toast { background: #18353a; color: #a8e9df; border-left-color: var(--teal); }
 .vab-warnings, .lunar-alert { background: #40292b; color: #ffcec2; border-left-color: var(--coral); }
+
+/* Leave the scene and both steering zones interactive underneath flight readouts. */
+.contract-briefing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "messages contract";
+  align-items: start;
+  gap: 6px;
+  margin-top: 6px;
+  pointer-events: none;
+}
+.contract-checklist {
+  grid-area: contract;
+  justify-self: end;
+  width: max-content;
+  max-width: 100%;
+  padding: 7px 10px 8px;
+  color: var(--ink);
+  background: #142333ed;
+  border: 1px solid var(--line-strong);
+  border-top: 2px solid var(--amber);
+  border-radius: var(--radius-sm);
+}
+.contract-checklist h2 { margin: 0 0 4px; font: 700 14px/1.2 var(--font-ui); }
+.contract-checklist ul { display: grid; gap: 3px; list-style: none; padding: 0; margin: 0; }
+.contract-checklist li, .contract-checklist [role="checkbox"] {
+  display: flex; align-items: center; gap: 6px; font: 600 12px/1.2 var(--font-ui);
+}
+.contract-checklist i {
+  display: grid; place-items: center; width: 12px; height: 12px; flex: none;
+  border: 1px solid #91a4b5; border-radius: 2px; box-sizing: border-box;
+}
+.contract-checklist [aria-checked="true"] i { background: var(--teal); color: #102526; border-color: var(--teal); }
+.contract-checklist small { margin-left: auto; color: var(--amber-bright); font: 500 10px var(--font-mono); }
+.contract-messages { grid-area: messages; min-width: 0; }
+.contract-messages .flight-milo { margin-top: 0; }
+.contract-messages .notice {
+  position: relative; inset: auto; transform: none; max-width: min(100%, 320px);
+}
+.contract-messages .flight-milo + .notice { margin-top: 4px; }
+@media (max-width: 620px) {
+  .contract-briefing { grid-template-columns: 1fr; grid-template-areas: "contract" "messages"; }
+  .contract-checklist { justify-self: start; padding: 5px 8px 6px; }
+  .contract-messages:empty { display: none; }
+}

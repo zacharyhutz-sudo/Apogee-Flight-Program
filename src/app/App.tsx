@@ -6,7 +6,7 @@ import { LaunchSite } from "./LaunchSite";
 import { Workshop } from "./Workshop";
 import { LunarSite } from "./LunarSite";
 import { SoundingReport } from "./SoundingReport";
-import { CONTRACTS, SOUNDING_TARGET, level, quote } from "../program/program";
+import { CONTRACTS, contractTasks, level, quote, type ContractTask } from "../program/program";
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
@@ -329,25 +329,17 @@ export default function App() {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
-  const objectives = [
+  const objectives: ContractTask[] = [
     { name: "Lift off", done: !pad },
-    ...(sortie === "sounding"
-      ? [{ name: "Reach 15 km", done: s.maxAlt >= SOUNDING_TARGET }]
-      : sortie === "recovery"
-        ? [
-            { name: "Reach 20 km", done: s.maxAlt >= 20000 },
-            { name: "Land safely on Earth", done: s.status === "landed" },
-          ]
-        : [
-            ...(hasUpperStage(s) ? [{ name: "Separate booster", done: !booster }] : []),
-            ...(sortie === "hop"
-              ? [{ name: "Reach 30 km", done: s.maxAlt >= AIR }]
-              : [{ name: "Establish orbit", done: s.orbitEarned }]),
-            ...(sortie === "return"
-              ? [{ name: "Land safely on Earth", done: s.status === "landed" }]
-              : []),
-          ]),
+    ...(isRealContract
+      ? contractTasks(m.mission.program, s)
+      : [
+          ...(hasUpperStage(s) ? [{ name: "Separate booster", done: !booster }] : []),
+          { name: "Establish orbit", done: s.orbitEarned },
+        ]),
   ];
+  // A settled contract keeps its completed checklist during descent and after reload.
+  if (m.mission.program.rewarded) objectives.forEach(task => { task.done = true; });
   const current = objectives.findIndex((t) => !t.done);
   const guidance = m.mission.program.rewarded
     ? "Reward collected. Return to Base to upgrade facilities."
@@ -377,6 +369,25 @@ export default function App() {
           : primaryLabel();
 
   const radio = m.loaded && !dialog ? flightPrompt(m.mission, m.paused) : null;
+  const radioMessage = radio && (
+    <div className="flight-milo">
+      <MiloGuide
+        dismissLabel={sortie === "hop" ? "Dismiss staging lesson" : "Hide tutorial"}
+        dismiss={() => m.updateTutorial(sortie === "hop" ? { stagingSeen: true } : { status: "off" })}
+      >
+        {radio.text}
+      </MiloGuide>
+    </div>
+  );
+  const flightNotice = m.notice && !(radio && m.notice.startsWith(CONTRACTS.sounding.name + " complete")) && (
+    <div className="notice" role="alert">
+      <TriangleAlert size={16} />
+      {m.notice}
+      <button aria-label="Dismiss message" onClick={() => m.setNotice("")}>
+        <X />
+      </button>
+    </div>
+  );
   const instrument = (label: string, value: string, unit: string) => (
     <div className="meter" key={label} data-milo-focus={label === "ALT" && radio?.target === "altitude"}>
       <span>{label}</span>
@@ -570,11 +581,26 @@ export default function App() {
             </div>
           )}
 
-          {radio && <div className="flight-milo"><MiloGuide
-            dismissLabel={sortie === "hop" ? "Dismiss staging lesson" : "Hide tutorial"}
-            dismiss={() => m.updateTutorial(sortie === "hop" ? { stagingSeen: true } : { status: "off" })}>
-            {radio.text}
-          </MiloGuide></div>}
+          {active && isRealContract ? (
+            <div className="contract-briefing">
+              <section className="contract-checklist" aria-label="Active contract">
+                <h2>{CONTRACTS[sortie].name}</h2>
+                <ul>
+                  {objectives.map(task => (
+                    <li key={task.name}>
+                      <span role="checkbox" aria-readonly="true" aria-checked={task.done} aria-label={task.name}>
+                        <i aria-hidden="true">{task.done && <Check size={10} strokeWidth={3} />}</i>
+                        {task.name}
+                      </span>
+                      {!task.done && task.remainingSeconds !== undefined &&
+                        <small>{clock(task.remainingSeconds).slice(3)}</small>}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              <div className="contract-messages">{radioMessage}{flightNotice}</div>
+            </div>
+          ) : radioMessage}
           <div className="hud-bottom">
             <label className="thrust" data-milo-focus={radio?.target === "throttle"}>
               <span className="control-label">Thr</span>
@@ -695,18 +721,7 @@ export default function App() {
           </div>
         </div>
 
-        {m.notice && !(radio && m.notice.startsWith(CONTRACTS.sounding.name + " complete")) && (
-          <div className="notice" role="alert">
-            <TriangleAlert size={16} />
-            {m.notice}
-            <button
-              aria-label="Dismiss message"
-              onClick={() => m.setNotice("")}
-            >
-              <X />
-            </button>
-          </div>
-        )}
+        {!(active && isRealContract) && flightNotice}
       </main>
 
       {dialog && (
