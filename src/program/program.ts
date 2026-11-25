@@ -1743,11 +1743,19 @@ function validatePilotSeat(
 function applyPilotToFlight(flight: Flight, pilot: OwnedPilot, def: PilotDef) {
   const stats = pilotStats(pilot);
   if (flight.customStages) {
-    flight.customStages = flight.customStages.map((st, idx) => ({
-      ...st,
-      isp: Math.round(st.isp * (1 + stats.isp + (idx === 1 && def.perk === "hot_stage" ? 0.08 : 0))),
-      thrust: Math.round(st.thrust * (1 + stats.thrust)),
-    }));
+    const [s0, s1] = flight.customStages;
+    flight.customStages = [
+      {
+        ...s0,
+        isp: Math.round(s0.isp * (1 + stats.isp)),
+        thrust: Math.round(s0.thrust * (1 + stats.thrust)),
+      },
+      {
+        ...s1,
+        isp: Math.round(s1.isp * (1 + stats.isp + (def.perk === "hot_stage" ? 0.08 : 0))),
+        thrust: Math.round(s1.thrust * (1 + stats.thrust)),
+      },
+    ];
   }
   if (def.perk === "iron_canopy") {
     flight.chuteMaxSpeed = 260;

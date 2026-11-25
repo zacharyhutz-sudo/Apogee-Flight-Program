@@ -504,7 +504,6 @@ export function useMission() {
     if (!ready.current) return false;
     const data = mission.current;
     const abandonNote = abandonActivePilot(data.program);
-    const abandonNote = abandonActivePilot(data.program);
     if (job === "sounding" && soundingBlueprintId) {
       const result = prepareSoundingBlueprint(data.program, soundingBlueprintId);
       if (!result.flight) {
