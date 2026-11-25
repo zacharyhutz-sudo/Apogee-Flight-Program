@@ -249,15 +249,12 @@ test("100x warp unlocks at 500 km while 500x warp unlocks at 1,500 km", () => {
   s.status = "flying";
   s.throttle = 0;
   s.y = 0;
-
   s.x = R + MID_WARP_ALT - 1;
   assert.equal(canMidWarp(s), false);
   assert.equal(canHighWarp(s), false);
-
   s.x = R + MID_WARP_ALT;
   assert.equal(canMidWarp(s), true);
   assert.equal(canHighWarp(s), false);
-
   s.x = R + HIGH_WARP_ALT;
   assert.equal(canMidWarp(s), true);
   assert.equal(canHighWarp(s), true);

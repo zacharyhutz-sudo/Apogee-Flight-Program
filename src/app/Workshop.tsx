@@ -16,6 +16,7 @@ import {
   Split,
   Trash2,
   TriangleAlert,
+  UserCheck,
   Wrench,
   X,
 } from "lucide-react";
@@ -31,11 +32,16 @@ import {
 import {
   CONTRACTS,
   MODIFIER_META,
+  PERK_META,
+  PILOT_BY_ID,
+  RARITY_META,
   contractVehicle,
+  ensureCrew,
   getFacilityLimits,
   inspectContractBlueprint,
   inspectRotatingBlueprint,
   level,
+  pilotStats,
   quote,
 } from "../program/program";
 import { MiloGuide } from "./MiloGuide";
@@ -83,6 +89,18 @@ export function Workshop({
   const [draftName, setDraftName] = useState("");
   const [dialogError, setDialogError] = useState("");
   const [replaceTarget, setReplaceTarget] = useState<{ useBlueprint: boolean } | null>(null);
+  const [selectedPilotId, setSelectedPilotId] = useState("");
+
+  const crew = ensureCrew(p);
+  const readyPilots = crew.pilots.filter((x) => x.status === "ready");
+  const hasCrewedPod = activeBp.parts.some((pt) => pt.partId === "pod_mk1");
+  const effectivePilotId =
+    hasCrewedPod && readyPilots.some((x) => x.id === selectedPilotId) ? selectedPilotId : "";
+  const seatedPilot = effectivePilotId
+    ? readyPilots.find((x) => x.id === effectivePilotId)
+    : undefined;
+  const seatedDef = seatedPilot ? PILOT_BY_ID[seatedPilot.id] : undefined;
+  const seatedStats = seatedPilot ? pilotStats(seatedPilot) : null;
 
   const pendingContract = m.pendingContract;
   const fixedJob = pendingContract?.kind === "fixed" ? pendingContract.job : null;
@@ -109,10 +127,10 @@ export function Workshop({
         }
       : null;
   const contractCheck = useMemo(() => {
-    if (fixedJob) return inspectContractBlueprint(p, fixedJob, activeBp.id);
-    if (rotatingOffer) return inspectRotatingBlueprint(p, rotatingOffer, activeBp.id);
+    if (fixedJob) return inspectContractBlueprint(p, fixedJob, activeBp.id, effectivePilotId || undefined);
+    if (rotatingOffer) return inspectRotatingBlueprint(p, rotatingOffer, activeBp.id, effectivePilotId || undefined);
     return null;
-  }, [fixedJob, rotatingOffer, p, activeBp, p.credits, p.propellant]);
+  }, [fixedJob, rotatingOffer, p, activeBp, p.credits, p.propellant, effectivePilotId]);
   const soundingGuide =
     m.loaded &&
     tutorial.status === "active" &&
@@ -302,8 +320,16 @@ export function Workshop({
     }
     const err =
       pendingContract.kind === "fixed"
-        ? m.stageContract(pendingContract.job, useBlueprint ? activeBp.id : undefined)
-        : m.stageRotatingContract(pendingContract.offer, activeBp.id);
+        ? m.stageContract(
+            pendingContract.job,
+            useBlueprint ? activeBp.id : undefined,
+            useBlueprint ? effectivePilotId || undefined : undefined,
+          )
+        : m.stageRotatingContract(
+            pendingContract.offer,
+            activeBp.id,
+            effectivePilotId || undefined,
+          );
     setReplaceTarget(null);
     if (err) setNotice(err);
   }
@@ -434,6 +460,38 @@ export function Workshop({
         {tutorial.workshop === "picker" ? "Your saved design is selected above. Open the dropdown to switch rockets."
           : "Like this design? Tap the save icon beside its name to keep a named copy."}
       </MiloGuide>}
+      <div className="vab-pilot-bar" aria-label="Pilot assignment">
+        <UserCheck size={14} />
+        {hasCrewedPod ? (
+          <>
+            <select
+              aria-label="Assign pilot"
+              value={effectivePilotId}
+              onChange={(e) => setSelectedPilotId(e.target.value)}
+            >
+              <option value="">Uncrewed (No Pilot)</option>
+              {readyPilots.map((owned) => {
+                const def = PILOT_BY_ID[owned.id];
+                if (!def) return null;
+                return (
+                  <option key={owned.id} value={owned.id}>
+                    “{def.callsign}” {def.name} · Lv {owned.level} {RARITY_META[def.rarity].label}
+                  </option>
+                );
+              })}
+            </select>
+            {seatedDef && seatedStats && (
+              <span className="vab-pilot-bonus">
+                +{(seatedStats.isp * 100).toFixed(1)}% Isp · +{(seatedStats.credits * 100).toFixed(1)}% C
+                {seatedDef.perk ? ` · ${PERK_META[seatedDef.perk].label}` : ""}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="vab-pilot-hint">Uncrewed probe — add Mk-1 Pod to seat a pilot</span>
+        )}
+      </div>
+
       <div className="vab-metrics" aria-label="Vehicle engineering readouts">
         <div className="vab-stat">
           <span>MASS</span>
@@ -751,7 +809,7 @@ export function Workshop({
                 </span>
                 <span>
                   <Flame />
-                  {analysis.propellantCost}
+                  {contractCheck?.vehicle?.propellantCost ?? analysis.propellantCost}
                 </span>
               </small>
             </button>
@@ -780,7 +838,7 @@ export function Workshop({
                 </span>
                 <span>
                   <Flame />
-                  {analysis.propellantCost}
+                  {contractCheck?.vehicle?.propellantCost ?? analysis.propellantCost}
                 </span>
               </small>
             </button>

@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Rocket,
   Sun,
+  Users,
   Waves,
   Wrench,
   X,
@@ -46,6 +47,7 @@ import {
   costShortfall,
   contractCooldownRemainingMs,
   contractVehicle,
+  ensureCrew,
   ensureRotatingBoard,
   type Cost,
   canReclaimTile,
@@ -76,6 +78,7 @@ import { MiloGuide } from "./MiloGuide";
 import { Dialog } from "./Dialog";
 import { CloudSyncPanel } from "./CloudSyncPanel";
 import { SoundingReport } from "./SoundingReport";
+import { CrewModal } from "./CrewModal";
 
 const BUILD_GROUPS: { title: string; kinds: Kind[] }[] = [
   { title: "Resources & Storage", kinds: ["foundry", "refinery", "bank", "tanks"] },
@@ -145,7 +148,7 @@ export function LaunchSite({
   const credPct = Math.min(100, (100 * p.credits) / caps.credits);
 
   const [panel, P] = useState<
-    "board" | "store" | "build" | "replace" | "cloud" | "sounding-report" | null
+    "board" | "store" | "build" | "crew" | "replace" | "cloud" | "sounding-report" | null
   >(null);
   const [selected, S] = useState<Tile | null>(null);
   const [inspectLocked, setInspectLocked] = useState<Kind | null>(null);
@@ -321,7 +324,7 @@ export function LaunchSite({
     return () => window.removeEventListener("keydown", key);
   });
 
-  function showPanel(v: "build" | "board" | "cloud" | "store") {
+  function showPanel(v: "build" | "board" | "cloud" | "store" | "crew") {
     cancel();
     setBoardNotice("");
     if (v === "board") m.refreshRotatingBoard();
@@ -711,6 +714,13 @@ export function LaunchSite({
               Resume
             </button>
           )}
+          <button disabled={buttonsDisabled} onClick={() => showPanel("crew")}>
+            <Users />
+            Crew
+            {ensureCrew(p).pilots.some((x) => x.status === "stranded") && (
+              <span className="crew-alert-dot" aria-label="Stranded pilot" />
+            )}
+          </button>
           <button disabled={buttonsDisabled} onClick={() => showPanel("store")}><Store />Store</button>
         </div>
       </div>
@@ -730,15 +740,19 @@ export function LaunchSite({
         <Dialog
           tone={panel === "replace" ? "warning" : undefined}
           title={
-            panel === "store" ? "Store" : panel === "board"
-              ? "Contracts"
-              : panel === "build"
-                ? "Facilities"
-                : panel === "cloud"
-                  ? "Cloud Save"
-                  : panel === "sounding-report"
-                    ? "Sounding report"
-                    : "Replace flight?"
+            panel === "store"
+              ? "Store"
+              : panel === "crew"
+                ? "Crew Quarters"
+                : panel === "board"
+                  ? "Contracts"
+                  : panel === "build"
+                    ? "Facilities"
+                    : panel === "cloud"
+                      ? "Cloud Save"
+                      : panel === "sounding-report"
+                        ? "Sounding report"
+                        : "Replace flight?"
           }
           close={() => P(null)}
         >
@@ -1011,6 +1025,7 @@ export function LaunchSite({
             </div>
           )}
 
+          {panel === "crew" && <CrewModal mission={m} />}
           {panel === "cloud" && <CloudSyncPanel mission={m} />}
           {panel === "sounding-report" && p.soundingReport && (
             <>

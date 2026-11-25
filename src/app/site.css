@@ -626,3 +626,252 @@ dialog:has(.facilities-groups) .dialog-head { border-color: #c7d6ce; }
   .site-top .res-pill { padding-inline: 3px; }
   .site-game .site-dock button { font-size: 10px; }
 }
+
+.site-dock button { position: relative; }
+.crew-alert-dot {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--coral, #f07167);
+}
+.crew-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.crew-recruit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px;
+  background: var(--panel);
+  border: 2px solid var(--edge-dark);
+  border-left: 4px solid var(--amber-bright);
+  border-radius: var(--radius-md);
+}
+.crew-recruit-info strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 700 13px var(--font-ui);
+  color: var(--ink);
+}
+.crew-recruit-info small {
+  display: block;
+  margin-top: 2px;
+  font: 600 11px var(--font-mono);
+  color: var(--ink-muted);
+}
+.crew-pull-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+.crew-reveal {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  background: #13212d;
+  border: 2px solid var(--edge-dark);
+  border-left: 4px solid var(--amber-bright);
+  border-radius: var(--radius-md);
+}
+.crew-reveal-body { flex: 1; min-width: 0; }
+.crew-reveal-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+}
+.crew-reveal-body p {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.crew-reveal-body small {
+  font: 600 11px var(--font-mono);
+  color: var(--mint, #72d6c6);
+}
+.duty-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.duty-slot {
+  padding: 7px 8px;
+  background: var(--panel);
+  border: 1px solid var(--edge-dark);
+  border-radius: var(--radius-md);
+}
+.duty-slot span {
+  display: block;
+  font: 700 9px var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+}
+.duty-slot strong {
+  display: block;
+  font: 700 12px var(--font-ui);
+  color: var(--ink);
+  margin-top: 2px;
+}
+.duty-slot small {
+  display: block;
+  font: 600 10px var(--font-mono);
+  color: var(--mint, #72d6c6);
+}
+.crew-filters {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.crew-filters button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+.crew-filters button.active {
+  border-color: var(--amber-bright);
+  color: var(--amber-bright);
+}
+.crew-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pilot-card {
+  padding: 10px;
+  background: var(--panel);
+  border: 2px solid var(--edge-dark);
+  border-left: 4px solid #6b7c8a;
+  border-radius: var(--radius-md);
+}
+.pilot-card.rarity-uncommon, .crew-reveal.rarity-uncommon { border-left-color: #5cd6a8; }
+.pilot-card.rarity-rare, .crew-reveal.rarity-rare { border-left-color: #66b2ff; }
+.pilot-card.rarity-epic, .crew-reveal.rarity-epic { border-left-color: #c792ea; }
+.pilot-card.rarity-legendary, .crew-reveal.rarity-legendary { border-left-color: #f5b951; }
+.pilot-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pilot-avatar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  border: 2px solid #7f95a6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pilot-visor {
+  width: 22px;
+  height: 12px;
+  border-radius: 4px;
+  border: 1px solid #0b141c;
+}
+.pilot-card-meta { flex: 1; min-width: 0; }
+.pilot-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 13px;
+}
+.pilot-name-row em {
+  font-style: normal;
+  color: var(--amber-bright);
+  font-weight: 600;
+}
+.pilot-status-tag {
+  font: 700 10px var(--font-mono);
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #1a2d3b;
+  color: var(--ink-muted);
+}
+.pilot-status-tag[data-status="ready"] { color: #7ee6cb; background: #16362f; }
+.pilot-status-tag[data-status="flying"] { color: #ffd27d; background: #3b2d15; }
+.pilot-status-tag[data-status="stranded"] { color: #ff9b93; background: #3f1d1b; }
+.pilot-sub-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+  font: 600 11px var(--font-mono);
+  color: var(--ink-muted);
+}
+.rarity-pill {
+  font: 700 10px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.star-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  color: #f5b951;
+}
+.pilot-xp-bar {
+  margin-top: 5px;
+  height: 4px;
+  background: #0d161f;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.pilot-xp-bar i {
+  display: block;
+  height: 100%;
+}
+.pilot-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 7px;
+  font: 600 11px var(--font-mono);
+  color: var(--ink);
+}
+.pilot-stats-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.pilot-perk-line {
+  margin-top: 6px;
+  font: 500 11px/1.3 var(--font-ui);
+  color: var(--amber-bright);
+}
+.pilot-card-actions, .pilot-duty-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pilot-duty-actions button {
+  flex: 1;
+  min-height: 32px;
+  font-size: 11px;
+  padding: 0 6px;
+}
+.pilot-duty-actions button.active {
+  border-color: var(--mint, #4fd1a5);
+  color: var(--mint, #7ee6cb);
+}
+.crew-empty {
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 13px;
+  padding: 16px 0;
+}

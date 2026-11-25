@@ -9,7 +9,6 @@ export const MAX_ORBIT_AP = 600000;
 export const CHUTE_MAX_SPEED = 200;
 export const CHUTE_FULL_ALT = 100;
 export const MID_WARP_ALT = 500_000;
-export const MID_WARP_ALT = 500_000;
 export const HIGH_WARP_ALT = 1_500_000;
 // SFS-scaled Moon: 85 km radius, 1.62 m/s^2 gravity, 2,400 km orbit, 360 km SOI, vacuum
 export const MOON_R = 85000;
@@ -110,6 +109,8 @@ export interface Flight {
   legsDeployed?: boolean;
   chuteDeployed?: boolean;
   chuteRipped?: boolean;
+  chuteMaxSpeed?: number;
+  chuteMaxSpeed?: number;
   /** Active sphere of influence (Earth or Moon). */
   body?: Body;
   moonVisited?: boolean;
@@ -292,7 +293,7 @@ export function toggleChute(s: Flight): "deployed" | "ripped" | "cut" | "blocked
     return "cut";
   }
   if (bp.AIR <= 0 || alt >= bp.AIR) return "blocked";
-  if (speed(s) > CHUTE_MAX_SPEED) {
+  if (speed(s) > (s.chuteMaxSpeed ?? CHUTE_MAX_SPEED)) {
     s.chuteRipped = true;
     s.chuteDeployed = false;
     return "ripped";
@@ -321,11 +322,6 @@ export function burning(s: Flight) {
 export function canWarp(s: Flight) {
   const bp = bodyParams(s.body);
   return s.status === "flying" && !burning(s) && radius(s) > bp.R + bp.AIR + 500;
-}
-
-export function canMidWarp(s: Flight) {
-  const bp = bodyParams(s.body);
-  return canWarp(s) && radius(s) - bp.R >= MID_WARP_ALT;
 }
 
 export function canMidWarp(s: Flight) {
@@ -410,7 +406,7 @@ export function step(s: Flight, dt = STEP) {
     vt = nx * s.vy - ny * s.vx;
   const engine = st[s.stage];
   if (s.chuteDeployed) {
-    if (v > CHUTE_MAX_SPEED) {
+    if (v > (s.chuteMaxSpeed ?? CHUTE_MAX_SPEED)) {
       s.chuteRipped = true;
       s.chuteDeployed = false;
     } else {

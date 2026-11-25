@@ -411,3 +411,35 @@
     height: 30px;
   }
 }
+
+.vab-pilot-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--panel);
+  border: 2px solid var(--edge-dark);
+  border-radius: var(--radius-md);
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+.vab-pilot-bar select {
+  flex: 1;
+  min-width: 150px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm, 4px);
+  background: #0f1a24;
+  color: var(--ink);
+  border: 1px solid var(--edge-dark);
+  font: 600 12px var(--font-ui);
+}
+.vab-pilot-bonus {
+  font: 600 11px var(--font-mono);
+  color: var(--mint, #72d6c6);
+}
+.vab-pilot-hint {
+  font: 600 11px var(--font-ui);
+  color: var(--ink-muted);
+}

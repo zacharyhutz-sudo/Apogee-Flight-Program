@@ -20,6 +20,36 @@ import {
   type RotatingContract,
 } from "./rotating.ts";
 
+import {
+  MAX_PILOT_LEVEL,
+  MAX_PILOT_STARS,
+  PERK_META,
+  PILOT_BY_ID,
+  PILOT_CATALOG,
+  PILOT_PULL_COST,
+  PITY_LEGENDARY_AT,
+  PITY_RARE_AT,
+  RARITY_META,
+  awardPilotXp,
+  contractXpReward,
+  crewDutyBonus,
+  executePilotPull,
+  initialCrewState,
+  isValidCrewState,
+  pilotRecoveryFee,
+  pilotStats,
+  xpForLevel,
+  type CrewState,
+  type DutyStation,
+  type OwnedPilot,
+  type PilotDef,
+  type PilotPerkId,
+  type PilotRarity,
+  type PilotStats,
+  type PilotStatus,
+  type PullResult,
+} from "./pilots.ts";
+
 export {
   MODIFIER_META,
   rerollCostCredits,
@@ -28,6 +58,29 @@ export {
   type ModifierId,
   type RotatingBoardState,
   type RotatingContract,
+  MAX_PILOT_LEVEL,
+  MAX_PILOT_STARS,
+  PERK_META,
+  PILOT_BY_ID,
+  PILOT_CATALOG,
+  PILOT_PULL_COST,
+  PITY_LEGENDARY_AT,
+  PITY_RARE_AT,
+  RARITY_META,
+  crewDutyBonus,
+  initialCrewState,
+  pilotRecoveryFee,
+  pilotStats,
+  xpForLevel,
+  type CrewState,
+  type DutyStation,
+  type OwnedPilot,
+  type PilotDef,
+  type PilotPerkId,
+  type PilotRarity,
+  type PilotStats,
+  type PilotStatus,
+  type PullResult,
 };
 import {
   initialLunarColony,
@@ -434,6 +487,9 @@ export interface EconomyState {
   contractVehicle?: VehicleSpec;
   activeRotating?: RotatingContract;
   rotatingBoard?: RotatingBoardState;
+  crew?: CrewState;
+  activePilotId?: string;
+  pendingPilotXp?: number;
   soundingReport?: SoundingReport;
   reclaimedTiles: string[];
   clearedTiles?: string[];
@@ -516,6 +572,7 @@ export const startProgram = (): Program => {
     reclaimedTiles: [],
     clearedTiles: [],
     contractCooldowns: {},
+    crew: initialCrewState(),
     lunar: initialLunarColony(),
   };
 };
@@ -670,11 +727,124 @@ export function completeFinishedUpgrades(p: Program, nowMs = Date.now()): number
   return completed;
 }
 
+export function ensureCrew(p: Program): CrewState {
+  if (!p.crew) p.crew = initialCrewState();
+  return p.crew;
+}
+
+export function pullPilotCard(
+  p: Program,
+  rng: () => number = Math.random,
+): { result: PullResult | null; error: string } {
+  if (p.credits < PILOT_PULL_COST) {
+    return {
+      result: null,
+      error: `Need ${(PILOT_PULL_COST - p.credits).toLocaleString("en-US")} C more to pull a Pilot Card.`,
+    };
+  }
+  const crew = ensureCrew(p);
+  p.credits = Math.max(0, p.credits - PILOT_PULL_COST);
+  const result = executePilotPull(crew, rng);
+  return { result, error: "" };
+}
+
+export function assignPilotDuty(
+  p: Program,
+  pilotId: string,
+  station?: DutyStation,
+): string {
+  const crew = ensureCrew(p);
+  const pilot = crew.pilots.find((x) => x.id === pilotId);
+  if (!pilot) return "Pilot not found.";
+  if (pilot.status !== "ready") return "Only ready pilots can take base duty.";
+  if (station) {
+    for (const other of crew.pilots) {
+      if (other.duty === station && other.id !== pilotId) delete other.duty;
+    }
+    pilot.duty = station;
+  } else {
+    delete pilot.duty;
+  }
+  return "";
+}
+
+export function recoverStrandedPilot(p: Program, pilotId: string): string {
+  const crew = ensureCrew(p);
+  const pilot = crew.pilots.find((x) => x.id === pilotId);
+  if (!pilot) return "Pilot not found.";
+  if (pilot.status !== "stranded") return "Pilot is not stranded.";
+  const fee = pilotRecoveryFee(pilotId);
+  if (p.credits < fee) {
+    return `Need ${(fee - p.credits).toLocaleString("en-US")} C more to recover escape pod.`;
+  }
+  p.credits = Math.max(0, p.credits - fee);
+  pilot.status = "ready";
+  return "";
+}
+
+export function abandonActivePilot(p: Program): string {
+  if (!p.activePilotId) return "";
+  const crew = ensureCrew(p);
+  const pilot = crew.pilots.find((x) => x.id === p.activePilotId);
+  const def = PILOT_BY_ID[p.activePilotId];
+  p.activePilotId = undefined;
+  p.pendingPilotXp = 0;
+  if (pilot && pilot.status === "flying") {
+    pilot.status = "stranded";
+    delete pilot.duty;
+    return `${def?.name ?? "Pilot"} is stranded — recover them in Crew Quarters.`;
+  }
+  return "";
+}
+
+export function resolvePilotFlightOutcome(p: Program, f: Flight): string {
+  if (!p.activePilotId) return "";
+  const crew = ensureCrew(p);
+  const pilot = crew.pilots.find((x) => x.id === p.activePilotId);
+  const def = PILOT_BY_ID[p.activePilotId];
+  if (!pilot || pilot.status !== "flying") {
+    if (f.status === "landed" || f.status === "lost") {
+      p.activePilotId = undefined;
+      p.pendingPilotXp = 0;
+    }
+    return "";
+  }
+  if (f.status === "landed") {
+    const safeSite = f.body === "earth" || (f.body === "moon" && p.lunar.unlocked);
+    if (safeSite) {
+      pilot.status = "ready";
+      pilot.missionsFlown += 1;
+      const xpPool = Math.max(25, p.pendingPilotXp ?? 0);
+      const { leveledUp, gained } = awardPilotXp(pilot, xpPool);
+      let salvageNote = "";
+      if (def?.perk === "salvage_eye" && p.rewarded && p.award) {
+        const bonus = Math.round(p.award.credits * 0.12);
+        const caps = getStorageCaps(p);
+        const prev = p.credits;
+        p.credits = Math.max(p.credits, Math.min(p.credits + bonus, caps.credits));
+        const add = p.credits - prev;
+        if (add > 0) salvageNote = ` · +${add.toLocaleString("en-US")} C salvage`;
+      }
+      p.activePilotId = undefined;
+      p.pendingPilotXp = 0;
+      return `${def?.name ?? "Pilot"} recovered safely · +${gained} XP${leveledUp ? ` (Lv ${pilot.level}!)` : ""}${salvageNote}`;
+    }
+  }
+  if (f.status === "lost") {
+    pilot.status = "stranded";
+    delete pilot.duty;
+    p.activePilotId = undefined;
+    p.pendingPilotXp = 0;
+    return `${def?.name ?? "Pilot"} is stranded — recover them in Crew Quarters.`;
+  }
+  return "";
+}
+
 export function contractCooldownSec(p: Program, job: Job): number {
   const tier = CONTRACTS[job].tier;
   const base = CONTRACT_COOLDOWN_SEC_BY_TIER[tier] ?? 1200;
   const officeLv = clamp(level(p, "office"), 1, MAX_LEVEL);
-  const reduction = OFFICE_COOLDOWN_REDUCTION[officeLv];
+  const reduction = Math.min(0.75, OFFICE_COOLDOWN_REDUCTION[officeLv] + crewDutyBonus(p.crew, "office"));
   return Math.round(base * (1 - reduction));
 }
 
@@ -907,13 +1077,14 @@ export function getCollectorCaps(state: Program) {
 }
 
 export function getCreditRatePerHour(state: Program): number {
-  return state.buildings.reduce(
+  const base = state.buildings.reduce(
     (sum, b) =>
       b.kind === "foundry"
         ? sum + FOUNDRY_RATE_BY_LEVEL[clamp(b.level, 1, MAX_LEVEL)]
         : sum,
     0,
   );
+  return Math.round(base * (1 + crewDutyBonus(state.crew, "foundry")));
 }
 
 export function getPropellantRatePerHour(state: Program): number {
@@ -1262,17 +1433,33 @@ function stagedVehicle(p: Program, job: Job): VehicleSpec {
   return contractVehicle(p, job);
 }
 
-export function quote(p: Program, job: Job, spec = stagedVehicle(p, job)) {
+function activePilotObj(p: Program, pilotId?: string): OwnedPilot | undefined {
+  const id = pilotId ?? p.activePilotId;
+  if (!id || !p.crew) return undefined;
+  return p.crew.pilots.find((x) => x.id === id);
+}
+
+export function quote(p: Program, job: Job, spec = stagedVehicle(p, job), pilotId?: string) {
   const c = CONTRACTS[job];
   const labLv = level(p, "lab");
   const isRepeat = (p.completed[job] ?? 0) > 0;
-  const baseCredits = isRepeat
+  const pilot = activePilotObj(p, pilotId);
+  const pStats = pilot ? pilotStats(pilot) : null;
+  const pDef = pilot ? PILOT_BY_ID[pilot.id] : undefined;
+  const lunarBonus =
+    pDef?.perk === "lunar_pathfinder" && (job === "lunar_flyby" || job === "lunar_colony")
+      ? 0.2
+      : 0;
+  const rawCredits = isRepeat
     ? Math.max(50, Math.round(c.credits * REPEAT_CREDITS_FACTOR))
     : c.credits;
+  const baseCredits = Math.round(rawCredits * (1 + (pStats?.credits ?? 0) + lunarBonus));
   const baseResearch = isRepeat
     ? Math.max(2, Math.round(c.research * REPEAT_RESEARCH_FACTOR))
     : c.research;
-  const research = Math.round(baseResearch * (1 + 0.1 * labLv));
+  const research = Math.round(
+    baseResearch * (1 + 0.1 * labLv + crewDutyBonus(p.crew, "lab") + (pStats?.rd ?? 0)),
+  );
   const firstTimeBonus =
     job === "orbit" && !p.milestones.firstOrbit ? c.firstTimeCredits : 0;
   return {
@@ -1336,89 +1523,20 @@ export function activeContractInfo(p: Program) {
     if (!offer) return null;
     const labLv = level(p, "lab");
     const vehicle = p.contractVehicle;
+    const pilot = activePilotObj(p);
+    const pStats = pilot ? pilotStats(pilot) : null;
+    const pDef = pilot ? PILOT_BY_ID[pilot.id] : undefined;
+    const lunarBonus =
+      pDef?.perk === "lunar_pathfinder" && (offer.requireMoonSoi || offer.requireMoonLanding)
+        ? 0.2
+        : 0;
     return {
       name: offer.name,
       goal: offer.goal,
-      credits: offer.credits,
-      research: Math.round(offer.research * (1 + 0.1 * labLv)),
-      firstTimeBonus: 0,
-      hardwareCost: vehicle?.hardwareCost ?? 0,
-      propellantCost: vehicle?.propellantCost ?? 0,
-      isRepeat: false,
-      modifiers: offer.modifiers,
-    };
-  }
-  const c = CONTRACTS[p.sortie];
-  const q = quote(p, p.sortie);
-  return {
-    name: c.name,
-    goal: c.goal,
-    credits: q.credits,
-    research: q.research,
-    firstTimeBonus: q.firstTimeBonus,
-    hardwareCost: q.hardwareCost,
-    propellantCost: q.propellantCost,
-    isRepeat: q.isRepeat,
-    modifiers: [] as ModifierId[],
-  };
-}
-
-export function ensureRotatingBoard(
-  p: Program,
-  nowMs = Date.now(),
-  rng: () => number = Math.random,
-): RotatingBoardState {
-  const mcLv = Math.max(1, level(p, "command"));
-  const officeLv = Math.max(1, level(p, "office"));
-  const cur = p.rotatingBoard;
-  if (cur && nowMs < cur.nextRefreshAtMs) {
-    const live = cur.offers.filter((o) => o.expiresAtMs > nowMs);
-    if (live.length > 0) {
-      if (live.length !== cur.offers.length) cur.offers = live;
-      return cur;
-    }
-  }
-  const next: RotatingBoardState = {
-    offers: generateRotatingOffers(mcLv, officeLv, nowMs, rng),
-    nextRefreshAtMs: nowMs + rotatingRefreshSec(officeLv) * 1000,
-    freeRerollsUsed: 0,
-    rerollCount: 0,
-  };
-  p.rotatingBoard = next;
-  return next;
-}
-
-export function rerollRotatingBoard(
-  p: Program,
-  nowMs = Date.now(),
-  rng: () => number = Math.random,
-): string {
-  const board = ensureRotatingBoard(p, nowMs, rng);
-  const cost = rerollCostCredits(board);
-  if (cost > 0 && p.credits < cost) {
-    return `Need ${(cost - p.credits).toLocaleString("en-US")} C more to reroll.`;
-  }
-  if (cost > 0) p.credits = Math.max(0, p.credits - cost);
-  else board.freeRerollsUsed += 1;
-  board.rerollCount += 1;
-  const mcLv = Math.max(1, level(p, "command"));
-  const officeLv = Math.max(1, level(p, "office"));
-  board.offers = generateRotatingOffers(mcLv, officeLv, nowMs, rng);
-  return "";
-}
-
-export function activeContractInfo(p: Program) {
-  if (p.sortie === "practice") return null;
-  if (p.sortie === "rotating") {
-    const offer = p.activeRotating;
-    if (!offer) return null;
-    const labLv = level(p, "lab");
-    const vehicle = p.contractVehicle;
-    return {
-      name: offer.name,
-      goal: offer.goal,
-      credits: offer.credits,
-      research: Math.round(offer.research * (1 + 0.1 * labLv)),
+      credits: Math.round(offer.credits * (1 + (pStats?.credits ?? 0) + lunarBonus)),
+      research: Math.round(
+        offer.research * (1 + 0.1 * labLv + crewDutyBonus(p.crew, "lab") + (pStats?.rd ?? 0)),
+      ),
       firstTimeBonus: 0,
       hardwareCost: vehicle?.hardwareCost ?? 0,
       propellantCost: vehicle?.propellantCost ?? 0,
@@ -1448,13 +1566,6 @@ export function launchIssue(
   nowMs = Date.now(),
 ): string {
   if (job === "practice") return "";
-  if (job === "rotating") {
-    if (!p.activeRotating) return "No rotating contract selected.";
-    const v = vehicle ?? p.contractVehicle;
-    if (!v) return "Select a rocket blueprint in the VAB.";
-    const check = canLaunchVehicle(p, v);
-    return check.ok ? "" : check.reason;
-  }
   if (job === "rotating") {
     if (!p.activeRotating) return "No rotating contract selected.";
     const v = vehicle ?? p.contractVehicle;
@@ -1591,6 +1702,10 @@ export function prepare(p: Program, job: Sortie, flight = initial()): Flight {
   delete p.soundingVehicle;
   delete p.contractVehicle;
   delete p.activeRotating;
+  delete p.activePilotId;
+  p.pendingPilotXp = 0;
+  delete p.activePilotId;
+  p.pendingPilotXp = 0;
   p.award = null;
   p.paid = false;
   p.rewarded = false;
@@ -1608,20 +1723,60 @@ export function prepare(p: Program, job: Sortie, flight = initial()): Flight {
   return flight;
 }
 
-export function inspectContractBlueprint(p: Program, job: Job, blueprintId: string) {
+function validatePilotSeat(
+  p: Program,
+  blueprint: RocketBlueprint,
+  pilotId?: string,
+): { pilot?: OwnedPilot; def?: PilotDef; error: string } {
+  if (!pilotId) return { error: "" };
+  const crew = ensureCrew(p);
+  const pilot = crew.pilots.find((x) => x.id === pilotId);
+  const def = PILOT_BY_ID[pilotId];
+  if (!pilot || !def) return { error: "Selected pilot not found." };
+  if (pilot.status !== "ready") return { error: `${def.name} is not ready to fly.` };
+  if (!blueprint.parts.some((pt) => pt.partId === "pod_mk1")) {
+    return { error: "Requires Mk-1 Pod to seat a pilot." };
+  }
+  return { pilot, def, error: "" };
+}
+
+function applyPilotToFlight(flight: Flight, pilot: OwnedPilot, def: PilotDef) {
+  const stats = pilotStats(pilot);
+  if (flight.customStages) {
+    flight.customStages = flight.customStages.map((st, idx) => ({
+      ...st,
+      isp: Math.round(st.isp * (1 + stats.isp + (idx === 1 && def.perk === "hot_stage" ? 0.08 : 0))),
+      thrust: Math.round(st.thrust * (1 + stats.thrust)),
+    }));
+  }
+  if (def.perk === "iron_canopy") {
+    flight.chuteMaxSpeed = 260;
+  }
+}
+
+export function inspectContractBlueprint(
+  p: Program,
+  job: Job,
+  blueprintId: string,
+  pilotId?: string,
+) {
   const blueprint = p.blueprints.find((b) => b.id === blueprintId);
   if (!blueprint) return { vehicle: null, error: "Blueprint not found." };
+  const seat = validatePilotSeat(p, blueprint, pilotId);
   const analysis = analyzeBlueprint(blueprint, getFacilityLimits(p));
+  const propMult = seat.def?.perk === "cold_soak" ? 0.85 : 1;
   const vehicle: VehicleSpec = {
     name: blueprint.name,
     wetMassTonnes: analysis.wetTonnes,
     heightMeters: analysis.heightMeters,
     hardwareCost: analysis.hardwareCost,
-    propellantCost: analysis.propellantCost,
+    propellantCost: Math.max(0, Math.round(analysis.propellantCost * propMult)),
     cargo: CONTRACTS[job].cargo,
   };
   let error = "";
-  if (!analysis.canLaunchWithLimits) {
+  if (seat.error) {
+    error = seat.error;
+  } else if (!analysis.canLaunchWithLimits) {
     error = analysis.warnings.find((w) => w.severity === "error")?.message
       ?? "Vehicle failed pre-launch checks.";
   } else if (analysis.stageCount > 2) {
@@ -1631,17 +1786,29 @@ export function inspectContractBlueprint(p: Program, job: Job, blueprintId: stri
   } else {
     error = launchIssue(p, job, vehicle);
   }
-  return { blueprint, analysis, vehicle, error };
+  return { blueprint, analysis, vehicle, error, seat };
 }
 
-export function prepareContractBlueprint(p: Program, job: Job, blueprintId: string) {
-  const { blueprint, analysis, vehicle, error } = inspectContractBlueprint(p, job, blueprintId);
+export function prepareContractBlueprint(
+  p: Program,
+  job: Job,
+  blueprintId: string,
+  pilotId?: string,
+) {
+  const { blueprint, analysis, vehicle, error, seat } = inspectContractBlueprint(
+    p,
+    job,
+    blueprintId,
+    pilotId,
+  );
   if (error || !vehicle || !blueprint || !analysis) return { error, flight: null };
 
   const instance = buildVehicleInstance(blueprint, analysis);
   p.activeBlueprintId = blueprint.id;
   const flight = initial(instance.stages, instance.payloadDryKg, instance.name, blueprint.parts);
+  if (seat?.pilot && seat.def) applyPilotToFlight(flight, seat.pilot, seat.def);
   prepare(p, job, flight);
+  if (seat?.pilot) p.activePilotId = seat.pilot.id;
   if (job === "sounding") p.soundingVehicle = vehicle;
   else p.contractVehicle = vehicle;
   return { error: "", flight };
@@ -1651,22 +1818,27 @@ export function inspectRotatingBlueprint(
   p: Program,
   offer: RotatingContract,
   blueprintId: string,
+  pilotId?: string,
 ) {
   const blueprint = p.blueprints.find((b) => b.id === blueprintId);
   if (!blueprint) return { vehicle: null, error: "Blueprint not found." };
+  const seat = validatePilotSeat(p, blueprint, pilotId);
   const analysis = analyzeBlueprint(blueprint, getFacilityLimits(p));
   const subsidy = offer.hardwareDiscount ?? 0;
   const hardwareCost = Math.max(0, Math.round(analysis.hardwareCost * (1 - subsidy)));
+  const propMult = seat.def?.perk === "cold_soak" ? 0.85 : 1;
   const vehicle: VehicleSpec = {
     name: blueprint.name,
     wetMassTonnes: analysis.wetTonnes,
     heightMeters: analysis.heightMeters,
     hardwareCost,
-    propellantCost: analysis.propellantCost,
+    propellantCost: Math.max(0, Math.round(analysis.propellantCost * propMult)),
     cargo: offer.cargoKg,
   };
   let error = "";
-  if (!analysis.canLaunchWithLimits) {
+  if (seat.error) {
+    error = seat.error;
+  } else if (!analysis.canLaunchWithLimits) {
     error = analysis.warnings.find((w) => w.severity === "error")?.message
       ?? "Vehicle failed pre-launch checks.";
   } else if (analysis.stageCount > 2) {
@@ -1683,78 +1855,29 @@ export function inspectRotatingBlueprint(
     const check = canLaunchVehicle(p, vehicle);
     if (!check.ok) error = check.reason;
   }
-  return { blueprint, analysis, vehicle, error };
+  return { blueprint, analysis, vehicle, error, seat };
 }
 
 export function prepareRotatingContractBlueprint(
   p: Program,
   offer: RotatingContract,
   blueprintId: string,
+  pilotId?: string,
 ) {
-  const { blueprint, analysis, vehicle, error } = inspectRotatingBlueprint(p, offer, blueprintId);
+  const { blueprint, analysis, vehicle, error, seat } = inspectRotatingBlueprint(
+    p,
+    offer,
+    blueprintId,
+    pilotId,
+  );
   if (error || !vehicle || !blueprint || !analysis) return { error, flight: null };
 
   const instance = buildVehicleInstance(blueprint, analysis);
   p.activeBlueprintId = blueprint.id;
   const flight = initial(instance.stages, instance.payloadDryKg, instance.name, blueprint.parts);
+  if (seat?.pilot && seat.def) applyPilotToFlight(flight, seat.pilot, seat.def);
   prepare(p, "rotating", flight);
-  flight.cargo = offer.cargoKg;
-  p.activeRotating = structuredClone(offer);
-  p.contractVehicle = vehicle;
-  return { error: "", flight };
-}
-
-export function inspectRotatingBlueprint(
-  p: Program,
-  offer: RotatingContract,
-  blueprintId: string,
-) {
-  const blueprint = p.blueprints.find((b) => b.id === blueprintId);
-  if (!blueprint) return { vehicle: null, error: "Blueprint not found." };
-  const analysis = analyzeBlueprint(blueprint, getFacilityLimits(p));
-  const subsidy = offer.hardwareDiscount ?? 0;
-  const hardwareCost = Math.max(0, Math.round(analysis.hardwareCost * (1 - subsidy)));
-  const vehicle: VehicleSpec = {
-    name: blueprint.name,
-    wetMassTonnes: analysis.wetTonnes,
-    heightMeters: analysis.heightMeters,
-    hardwareCost,
-    propellantCost: analysis.propellantCost,
-    cargo: offer.cargoKg,
-  };
-  let error = "";
-  if (!analysis.canLaunchWithLimits) {
-    error = analysis.warnings.find((w) => w.severity === "error")?.message
-      ?? "Vehicle failed pre-launch checks.";
-  } else if (analysis.stageCount > 2) {
-    error = "Flight supports up to two flight stages.";
-  } else if (!analysis.stages[0]?.fuelTonnes) {
-    error = "Stage 1 needs propellant to lift off.";
-  } else if (offer.maxWetTonnes !== undefined && analysis.wetTonnes > offer.maxWetTonnes) {
-    error = `Exceeds Featherweight cap (≤ ${offer.maxWetTonnes} t).`;
-  } else if (offer.maxStages !== undefined && analysis.stageCount > offer.maxStages) {
-    error = `Single-Stage modifier allows ${offer.maxStages} stage max.`;
-  } else if (offer.maxParts !== undefined && analysis.partCount > offer.maxParts) {
-    error = `Minimalist modifier allows ${offer.maxParts} parts max.`;
-  } else {
-    const check = canLaunchVehicle(p, vehicle);
-    if (!check.ok) error = check.reason;
-  }
-  return { blueprint, analysis, vehicle, error };
-}
-
-export function prepareRotatingContractBlueprint(
-  p: Program,
-  offer: RotatingContract,
-  blueprintId: string,
-) {
-  const { blueprint, analysis, vehicle, error } = inspectRotatingBlueprint(p, offer, blueprintId);
-  if (error || !vehicle || !blueprint || !analysis) return { error, flight: null };
-
-  const instance = buildVehicleInstance(blueprint, analysis);
-  p.activeBlueprintId = blueprint.id;
-  const flight = initial(instance.stages, instance.payloadDryKg, instance.name, blueprint.parts);
-  prepare(p, "rotating", flight);
+  if (seat?.pilot) p.activePilotId = seat.pilot.id;
   flight.cargo = offer.cargoKg;
   p.activeRotating = structuredClone(offer);
   p.contractVehicle = vehicle;
@@ -1845,6 +1968,13 @@ export function payLaunch(p: Program): string {
       milestoneBonus: 0,
     };
     p.paid = true;
+    if (p.activePilotId) {
+      const pilot = ensureCrew(p).pilots.find((x) => x.id === p.activePilotId);
+      if (pilot) {
+        pilot.status = "flying";
+        delete pilot.duty;
+      }
+    }
     return "";
   }
   const q = quote(p, p.sortie);
@@ -1867,6 +1997,13 @@ export function payLaunch(p: Program): string {
     milestoneBonus: q.firstTimeBonus,
   };
   p.paid = true;
+  if (p.activePilotId) {
+    const pilot = ensureCrew(p).pilots.find((x) => x.id === p.activePilotId);
+    if (pilot) {
+      pilot.status = "flying";
+      delete pilot.duty;
+    }
+  }
   return "";
 }
 
@@ -2030,12 +2167,20 @@ export function settle(p: Program, f: Flight): string {
   const gainedC = p.credits - prevCredits;
   const capNote = gainedC < totalCredits ? " (capped)" : "";
   if (job === "rotating") {
-    const offerName = p.activeRotating?.name ?? "Rotating contract";
-    const offerId = p.activeRotating?.id;
+    const offer = p.activeRotating;
+    const offerName = offer?.name ?? "Rotating contract";
+    const offerId = offer?.id;
+    if (p.activePilotId && offer) {
+      const hasChallenge = offer.modifiers.some((m) => MODIFIER_META[m].type === "challenge");
+      p.pendingPilotXp = (p.pendingPilotXp ?? 0) + contractXpReward(offer.tier, hasChallenge);
+    }
     if (offerId && p.rotatingBoard) {
       p.rotatingBoard.offers = p.rotatingBoard.offers.filter((o) => o.id !== offerId);
     }
     return `${offerName} complete · +${gainedC.toLocaleString("en-US")} C${capNote} · +${booked.research} RD`;
+  }
+  if (p.activePilotId) {
+    p.pendingPilotXp = (p.pendingPilotXp ?? 0) + contractXpReward(CONTRACTS[job].tier, false);
   }
   p.completed[job] = (p.completed[job] ?? 0) + 1;
   p.milestones.firstSounding ||= job === "sounding";
@@ -2200,6 +2345,12 @@ export function validProgram(value: unknown, f: Flight): value is Program {
     )
       return false;
   }
+  if (p.crew !== undefined && !isValidCrewState(p.crew)) return false;
+  if (p.activePilotId !== undefined && !PILOT_BY_ID[p.activePilotId]) return false;
+  if (p.pendingPilotXp !== undefined && !natural(p.pendingPilotXp)) return false;
+  if (p.crew !== undefined && !isValidCrewState(p.crew)) return false;
+  if (p.activePilotId !== undefined && !PILOT_BY_ID[p.activePilotId]) return false;
+  if (p.pendingPilotXp !== undefined && !natural(p.pendingPilotXp)) return false;
 
   const expectedCargo =
     p.sortie === "practice"

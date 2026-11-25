@@ -5,6 +5,8 @@ import {
   boostFacility,
   exchangeNovaShard,
   type StoreResource,
+  abandonActivePilot,
+  assignPilotDuty,
   completeFinishedUpgrades,
   contractVehicle,
   ensureRotatingBoard,
@@ -16,12 +18,16 @@ import {
   prepareContractBlueprint,
   prepareRotatingContractBlueprint,
   prepareSoundingBlueprint,
+  pullPilotCard,
   reclaimTile,
+  recoverStrandedPilot,
   rerollRotatingBoard,
+  resolvePilotFlightOutcome,
   clearObstacle,
   settle,
   tickEconomy,
   upgrade,
+  type DutyStation,
   type Job,
   type Kind,
   type RotatingContract,
@@ -63,10 +69,6 @@ import {
   signOutCloudSession,
   signUpEmail,
 } from "../persistence/cloud";
-
-export type PendingContract =
-  | { kind: "fixed"; job: Job }
-  | { kind: "rotating"; offer: RotatingContract };
 
 export type PendingContract =
   | { kind: "fixed"; job: Job }
@@ -314,11 +316,42 @@ export function useMission() {
     return err;
   }
 
-  function stageContract(job: Job, blueprintId?: string): string {
+  function pullPilot() {
+    if (!ready.current) return { result: null, error: "Save is still loading." };
+    const res = pullPilotCard(mission.current.program);
+    if (!res.error) {
+      save();
+      refresh();
+    }
+    return res;
+  }
+
+  function setPilotDuty(pilotId: string, station?: DutyStation): string {
+    if (!ready.current) return "Save is still loading.";
+    const err = assignPilotDuty(mission.current.program, pilotId, station);
+    if (!err) {
+      save();
+      refresh();
+    }
+    return err;
+  }
+
+  function recoverPilot(pilotId: string): string {
+    if (!ready.current) return "Save is still loading.";
+    const err = recoverStrandedPilot(mission.current.program, pilotId);
+    if (!err) {
+      save();
+      refresh();
+    }
+    return err;
+  }
+
+  function stageContract(job: Job, blueprintId?: string, pilotId?: string): string {
     if (!ready.current) return "Save is still loading.";
     const data = mission.current;
+    const abandonNote = abandonActivePilot(data.program);
     if (blueprintId) {
-      const result = prepareContractBlueprint(data.program, job, blueprintId);
+      const result = prepareContractBlueprint(data.program, job, blueprintId, pilotId);
       if (!result.flight) return result.error || "Unable to stage vehicle.";
       data.flight = result.flight;
       data.log = [
@@ -330,7 +363,7 @@ export function useMission() {
       data.view = "flight";
       setPendingContract(null);
       install(data);
-      setNotice("");
+      setNotice(abandonNote);
       save();
       return "";
     }
@@ -342,13 +375,19 @@ export function useMission() {
     if (issue) return issue;
     if (!newSortie(job)) return "Unable to stage contract.";
     setPendingContract(null);
+    if (abandonNote) setNotice(abandonNote);
     return "";
   }
 
-  function stageRotatingContract(offer: RotatingContract, blueprintId: string): string {
+  function stageRotatingContract(
+    offer: RotatingContract,
+    blueprintId: string,
+    pilotId?: string,
+  ): string {
     if (!ready.current) return "Save is still loading.";
     const data = mission.current;
-    const result = prepareRotatingContractBlueprint(data.program, offer, blueprintId);
+    const abandonNote = abandonActivePilot(data.program);
+    const result = prepareRotatingContractBlueprint(data.program, offer, blueprintId, pilotId);
     if (!result.flight) return result.error || "Unable to stage vehicle.";
     data.flight = result.flight;
     data.log = [
@@ -360,7 +399,7 @@ export function useMission() {
     data.view = "flight";
     setPendingContract(null);
     install(data);
-    setNotice("");
+    setNotice(abandonNote);
     save();
     return "";
   }
@@ -464,6 +503,8 @@ export function useMission() {
   function newSortie(job: Job | "practice", soundingBlueprintId = "") {
     if (!ready.current) return false;
     const data = mission.current;
+    const abandonNote = abandonActivePilot(data.program);
+    const abandonNote = abandonActivePilot(data.program);
     if (job === "sounding" && soundingBlueprintId) {
       const result = prepareSoundingBlueprint(data.program, soundingBlueprintId);
       if (!result.flight) {
@@ -494,7 +535,7 @@ export function useMission() {
     ];
     data.view = "flight";
     install(data);
-    setNotice("");
+    setNotice(abandonNote);
     save();
     return true;
   }
@@ -764,6 +805,11 @@ export function useMission() {
               ? "Surface impact. Vehicle lost."
               : "Soft touchdown confirmed.",
           );
+          const pilotMsg = resolvePilotFlightOutcome(program, s);
+          if (pilotMsg) {
+            log(pilotMsg);
+            setNotice(reward ? `${reward} · ${pilotMsg}` : pilotMsg);
+          }
           rate.current = 1;
           event = true;
         }
@@ -878,6 +924,9 @@ export function useMission() {
     stageRotatingContract,
     refreshRotatingBoard,
     rerollContracts,
+    pullPilot,
+    setPilotDuty,
+    recoverPilot,
     selectBlueprint,
     saveBlueprint,
     deleteBlueprint,
