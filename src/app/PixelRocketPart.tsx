@@ -308,6 +308,26 @@ export function PixelRocketPart({
       break;
     }
 
+    case "eng_valkyrie": {
+      // Heavy vacuum lander engine: wide radiation-cooled bell + dark gimbal housing
+      const collarH = Math.max(3, Math.round(rows * 0.32));
+      const bellH = rows - collarH;
+      r(1, 0, cols - 2, collarH, edge);
+      r(2, 1, cols - 4, Math.max(1, collarH - 1), PAL.steel);
+      r(2, 1, 1, Math.max(1, collarH - 1), PAL.steelLight);
+      r(cols - 2 - Math.max(1, shadowCols - 1), 1, Math.max(1, shadowCols - 1), Math.max(1, collarH - 1), PAL.steelDark);
+      // Amber turbopump accent band on collar
+      r(2, Math.max(1, collarH - 1), cols - 4, 1, PAL.stripeAmber);
+      drawBell(
+        Math.round(cols / 2),
+        collarH,
+        bellH,
+        Math.max(2, Math.floor(cols * 0.2)),
+        Math.max(3, Math.floor(cols * 0.42)),
+      );
+      break;
+    }
+
     case "eng_titan": {
       const collarH = Math.max(4, Math.round(rows * 0.42));
       const bellH = rows - collarH;

@@ -751,7 +751,7 @@ export function Workshop({
     }
 
     const defaultStage =
-      def.category === "pod" || partId === "eng_dart" || partId === "tank_s"
+      def.category === "pod" || partId === "eng_dart" || partId === "eng_valkyrie" || partId === "tank_s"
         ? upperStage
         : 0;
 

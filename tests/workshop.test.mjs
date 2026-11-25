@@ -188,3 +188,38 @@ test("side SRB attached to stage 1 burns only on stage 1, not stage 0", () => {
   assert.equal(a.stages[1].thrustKn, 940);
   assert.equal(a.stages[1].fuelTonnes, 19);
 });
+
+test("colony kit lunar lander with Valkyrie achieves lunar delta-V and braking TWR", () => {
+  const lv2Limits = {
+    maxMassTonnes: 220,
+    maxHeightMeters: 74,
+    maxParts: 40,
+    maxStages: 4,
+    hardwareDiscount: 0,
+    maxPropellantCap: 6000,
+    labLevel: 2,
+  };
+  const bp = {
+    id: "bp_lunar_colony",
+    name: "Lunar Colony Lander",
+    version: 1,
+    parts: [
+      { uid: "p1", partId: "pod_mk1", stage: 1, symmetry: 1 },
+      { uid: "p2", partId: "colony_kit", stage: 1, symmetry: 1 },
+      { uid: "p3", partId: "tank_m", stage: 1, symmetry: 1 },
+      { uid: "p4", partId: "eng_valkyrie", stage: 1, symmetry: 1 },
+      { uid: "p5", partId: "legs_mk1", stage: 1, symmetry: 2, mount: "side", parentUid: "p3" },
+      { uid: "p6", partId: "decoupler", stage: 0, symmetry: 1 },
+      { uid: "p7", partId: "tank_l", stage: 0, symmetry: 1 },
+      { uid: "p8", partId: "eng_titan", stage: 0, symmetry: 1 },
+      { uid: "p9", partId: "bracket_side", stage: 0, symmetry: 2, mount: "side", parentUid: "p7" },
+      { uid: "p10", partId: "tank_m", stage: 0, symmetry: 2, mount: "side", parentUid: "p9" },
+      { uid: "p11", partId: "eng_kestrel", stage: 0, symmetry: 2, mount: "side", parentUid: "p9" },
+    ],
+  };
+  const a = analyzeBlueprint(bp, lv2Limits);
+  assert.equal(a.canLaunchWithLimits, true);
+  assert.ok(a.totalDeltaV > 5000, `Expected >5000 m/s dV, got ${a.totalDeltaV}`);
+  assert.ok(a.liftoffTwr > 1.5, `Expected liftoff TWR > 1.5, got ${a.liftoffTwr}`);
+  assert.ok(a.stages[1].thrustKn === 420);
+});
