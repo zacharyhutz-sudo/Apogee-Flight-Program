@@ -8,8 +8,9 @@ import {
   burning,
   clamp,
   hasActivePart,
-  headingVector,
   radius,
+  speed,
+  surfaceVelocity,
   type Flight,
   type FlightVisualPart,
 } from "../../sim/flight";
@@ -30,6 +31,9 @@ interface PlumeAnchor {
   ly: number;
   scale: number;
 }
+
+const MIN_FLIGHT_ZOOM = 0.06;
+const MAX_FLIGHT_ZOOM = 2.4;
 
 function resolveParts(list: FlightVisualPart[] | undefined, minStage: number) {
   if (!list || !list.length) return null;
@@ -65,11 +69,6 @@ function drawCustomStack(
   angle: number,
   pxPerMeter: number,
 ): { height: number; plumeAnchors: PlumeAnchor[] } {
-  const byUid = new Map<string, RenderedPart>();
-  for (const p of parts) {
-    if (p.uid) byUid.set(p.uid, p);
-  }
-
   const center = parts.filter((p) => p.mount === "center");
   const brackets = parts.filter((p) => p.partId === "bracket_side");
   const bracketChildren = new Map<string, RenderedPart[]>();
@@ -223,7 +222,6 @@ function drawCustomStack(
     }
   };
 
-  // Stack bottom-to-top from local y = 0 upward (negative local y is nose direction)
   let totalH = 0;
   for (const p of center) totalH += Math.max(4, p.def.heightM * pxPerMeter);
 
@@ -257,7 +255,6 @@ function drawCustomStack(
     yTop = yBot;
   }
 
-  // Draw side brackets & their mirrored side-column stacks
   for (const br of brackets) {
     const hostBox =
       (br.parentUid ? centerBoxByUid.get(br.parentUid) : undefined) ??
@@ -278,8 +275,10 @@ function drawCustomStack(
       colTotalH += Math.max(4, ch.def.heightM * pxPerMeter);
       colMaxHw = Math.max(colMaxHw, Math.max(5, ch.def.widthM * pxPerMeter * 1.1) / 2);
     }
-    // Anchor side stack bottom near host tank bottom (or rocket bottom 0)
-    const colBottomY = Math.min(0, hostBox.yBot + (children.some((c) => c.def.category === "engine") ? 2.5 * pxPerMeter : 0));
+    const colBottomY = Math.min(
+      0,
+      hostBox.yBot + (children.some((c) => c.def.category === "engine") ? 2.5 * pxPerMeter : 0),
+    );
     const colStartY = colBottomY - colTotalH;
 
     for (const side of sides) {
@@ -297,7 +296,6 @@ function drawCustomStack(
         0x424c5a,
         0x19222d,
       );
-      // Crossfeed pipe highlight
       fillPoly(
         [
           [xMin, brMidY - 1],
@@ -324,7 +322,6 @@ function drawCustomStack(
     }
   }
 
-  // Draw standalone 2x mirror radial boosters / legs anchored to their own stage/host
   for (const p of standaloneRadial) {
     const { def } = p;
     const h = Math.max(6, def.heightM * pxPerMeter);
@@ -365,23 +362,53 @@ function drawCustomStack(
   return { height: totalH, plumeAnchors };
 }
 
-export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
+export function FlightScene({
+  vessel,
+  onOpenMap,
+}: {
+  vessel: MutableRefObject<Flight>;
+  onOpenMap?: () => void;
+}) {
   const host = useRef<HTMLDivElement>(null);
+  const openMapRef = useRef(onOpenMap);
+  openMapRef.current = onOpenMap;
 
   useEffect(() => {
     const parent = host.current!;
-    let zoom = 1;
+    const minLogZoom = Math.log(MIN_FLIGHT_ZOOM);
+    const maxLogZoom = Math.log(MAX_FLIGHT_ZOOM);
+    let logZoom = 0;
+    let targetLogZoom = 0;
+    let lastManualZoomAt = 0;
+    let mapOutAccum = 0;
+    let lastFrameMs = performance.now();
+
     const pointers = new Map<number, { x: number; y: number }>();
     let lastSpan = 0;
     let lastTapAt = 0;
 
-    function zoomBy(factor: number) {
-      zoom = clamp(zoom * factor, 0.00045, 2.2);
+    function adjustLogZoom(deltaLog: number) {
+      const now = performance.now();
+      lastManualZoomAt = now;
+      const next = targetLogZoom + deltaLog;
+      if (next < minLogZoom) {
+        targetLogZoom = minLogZoom;
+        if (vessel.current.status === "flying" && openMapRef.current) {
+          mapOutAccum += minLogZoom - next;
+          if (mapOutAccum > 0.38) {
+            mapOutAccum = 0;
+            openMapRef.current();
+          }
+        }
+      } else {
+        mapOutAccum = 0;
+        targetLogZoom = clamp(next, minLogZoom, maxLogZoom);
+      }
     }
 
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      zoomBy(Math.exp(-e.deltaY * 0.0018));
+      adjustLogZoom(-e.deltaY * 0.0018);
     }
 
     function onPointerDown(e: PointerEvent) {
@@ -390,7 +417,9 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
       if (pointers.size === 1) {
         const now = performance.now();
         if (now - lastTapAt < 280) {
-          zoom = 1;
+          targetLogZoom = 0;
+          lastManualZoomAt = now;
+          mapOutAccum = 0;
           lastTapAt = 0;
         } else {
           lastTapAt = now;
@@ -404,7 +433,9 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
         const span = Math.hypot(a.x - b.x, a.y - b.y);
-        if (lastSpan > 0 && span > 0) zoomBy(span / lastSpan);
+        if (lastSpan > 0 && span > 0) {
+          adjustLogZoom(Math.log(span / lastSpan));
+        }
         lastSpan = span;
       }
     }
@@ -412,6 +443,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
     function onPointerUp(e: PointerEvent) {
       pointers.delete(e.pointerId);
       lastSpan = 0;
+      mapOutAccum = 0;
     }
 
     const stars = Array.from({ length: 90 }, (_, i) => ({
@@ -468,6 +500,10 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
       }
 
       update() {
+        const nowMs = performance.now();
+        const frameDt = clamp((nowMs - lastFrameMs) / 1000, 0.001, 0.1);
+        lastFrameMs = nowMs;
+
         const s = vessel.current;
         const w = this.scale.width;
         const h = this.scale.height;
@@ -475,17 +511,45 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         const isMoon = s.body === "moon";
         const r = radius(s) || bp.R;
         const alt = Math.max(0, r - bp.R);
+        const { vr, vt } = surfaceVelocity(s);
+
+        // Gentle descent auto-framing near ground if user hasn't manually zoomed recently
+        if (
+          s.status === "flying" &&
+          alt < 600 &&
+          vr < -0.5 &&
+          nowMs - lastManualZoomAt > 3500
+        ) {
+          const desired = Math.log(clamp(1.15 - alt / 950, 0.55, 1.15));
+          targetLogZoom += (desired - targetLogZoom) * (1 - Math.exp(-2.2 * frameDt));
+        }
+
+        // Smooth log-space exponential zoom damping
+        logZoom += (targetLogZoom - logZoom) * (1 - Math.exp(-14 * frameDt));
+        const zoom = Math.exp(logZoom);
+
+        // Local-up horizon-locked camera (SFS style): local radial outward is ALWAYS screen-up (-y)
+        const upAngle = Math.atan2(s.y, s.x);
+        const cosU = Math.cos(upAngle);
+        const sinU = Math.sin(upAngle);
 
         const cx = Math.round(w * 0.5);
-        const cy = Math.round(h * (s.status === "pad" ? 0.62 : 0.52));
+        const cy = Math.round(h * (s.status === "pad" ? 0.62 : 0.54));
         const basePpm = Math.min(w, h) / 215;
         const ppm = basePpm * zoom;
 
-        const worldToScreen = (wx: number, wy: number) => ({
-          x: cx + (wy - s.y) * ppm,
-          y: cy - (wx - s.x) * ppm,
-        });
+        const worldToScreen = (wx: number, wy: number) => {
+          const dx = wx - s.x;
+          const dy = wy - s.y;
+          const localUp = dx * cosU + dy * sinU;
+          const localEast = -dx * sinU + dy * cosU;
+          return {
+            x: cx + localEast * ppm,
+            y: cy - localUp * ppm,
+          };
+        };
 
+        // 1. Sky / Space background
         const atmoFrac = bp.AIR > 0 ? clamp(1 - alt / bp.AIR, 0, 1) : 0;
         const bg = this.bg;
         bg.clear();
@@ -506,36 +570,38 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           }
         }
 
+        // 2. Physical curved planet / Moon horizon (always level at bottom of screen)
         const g = this.world;
         g.clear();
 
         const planetScreenR = bp.R * ppm;
         const atmoScreenR = (bp.R + bp.AIR) * ppm;
-        const earthCenter = worldToScreen(0, 0);
+        const bodyCenter = worldToScreen(0, 0);
 
         if (planetScreenR < 2600) {
           if (!isMoon) {
-            g.fillStyle(0x4b87a6, 0.24).fillCircle(earthCenter.x, earthCenter.y, atmoScreenR);
-            g.lineStyle(1.2, 0x87c8d6, 0.45).strokeCircle(earthCenter.x, earthCenter.y, atmoScreenR);
+            g.fillStyle(0x4b87a6, 0.24).fillCircle(bodyCenter.x, bodyCenter.y, atmoScreenR);
+            g.lineStyle(1.2, 0x87c8d6, 0.45).strokeCircle(bodyCenter.x, bodyCenter.y, atmoScreenR);
           }
           g.fillStyle(isMoon ? 0x67707a : 0x1f435a, 1).fillCircle(
-            earthCenter.x,
-            earthCenter.y,
+            bodyCenter.x,
+            bodyCenter.y,
             planetScreenR,
           );
           g.lineStyle(
             Math.max(1.5, Math.min(5, planetScreenR * 0.018)),
             isMoon ? 0xb4bcc4 : 0x5c8b76,
             1,
-          ).strokeCircle(earthCenter.x, earthCenter.y, planetScreenR);
-          const padPt = worldToScreen(R, 0);
-          g.fillStyle(0xf3a953, 0.9).fillCircle(
-            padPt.x,
-            padPt.y,
-            Math.max(2, Math.min(4, 1800 * ppm)),
-          );
+          ).strokeCircle(bodyCenter.x, bodyCenter.y, planetScreenR);
+          if (!isMoon) {
+            const padPt = worldToScreen(R, 0);
+            g.fillStyle(0xf3a953, 0.9).fillCircle(
+              padPt.x,
+              padPt.y,
+              Math.max(2, Math.min(4, 1800 * ppm)),
+            );
+          }
         } else {
-          const centerAngle = Math.atan2(s.y, s.x);
           const halfSpan = clamp(
             (Math.max(w, h) * 1.1) / planetScreenR,
             0.0005,
@@ -551,13 +617,13 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           ) => {
             const pts: Array<{ x: number; y: number }> = [];
             for (let i = 0; i <= steps; i++) {
-              const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
+              const a = upAngle - halfSpan + (2 * halfSpan * i) / steps;
               pts.push(
                 worldToScreen(outerR * Math.cos(a), outerR * Math.sin(a)),
               );
             }
             for (let i = steps; i >= 0; i--) {
-              const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
+              const a = upAngle - halfSpan + (2 * halfSpan * i) / steps;
               pts.push(
                 worldToScreen(innerR * Math.cos(a), innerR * Math.sin(a)),
               );
@@ -575,36 +641,50 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
 
           const rimPts: Array<{ x: number; y: number }> = [];
           for (let i = 0; i <= steps; i++) {
-            const a = centerAngle - halfSpan + (2 * halfSpan * i) / steps;
+            const a = upAngle - halfSpan + (2 * halfSpan * i) / steps;
             rimPts.push(worldToScreen(bp.R * Math.cos(a), bp.R * Math.sin(a)));
           }
           g.lineStyle(1.5, isMoon ? 0xd2d8de : 0x89b39d, 0.95).strokePoints(rimPts, false);
         }
 
+        // 3. Launchpad slab & gantry tower (Earth North Pole)
         const padScreen = worldToScreen(bp.R, 0);
-        const padVisible = !isMoon &&
+        const padVisible =
+          !isMoon &&
+          Math.abs(upAngle) < 0.08 &&
           ppm > 0.08 &&
           padScreen.x > -200 &&
           padScreen.x < w + 200 &&
           padScreen.y > -200 &&
           padScreen.y < h + 200;
 
-        const sceneryAlpha = isMoon ? 0 : clamp(1 - alt / 1800, 0, 1)
-          * clamp((ppm - 0.09) / 0.3, 0, 1)
-          * clamp(2 - Math.abs(padScreen.x - cx) / w, 0, 1);
+        const sceneryAlpha = isMoon
+          ? 0
+          : clamp(1 - alt / 1800, 0, 1) *
+            clamp((ppm - 0.09) / 0.3, 0, 1) *
+            clamp(2 - Math.abs(padScreen.x - cx) / w, 0, 1);
         const horizon = cy + Math.min(h, alt * ppm * 0.16);
         const artScale = Math.max((w + 100) / 600, h / 255);
         const sceneryX = cx + clamp((padScreen.x - cx) * 0.08, -45, 45);
-        this.skyline.setPosition(sceneryX, horizon).setScale(artScale)
-          .setVisible(sceneryAlpha > 0).setAlpha(sceneryAlpha);
-        this.hills.setPosition(sceneryX, padScreen.y).setScale(artScale)
-          .setVisible(sceneryAlpha > 0).setAlpha(sceneryAlpha);
+        this.skyline
+          .setPosition(sceneryX, horizon)
+          .setScale(artScale)
+          .setVisible(sceneryAlpha > 0)
+          .setAlpha(sceneryAlpha);
+        this.hills
+          .setPosition(sceneryX, padScreen.y)
+          .setScale(artScale)
+          .setVisible(sceneryAlpha > 0)
+          .setAlpha(sceneryAlpha);
 
-        const shipScale = clamp(ppm / 1.35, 0.16, 2.2);
+        // Unified scaling across sprites & custom VAB rockets
+        const shipScale = clamp(ppm / 1.35, 0.14, 2.4);
+        const customPpm = shipScale * 2.85;
         const padSurface = this.padSurface.clear();
         const foregroundY = Math.floor(padScreen.y + 23 * artScale);
         if (sceneryAlpha > 0 && foregroundY < h) {
-          padSurface.fillStyle(0x202c3a, sceneryAlpha)
+          padSurface
+            .fillStyle(0x202c3a, sceneryAlpha)
             .fillRect(0, foregroundY, w, h - foregroundY);
         }
         if (padVisible) {
@@ -638,7 +718,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           this.tower.setVisible(false);
         }
 
-        // 4. Custom VAB rocket & real simulated detached stages
+        // 4. Detached stage debris
         const customGfx = this.customGfx;
         customGfx.clear();
 
@@ -646,42 +726,43 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
         for (let i = 0; i < this.debrisSprites.length; i++) {
           const spr = this.debrisSprites[i];
           const d = debrisList[i];
-          if (!d || ppm < 0.05) {
+          if (!d) {
             spr.setVisible(false);
             continue;
           }
           const pt = worldToScreen(d.x, d.y);
+          const relAngle = d.angle - upAngle;
           const customDebris = resolveParts(d.parts, 0);
           if (customDebris) {
             spr.setVisible(false);
-            drawCustomStack(customGfx, customDebris, pt.x, pt.y, d.angle, ppm * 2.1);
+            drawCustomStack(customGfx, customDebris, pt.x, pt.y, relAngle, customPpm);
           } else {
             spr
               .setVisible(true)
               .setPosition(pt.x, pt.y)
-              .setRotation(d.angle)
+              .setRotation(relAngle)
               .setScale(shipScale);
           }
         }
 
-        // 5. Active Rocket (Custom VAB procedural render OR Pioneer pixel sprite), bottom-anchored at (cx, cy)
+        // 5. Active Rocket (local-up frame: pitch 0 = straight up)
         const upper = s.stage === 1;
-        const { angle } = headingVector(s);
-        const spriteVisible = s.status !== "lost" && ppm >= 0.06;
+        const shipAngle = (s.pitch * Math.PI) / 180;
+        const spriteVisible = s.status !== "lost";
         const customParts = resolveParts(s.blueprintParts, s.stage);
 
         let activeRocketHeight = (upper ? 42 : 76) * shipScale;
         let plumeAnchors: PlumeAnchor[] = [{ lx: 0, ly: 0, scale: 1 }];
         if (customParts && spriteVisible) {
           this.ship.setVisible(false);
-          const drawn = drawCustomStack(customGfx, customParts, cx, cy, angle, ppm * 2.1);
+          const drawn = drawCustomStack(customGfx, customParts, cx, cy, shipAngle, customPpm);
           activeRocketHeight = drawn.height;
           plumeAnchors = drawn.plumeAnchors;
         } else {
           this.ship
             .setTexture(upper ? "upper" : "vehicle")
             .setPosition(cx, cy)
-            .setRotation(angle)
+            .setRotation(shipAngle)
             .setScale(shipScale)
             .setVisible(spriteVisible);
         }
@@ -696,8 +777,8 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           : 0;
         this.canopy.setVisible(false);
         if (spriteVisible) {
-          const cosA = Math.cos(angle);
-          const sinA = Math.sin(angle);
+          const cosA = Math.cos(shipAngle);
+          const sinA = Math.sin(shipAngle);
           const localPt = (lx: number, ly: number) => ({
             x: cx + lx * cosA - ly * sinA,
             y: cy + lx * sinA + ly * cosA,
@@ -719,39 +800,38 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
             }
           }
           if (chuteOpen) {
-            const antiGravAngle = Math.atan2(s.y, s.x);
-            const cG = Math.cos(antiGravAngle);
-            const sG = Math.sin(antiGravAngle);
             const nose = localPt(0, -activeRocketHeight);
-            const chutePt = (lx: number, ly: number) => ({
-              x: nose.x + lx * cG - ly * sG,
-              y: nose.y + lx * sG + ly * cG,
-            });
             const width = this.canopyWidth;
             const sway = Math.sin(s.t * 2.2) * 1.4 * shipScale * width;
             const height = (29 + 22 * width) * shipScale;
-            const center = chutePt(sway, -height);
-            const bridle = chutePt(0, -5 * shipScale);
-            customGfx.lineStyle(Math.max(0.65, shipScale * 0.8), 0xe1d8bf, 0.92)
+            const center = { x: nose.x + sway, y: nose.y - height };
+            const bridle = { x: nose.x, y: nose.y - 5 * shipScale };
+            customGfx
+              .lineStyle(Math.max(0.65, shipScale * 0.8), 0xe1d8bf, 0.92)
               .lineBetween(nose.x, nose.y, bridle.x, bridle.y);
             for (const anchor of [-30, -15, 0, 15, 30]) {
-              const hem = chutePt(sway + anchor * width * shipScale, -height);
+              const hem = {
+                x: nose.x + sway + anchor * width * shipScale,
+                y: nose.y - height,
+              };
               customGfx.lineBetween(bridle.x, bridle.y, hem.x, hem.y);
             }
-            this.canopy.setVisible(true).setRotation(antiGravAngle)
+            this.canopy
+              .setVisible(true)
+              .setRotation(0)
               .setPosition(center.x, center.y)
               .setScale(width * shipScale, (0.65 + 0.35 * width) * shipScale);
           }
         }
 
-        // 6. Exhaust plumes anchored at every active engine bell (core + side stacks)
+        // 6. Exhaust plumes
         const flame = this.flame;
         flame.clear();
         if (burning(s) && spriteVisible) {
           const phase = Math.floor(s.t * 14);
           const pulse = Math.sin(phase * 2.3);
-          const cosA = Math.cos(angle);
-          const sinA = Math.sin(angle);
+          const cosA = Math.cos(shipAngle);
+          const sinA = Math.sin(shipAngle);
           for (const anchor of plumeAnchors) {
             const fx = cx + anchor.lx * cosA - anchor.ly * sinA;
             const fy = cy + anchor.lx * sinA + anchor.ly * cosA;
@@ -790,16 +870,38 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
           }
         }
 
-        // 7. Far-zoom spacecraft reticle
+        // 7. Retrograde descent marker + loss indicator
         const m = this.marker;
         m.clear();
-        if (s.status !== "lost" && ppm < 0.08) {
-          m.fillStyle(0x13222e, 0.9).fillCircle(cx, cy, 6);
-          m.lineStyle(1.5, 0xf3a953, 1).strokeCircle(cx, cy, 6);
-          m.fillStyle(0xf3a953, 1).fillCircle(
-            cx + Math.sin(angle) * 4,
-            cy - Math.cos(angle) * 4,
-            1.8,
+        const vTotal = speed(s);
+        const showRetro =
+          s.status === "flying" &&
+          vTotal > 2 &&
+          ((isMoon && alt < 35000) || (!isMoon && alt < 10000 && vr < 0));
+        if (showRetro) {
+          // Retrograde thrust direction in screen coords: (-vt, vr)
+          const retroLen = Math.hypot(vt, vr) || 1;
+          const rx = -vt / retroLen;
+          const ry = vr / retroLen;
+          const ringR = Math.max(26, Math.min(44, activeRocketHeight * 0.65 + 14));
+          const midY = cy - activeRocketHeight * 0.45;
+          const px = cx + rx * ringR;
+          const py = midY + ry * ringR;
+          const perpX = -ry;
+          const perpY = rx;
+          // Teal retrograde chevron showing where to point nose to kill velocity
+          m.lineStyle(1.6, 0x72d6c6, 0.88);
+          m.strokeCircle(px, py, 4.5);
+          m.lineBetween(px - 6, py, px - 3, py);
+          m.lineBetween(px + 3, py, px + 6, py);
+          m.lineBetween(px, py - 6, px, py - 3);
+          m.fillStyle(0x72d6c6, 0.9).fillPoints(
+            [
+              { x: px + rx * 9, y: py + ry * 9 },
+              { x: px + rx * 4 + perpX * 3.5, y: py + ry * 4 + perpY * 3.5 },
+              { x: px + rx * 4 - perpX * 3.5, y: py + ry * 4 - perpY * 3.5 },
+            ],
+            true,
           );
         }
         if (s.status === "lost") {
@@ -873,7 +975,7 @@ export function FlightScene({ vessel }: { vessel: MutableRefObject<Flight> }) {
       ref={host}
       className="flight-scene"
       role="img"
-      aria-label="Live world-fixed flight view of Earth and launch vehicle"
+      aria-label="Live horizon-locked flight view of launch vehicle"
     />
   );
 }

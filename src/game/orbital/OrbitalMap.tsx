@@ -11,25 +11,68 @@ import {
   radius,
   type Flight,
 } from "../../sim/flight";
-import { Plus, Minus, LocateFixed, Globe, Lock, Radar } from "lucide-react";
+import { Plus, Minus, LocateFixed, Globe, Lock, Radar, Moon } from "lucide-react";
+
+type MapFocus = "body" | "ship" | "moon";
 
 export function OrbitalMap({
   s,
   trackingLevel = 1,
+  onOpenFlight,
 }: {
   s: Flight;
   trackingLevel?: number;
+  onOpenFlight?: () => void;
 }) {
-  const [zoom, Z] = useState(1),
-    [pan, P] = useState([0, 0]),
-    [track, T] = useState(false),
-    [selected, select] = useState("Earth");
+  const [zoom, Z] = useState(1);
+  const [pan, P] = useState<[number, number]>([0, 0]);
+  const [focus, setFocus] = useState<MapFocus>("body");
   const [size, setSize] = useState({ w: 520, h: 286 });
+
   const D = Math.min(size.w * 0.32, size.h * 0.29);
-  const svg = useRef<SVGSVGElement>(null),
-    fingers = useRef(new Map<number, number[]>());
-  const lastSpan = useRef(0),
-    moved = useRef(false);
+  const svg = useRef<SVGSVGElement>(null);
+  const fingers = useRef(new Map<number, [number, number]>());
+  const lastSpan = useRef(0);
+  const moved = useRef(false);
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  const focusRef = useRef(focus);
+  const openFlightRef = useRef(onOpenFlight);
+  zoomRef.current = zoom;
+  panRef.current = pan;
+  focusRef.current = focus;
+  openFlightRef.current = onOpenFlight;
+
+  const bp = bodyParams(s.body);
+  const isMoon = s.body === "moon";
+  const moonPos = moonPosition(s.t);
+
+  // Auto-frame cleanly whenever SOI changes between Earth and Moon
+  useEffect(() => {
+    setFocus("body");
+    P([0, 0]);
+    Z(isMoon ? 0.85 : 1);
+  }, [isMoon]);
+
+  function zoomAround(factor: number, anchorX: number, anchorY: number) {
+    const curZ = zoomRef.current;
+    const rawNext = curZ * factor;
+    if (rawNext > 64 && focusRef.current === "ship" && openFlightRef.current) {
+      openFlightRef.current();
+      return;
+    }
+    const nextZ = clamp(rawNext, 0.14, 64);
+    const ratio = nextZ / curZ;
+    if (ratio === 1) return;
+    const [px, py] = panRef.current;
+    const cx0 = size.w / 2;
+    const cy0 = size.h * 0.49;
+    // Keep the point under (anchorX, anchorY) stationary during zoom
+    const nextPx = anchorX - cx0 - (anchorX - cx0 - px) * ratio;
+    const nextPy = anchorY - cy0 - (anchorY - cy0 - py) * ratio;
+    Z(nextZ);
+    P([nextPx, nextPy]);
+  }
 
   useEffect(() => {
     const el = svg.current!;
@@ -39,22 +82,28 @@ export function OrbitalMap({
     observer.observe(el);
     function wheel(e: WheelEvent) {
       e.preventDefault();
-      Z((z) => clamp(z * Math.exp(-e.deltaY * 0.002), 0.25, 64));
+      const rect = el.getBoundingClientRect();
+      const ax = e.clientX - rect.left;
+      const ay = e.clientY - rect.top;
+      zoomAround(Math.exp(-e.deltaY * 0.002), ax, ay);
     }
     el.addEventListener("wheel", wheel, { passive: false });
     return () => {
       observer.disconnect();
       el.removeEventListener("wheel", wheel);
     };
-  }, []);
+  }, [size.w, size.h]);
 
-  const bp = bodyParams(s.body);
-  const isMoon = s.body === "moon";
-  const moonPos = moonPosition(s.t);
-  const o = orbit(s),
-    scale = (D * zoom) / bp.R;
-  const ox = size.w / 2 + pan[0] - (track ? s.y * scale : 0),
-    oy = size.h * 0.49 + pan[1] + (track ? s.x * scale : 0);
+  const o = orbit(s);
+  const scale = (D * zoom) / bp.R;
+
+  const focusX =
+    focus === "ship" ? s.y : focus === "moon" && !isMoon ? moonPos.y : 0;
+  const focusY =
+    focus === "ship" ? s.x : focus === "moon" && !isMoon ? moonPos.x : 0;
+
+  const ox = size.w / 2 + pan[0] - focusX * scale;
+  const oy = size.h * 0.49 + pan[1] + focusY * scale;
   const point = (x: number, y: number) => [ox + y * scale, oy - x * scale];
   const pts: string[] = [];
   let previousVisible = false;
@@ -64,9 +113,9 @@ export function OrbitalMap({
     const start = cut >= 1 ? 0 : Math.acos(clamp(cut, -1, 1));
     const end = 2 * Math.PI - start;
     for (let i = 0; i <= 480; i++) {
-      const f = start + ((end - start) * i) / 480,
-        den = 1 + o.e * Math.cos(f),
-        r = o.p / den;
+      const f = start + ((end - start) * i) / 480;
+      const den = 1 + o.e * Math.cos(f);
+      const r = o.p / den;
       if (den <= 0 || r > 250 * bp.R) {
         previousVisible = false;
         continue;
@@ -89,17 +138,24 @@ export function OrbitalMap({
     if (!fingers.current.has(e.pointerId)) return;
     const old = fingers.current.get(e.pointerId)!;
     const units = 1 / (svg.current?.getScreenCTM()?.a || 1);
-    const dx = (e.clientX - old[0]) * units,
-      dy = (e.clientY - old[1]) * units;
+    const dx = (e.clientX - old[0]) * units;
+    const dy = (e.clientY - old[1]) * units;
     if (Math.abs(dx) + Math.abs(dy) > 1) moved.current = true;
     fingers.current.set(e.pointerId, [e.clientX, e.clientY]);
     if (fingers.current.size === 2) {
-      const [a, b] = [...fingers.current.values()],
-        span = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      const [a, b] = [...fingers.current.values()];
+      const span = Math.hypot(a[0] - b[0], a[1] - b[1]);
       const previous = lastSpan.current;
-      if (previous > 0) Z((z) => clamp((z * span) / previous, 0.25, 64));
+      if (previous > 0 && span > 0) {
+        const rect = svg.current!.getBoundingClientRect();
+        const midX = (a[0] + b[0]) / 2 - rect.left;
+        const midY = (a[1] + b[1]) / 2 - rect.top;
+        zoomAround(span / previous, midX, midY);
+      }
       lastSpan.current = span;
-    } else P((p) => [p[0] + dx, p[1] + dy]);
+    } else {
+      P((cur) => [cur[0] + dx, cur[1] + dy]);
+    }
   };
 
   function release(e: PointerEvent<SVGSVGElement>) {
@@ -125,13 +181,19 @@ export function OrbitalMap({
   };
 
   const hasManeuverSlot = trackingLevel >= 2;
+  const focusLabel =
+    focus === "ship"
+      ? s.vehicleName || "Craft"
+      : focus === "moon" || isMoon
+        ? "Moon"
+        : "Earth";
 
   return (
     <div className="orbital">
       <svg
         ref={svg}
         viewBox={`0 0 ${size.w} ${size.h}`}
-        aria-label="Live Earth orbital map"
+        aria-label="Live orbital map"
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
           moved.current = false;
@@ -140,12 +202,13 @@ export function OrbitalMap({
         onPointerMove={handle}
         onPointerUp={(e) => {
           if (!moved.current) {
-            const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(
+            const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(
               svg.current!.getScreenCTM()!.inverse(),
             );
-            select(
-              Math.hypot(p.x - cx, p.y - cy) < 20 ? "Pioneer 01" : "Earth",
-            );
+            if (Math.hypot(pt.x - cx, pt.y - cy) < 22) {
+              setFocus("ship");
+              P([0, 0]);
+            }
           }
           release(e);
         }}
@@ -153,9 +216,9 @@ export function OrbitalMap({
       >
         <defs>
           <radialGradient id="world" cx=".35" cy=".25" r=".9">
-            <stop stopColor="#335e6a" />
-            <stop offset=".6" stopColor="#203e50" />
-            <stop offset="1" stopColor="#102133" />
+            <stop stopColor={isMoon ? "#8d96a0" : "#335e6a"} />
+            <stop offset=".6" stopColor={isMoon ? "#646d77" : "#203e50"} />
+            <stop offset="1" stopColor={isMoon ? "#3b424a" : "#102133"} />
           </radialGradient>
           <pattern
             id="grid"
@@ -181,27 +244,29 @@ export function OrbitalMap({
           height="4000"
           fill="url(#grid)"
         />
-        <circle
-          cx={ox}
-          cy={oy}
-          r={(bp.R + bp.AIR) * scale}
-          fill="#406777"
-          stroke="#486877"
-          strokeWidth=".6"
-        />
+        {!isMoon && (
+          <circle
+            cx={ox}
+            cy={oy}
+            r={(bp.R + bp.AIR) * scale}
+            fill="#406777"
+            stroke="#486877"
+            strokeWidth=".6"
+          />
+        )}
         <circle
           cx={ox}
           cy={oy}
           r={D * zoom}
           fill="url(#world)"
-          stroke="#6a9499"
+          stroke={isMoon ? "#c5ccd4" : "#6a9499"}
           strokeWidth=".8"
         />
         <g
           clipPath="url(#earth)"
           opacity=".28"
           fill="none"
-          stroke="#77a9ae"
+          stroke={isMoon ? "#d7dee6" : "#77a9ae"}
           strokeWidth=".6"
         >
           {[0.35, 0.68].map((k) => (
@@ -214,7 +279,7 @@ export function OrbitalMap({
             />
           ))}
         </g>
-        {zoom < 3 && !track && (
+        {zoom < 3 && focus === "body" && (
           <text x={ox} y={oy + 4} textAnchor="middle" className="earth-label">
             {isMoon ? "MOON" : "EARTH"}
           </text>
@@ -301,9 +366,7 @@ export function OrbitalMap({
       >
         {hasManeuverSlot ? <Radar size={12} /> : <Lock size={12} />}
         <span>
-          {hasManeuverSlot
-            ? "SOI Tracking Active"
-            : "Tracking Lv 2"}
+          {hasManeuverSlot ? "SOI Tracking Active" : "Tracking Lv 2"}
         </span>
       </div>
 
@@ -311,32 +374,58 @@ export function OrbitalMap({
         <button
           className="map-zoom-btn"
           aria-label="Zoom in"
-          onClick={() => Z((z) => clamp(z * 1.6, 0.25, 64))}
+          onClick={() => zoomAround(1.6, size.w / 2, size.h * 0.49)}
         >
           <Plus />
         </button>
         <button
           className="map-zoom-btn"
           aria-label="Zoom out"
-          onClick={() => Z((z) => clamp(z / 1.6, 0.25, 64))}
+          onClick={() => zoomAround(1 / 1.6, size.w / 2, size.h * 0.49)}
         >
           <Minus />
         </button>
         <button
-          title={track ? "Fit Earth" : "Track craft"}
-          aria-label={track ? "Fit Earth" : "Track craft"}
+          className={focus === "ship" ? "selected" : ""}
+          title="Focus craft"
+          aria-label="Focus craft"
           onClick={() => {
-            T(!track);
+            setFocus("ship");
             P([0, 0]);
-            Z(track ? 1 : 12);
-            select(track ? "Earth" : "Pioneer 01");
+            Z(isMoon ? 4 : 8);
           }}
         >
-          {track ? <Globe /> : <LocateFixed />}
+          <LocateFixed />
         </button>
+        <button
+          className={focus === "body" ? "selected" : ""}
+          title={isMoon ? "Fit Moon" : "Fit Earth"}
+          aria-label={isMoon ? "Fit Moon" : "Fit Earth"}
+          onClick={() => {
+            setFocus("body");
+            P([0, 0]);
+            Z(isMoon ? 0.85 : 1);
+          }}
+        >
+          <Globe />
+        </button>
+        {!isMoon && (
+          <button
+            className={focus === "moon" ? "selected" : ""}
+            title="Focus Moon"
+            aria-label="Focus Moon"
+            onClick={() => {
+              setFocus("moon");
+              P([0, 0]);
+              Z(0.42);
+            }}
+          >
+            <Moon />
+          </button>
+        )}
       </div>
       <span className="map-selection">
-        {selected} · {zoom.toFixed(1)}×
+        {focusLabel} · {zoom.toFixed(1)}×
       </span>
     </div>
   );

@@ -12,6 +12,7 @@ import { canHighWarp, canMidWarp, HIGH_WARP_ALT, MID_WARP_ALT,
   deltaV,
   density,
   headingVector,
+  MOON_R,
   initial,
   mass,
   orbit,
@@ -258,4 +259,36 @@ test("100x warp unlocks at 500 km while 500x warp unlocks at 1,500 km", () => {
   s.x = R + HIGH_WARP_ALT;
   assert.equal(canMidWarp(s), true);
   assert.equal(canHighWarp(s), true);
+});
+
+test("lunar touchdown tolerances with legs allow 14 m/s vertical and 8 m/s lateral, and record crashReason on impact", () => {
+  const safe = initial();
+  safe.body = "moon";
+  safe.status = "flying";
+  safe.throttle = 0;
+  safe.legsDeployed = true;
+  safe.x = MOON_R + 0.01;
+  safe.y = 0;
+  safe.vx = -13.5;
+  safe.vy = 8.0;
+  safe.pitch = 24;
+  step(safe);
+  assert.equal(safe.status, "landed");
+  assert.equal(safe.crashReason, undefined);
+
+  const hard = initial();
+  hard.body = "moon";
+  hard.status = "flying";
+  hard.throttle = 0;
+  hard.legsDeployed = true;
+  hard.x = MOON_R + 0.01;
+  hard.y = 0;
+  hard.vx = -18.5;
+  hard.vy = 12.0;
+  hard.pitch = 35;
+  step(hard);
+  assert.equal(hard.status, "lost");
+  assert.match(hard.crashReason ?? "", /vertical/i);
+  assert.match(hard.crashReason ?? "", /lateral/i);
+  assert.match(hard.crashReason ?? "", /tilt/i);
 });

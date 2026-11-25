@@ -27,6 +27,7 @@ import {
   List,
   Orbit,
   Pause,
+  Power,
   Play,
   Radio,
   RotateCcw,
@@ -54,7 +55,9 @@ import {
   clamp,
   deltaV,
   orbit,
+  landingLimits,
   speed,
+  surfaceVelocity,
 } from "../sim/flight";
 import { validate } from "../persistence/save";
 import { useMission } from "./useMission";
@@ -88,6 +91,7 @@ export default function App() {
   const [steerDir, setSteerDir] = useState<-1 | 0 | 1>(0);
   const steerDirRef = useRef<-1 | 0 | 1>(0);
   const steerPointerId = useRef<number | null>(null);
+  const savedThrottleRef = useRef<number>(1);
   const upload = useRef<HTMLInputElement>(null),
     backup = useRef<ReturnType<typeof validate> | null>(null);
 
@@ -150,17 +154,10 @@ export default function App() {
       if (fuelPct > 1) open("stage");
       else m.separate();
     } else
-      m.change(
-        (f) => {
-          f.throttle = f.throttle > 0 ? 0 : 1;
-        },
-        s.throttle > 0
-          ? "Engine cutoff commanded."
-          : "Engine ignition commanded.",
-      );
+      toggleEngine();
   }
 
-  const canSteer = m.loaded && !m.paused && flying && burning(s) && !s.chuteDeployed;
+  const canSteer = m.loaded && !m.paused && flying && !s.chuteDeployed;
 
   function pitch(value: number) {
     if (!canSteer) return;
@@ -203,7 +200,6 @@ export default function App() {
     if (steerDir === 0) return;
     let rafId = 0;
     let lastTime = performance.now();
-    const RATE_DEG_PER_SEC = 52;
     const tick = (now: number) => {
       const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000));
       lastTime = now;
@@ -213,12 +209,12 @@ export default function App() {
         m.loaded &&
         !m.paused &&
         cur.status === "flying" &&
-        burning(cur) &&
         !cur.chuteDeployed
       ) {
+        const rateDegPerSec = burning(cur) ? 68 : 48;
         cur.mode = "manual";
         cur.pitch = wrapPitch(
-          cur.pitch + steerDirRef.current * RATE_DEG_PER_SEC * dt,
+          cur.pitch + steerDirRef.current * rateDegPerSec * dt,
         );
       } else {
         steerDirRef.current = 0;
@@ -246,9 +242,26 @@ export default function App() {
   }
 
   function throttle(value: number) {
+    const next = clamp(value, 0, 1);
+    if (next > 0.005) savedThrottleRef.current = next;
     m.change((f) => {
-      f.throttle = clamp(value, 0, 1);
+      f.throttle = next;
     });
+  }
+
+  function toggleEngine() {
+    if (pilotDisabled) return;
+    const turningOff = s.throttle > 0;
+    const restore = clamp(savedThrottleRef.current || 1, 0.01, 1);
+    if (turningOff) savedThrottleRef.current = s.throttle;
+    m.change(
+      (f) => {
+        f.throttle = turningOff ? 0 : restore;
+      },
+      turningOff
+        ? "Engines cut."
+        : `Engines ignited (${Math.round(restore * 100)}%).`,
+    );
   }
 
   useEffect(() => {
@@ -309,6 +322,9 @@ export default function App() {
         case "KeyC":
           handleChuteToggle();
           break;
+        case "KeyX":
+          if (!e.repeat) toggleEngine();
+          break;
         default:
           return;
       }
@@ -347,7 +363,7 @@ export default function App() {
     ? "Reward collected. Return to Base to upgrade facilities."
     : ended
       ? s.status === "lost"
-        ? "Surface impact. Return to pad for another flight."
+        ? (s.crashReason || "Surface impact. Return to pad for another flight.")
         : "Touchdown confirmed."
       : pad
         ? isRealContract
@@ -357,7 +373,7 @@ export default function App() {
           ? "Booster empty. Tap Stage."
           : s.orbitEarned
             ? "Orbit reached. Open Map to coast at 5×–20× (100× above 500 km, 500× above 1,500 km)."
-            : "Hold left or right screen edges while thrusting to pitch.";
+            : "Hold left or right screen edges to pitch (works in coast or burn).";
 
   const pilotDisabled = !m.loaded || ended;
   const actionText = lowThrust
@@ -421,10 +437,10 @@ export default function App() {
         aria-label="Pioneer 01 flight simulator"
       >
         <div className="scene-wrap" hidden={!active}>
-          <FlightScene vessel={m.vessel} />
+          <FlightScene vessel={m.vessel} onOpenMap={() => toggleView(true)} />
         </div>
         {!active && (
-          <OrbitalMap s={s} trackingLevel={trackingLevel} />
+          <OrbitalMap s={s} trackingLevel={trackingLevel} onOpenFlight={() => toggleView(false)} />
         )}
         <div className="shade" aria-hidden="true" />
         <div className="hud">
@@ -583,6 +599,35 @@ export default function App() {
             </div>
           )}
 
+          {active &&
+            flying &&
+            ((s.body === "moon" && m.alt < 5000) ||
+              (s.body !== "moon" && m.alt < 2000)) && (() => {
+              const { vr, vt } = surfaceVelocity(s);
+              const lim = landingLimits(s);
+              const vrAbs = Math.abs(vr);
+              const vtAbs = Math.abs(vt);
+              const tiltAbs = Math.abs(s.pitch);
+              const tone = (v: number, limVal: number) =>
+                v >= limVal ? "danger" : v >= limVal * 0.65 ? "warn" : "safe";
+              return (
+                <div className="descent-strip" aria-label="Landing descent telemetry">
+                  <span className={"descent-pill " + tone(vrAbs, lim.maxVr)}>
+                    <small>V/S</small>
+                    <b>{vr >= 0 ? "+" : ""}{vr.toFixed(1)}</b>
+                  </span>
+                  <span className={"descent-pill " + tone(vtAbs, lim.maxVt)}>
+                    <small>H/S</small>
+                    <b>{vtAbs.toFixed(1)}</b>
+                  </span>
+                  <span className={"descent-pill " + tone(tiltAbs, lim.maxTilt)}>
+                    <small>TILT</small>
+                    <b>{Math.round(tiltAbs)}°</b>
+                  </span>
+                </div>
+              );
+            })()}
+
           {active && isRealContract ? (
             <div className="contract-briefing">
               <section className="contract-checklist" aria-label="Active contract">
@@ -604,23 +649,50 @@ export default function App() {
             </div>
           ) : radioMessage}
           <div className="hud-bottom">
-            <label className="thrust" data-milo-focus={radio?.target === "throttle"}>
-              <span className="control-label">Thr</span>
-              <b>{Math.round(s.throttle * 100)}%</b>
-              <input
-                aria-label="Throttle"
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={Math.round(s.throttle * 100)}
-                disabled={pilotDisabled}
-                style={
-                  { "--fill": s.throttle * 100 + "%" } as React.CSSProperties
+            <div className="thrust-dock">
+              <label className="thrust" data-milo-focus={radio?.target === "throttle"}>
+                <span className="control-label">Thr</span>
+                <b>{s.throttle > 0 && s.throttle < 0.01 ? "1" : Math.round(s.throttle * 100)}%</b>
+                <input
+                  aria-label="Throttle"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={Math.round(Math.sqrt(clamp(s.throttle, 0, 1)) * 100)}
+                  disabled={pilotDisabled}
+                  style={
+                    {
+                      "--fill": Math.sqrt(clamp(s.throttle, 0, 1)) * 100 + "%",
+                    } as React.CSSProperties
+                  }
+                  onChange={(e) => {
+                    const u = +e.target.value / 100;
+                    throttle(u * u);
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className={"engine-toggle-btn" + (s.throttle > 0 ? " active-gear" : "")}
+                aria-pressed={s.throttle > 0}
+                aria-label={
+                  s.throttle > 0
+                    ? "Cut engine thrust"
+                    : `Restore engine thrust to ${Math.round((savedThrottleRef.current || 1) * 100)}%`
                 }
-                onChange={(e) => throttle(+e.target.value / 100)}
-              />
-            </label>
+                title={
+                  s.throttle > 0
+                    ? "Cut engine (X)"
+                    : `Ignite at ${Math.round((savedThrottleRef.current || 1) * 100)}% (X)`
+                }
+                disabled={pilotDisabled}
+                onClick={toggleEngine}
+              >
+                <Power size={13} />
+                <span>{s.throttle > 0 ? "ON" : "OFF"}</span>
+              </button>
+            </div>
 
             <div className={"flight-actions" + (pad ? " actions-pad" : "")}>
               {flying && (s.hasLegs !== false || s.hasChute !== false) && (

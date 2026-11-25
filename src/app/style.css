@@ -961,3 +961,66 @@ dialog ol {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* Engine On/Off toggle dock & lunar descent telemetry strip */
+.thrust-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  pointer-events: auto;
+}
+.engine-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 54px;
+  min-height: 36px;
+  padding: 0 4px;
+  font: 700 10px var(--font-mono);
+  letter-spacing: 0.04em;
+}
+@media (max-width: 365px) {
+  .engine-toggle-btn {
+    width: 48px;
+  }
+}
+.descent-strip {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  background: #101924d9;
+  border: 1px solid var(--edge-dark);
+  pointer-events: none;
+}
+.descent-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.descent-pill small {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  letter-spacing: 0.06em;
+}
+.descent-pill b {
+  font-size: 12px;
+  font-weight: 700;
+}
+.descent-pill.safe b {
+  color: var(--teal);
+}
+.descent-pill.warn b {
+  color: var(--amber-bright);
+}
+.descent-pill.danger b {
+  color: var(--coral);
+}

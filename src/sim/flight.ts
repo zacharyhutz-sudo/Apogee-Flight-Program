@@ -10,12 +10,12 @@ export const CHUTE_MAX_SPEED = 200;
 export const CHUTE_FULL_ALT = 100;
 export const MID_WARP_ALT = 500_000;
 export const HIGH_WARP_ALT = 1_500_000;
-// SFS-scaled Moon: 85 km radius, 1.62 m/s^2 gravity, 2,400 km orbit, 360 km SOI, vacuum
+// SFS-scaled Moon: 85 km radius, 1.62 m/s^2 gravity, 2,400 km orbit, 480 km SOI, vacuum
 export const MOON_R = 85000;
 export const MOON_G0 = 1.62;
 export const MOON_MU = MOON_G0 * MOON_R * MOON_R;
 export const MOON_ORBIT_R = 2400000;
-export const MOON_SOI = 360000;
+export const MOON_SOI = 480000;
 export const MOON_OMEGA = Math.sqrt(MU / MOON_ORBIT_R ** 3);
 export type Body = "earth" | "moon";
 
@@ -113,6 +113,7 @@ export interface Flight {
   chuteDeployed?: boolean;
   chuteRipped?: boolean;
   chuteMaxSpeed?: number;
+  crashReason?: string;
   /** Active sphere of influence (Earth or Moon). */
   body?: Body;
   moonVisited?: boolean;
@@ -141,6 +142,28 @@ export function hasActivePart(s: Flight, partId: string): boolean {
     return false;
   }
   return s.blueprintParts.some((p) => p.partId === partId && p.stage >= s.stage);
+}
+
+/** Returns local radial (vr, +up/-down) and tangential (vt, +east/-west) surface speeds in m/s. */
+export function surfaceVelocity(s: Flight): { vr: number; vt: number } {
+  const r = radius(s) || bodyParams(s.body).R;
+  const nx = s.x / r;
+  const ny = s.y / r;
+  return {
+    vr: nx * s.vx + ny * s.vy,
+    vt: nx * s.vy - ny * s.vx,
+  };
+}
+
+/** Returns current safe touchdown limits (m/s and degrees) based on active deployed landing legs. */
+export function landingLimits(s: Flight) {
+  const legsActive = Boolean(s.legsDeployed && hasActivePart(s, "legs_mk1"));
+  return {
+    legsActive,
+    maxVr: legsActive ? 15 : 6,
+    maxVt: legsActive ? 10 : 5,
+    maxTilt: legsActive ? 30 : 18,
+  };
 }
 
 export function initial(
@@ -483,14 +506,21 @@ export function step(s: Flight, dt = STEP) {
   const nextR = radius(s);
   if (s.body !== "moon") s.maxAlt = Math.max(s.maxAlt, nextR - bp.R);
   if (nextR <= bp.R) {
-    const legsActive = Boolean(s.legsDeployed && hasActivePart(s, "legs_mk1"));
-    const maxVr = legsActive ? 14 : 6;
-    const maxVt = legsActive ? 7 : 3;
-    const maxTilt = legsActive ? 25 : 15;
-    s.status =
-      Math.abs(vr) < maxVr && Math.abs(vt) < maxVt && Math.abs(s.pitch) < maxTilt
-        ? "landed"
-        : "lost";
+    const { maxVr, maxVt, maxTilt } = landingLimits(s);
+    const vrOk = Math.abs(vr) < maxVr;
+    const vtOk = Math.abs(vt) < maxVt;
+    const tiltOk = Math.abs(s.pitch) < maxTilt;
+    if (vrOk && vtOk && tiltOk) {
+      s.status = "landed";
+      s.crashReason = undefined;
+    } else {
+      s.status = "lost";
+      const reasons: string[] = [];
+      if (!vrOk) reasons.push(`vertical ${Math.abs(vr).toFixed(1)} m/s (max ${maxVr})`);
+      if (!vtOk) reasons.push(`lateral ${Math.abs(vt).toFixed(1)} m/s (max ${maxVt})`);
+      if (!tiltOk) reasons.push(`tilt ${Math.abs(Math.round(s.pitch))}° (max ${maxTilt}°)`);
+      s.crashReason = `Hard impact: ${reasons.join(", ")}.`;
+    }
     s.x *= bp.R / nextR;
     s.y *= bp.R / nextR;
     s.vx = 0;
