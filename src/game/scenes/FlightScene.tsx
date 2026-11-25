@@ -68,6 +68,7 @@ function drawCustomStack(
   cy: number,
   angle: number,
   pxPerMeter: number,
+  activeStage: number,
 ): { height: number; plumeAnchors: PlumeAnchor[] } {
   const center = parts.filter((p) => p.mount === "center");
   const brackets = parts.filter((p) => p.partId === "bracket_side");
@@ -248,7 +249,7 @@ function drawCustomStack(
     if (p.def.category === "tank") {
       lowestTankByStage.set(p.stage, box);
     }
-    if (p.def.category === "engine") {
+    if (p.def.category === "engine" && p.stage === activeStage) {
       hasCenterEngine = true;
       plumeAnchors.push({ lx: 0, ly: yBot, scale: 1 });
     }
@@ -313,7 +314,7 @@ function drawCustomStack(
           const chH = Math.max(4, ch.def.heightM * pxPerMeter);
           const chHw = Math.max(5, ch.def.widthM * pxPerMeter * 1.1) / 2;
           drawBodyPart(ch.def, sideCenterX, cyCur, chHw, chH);
-          if (ch.def.category === "engine") {
+          if (ch.def.category === "engine" && ch.stage === activeStage) {
             plumeAnchors.push({ lx: sideCenterX, ly: cyCur + chH, scale: 0.72 });
           }
           cyCur += chH;
@@ -349,7 +350,7 @@ function drawCustomStack(
         def.category === "utility" ? 0x8ea3ac : 0xcbd4cf,
         0x6f858d,
       );
-      if (p.partId === "srb_side") {
+      if (p.partId === "srb_side" && p.stage === activeStage) {
         plumeAnchors.push({ lx: (xMin + xMax) / 2, ly: yBot, scale: 0.62 });
       }
     }
@@ -735,7 +736,7 @@ export function FlightScene({
           const customDebris = resolveParts(d.parts, 0);
           if (customDebris) {
             spr.setVisible(false);
-            drawCustomStack(customGfx, customDebris, pt.x, pt.y, relAngle, customPpm);
+            drawCustomStack(customGfx, customDebris, pt.x, pt.y, relAngle, customPpm, -1);
           } else {
             spr
               .setVisible(true)
@@ -755,7 +756,7 @@ export function FlightScene({
         let plumeAnchors: PlumeAnchor[] = [{ lx: 0, ly: 0, scale: 1 }];
         if (customParts && spriteVisible) {
           this.ship.setVisible(false);
-          const drawn = drawCustomStack(customGfx, customParts, cx, cy, shipAngle, customPpm);
+          const drawn = drawCustomStack(customGfx, customParts, cx, cy, shipAngle, customPpm, s.stage);
           activeRocketHeight = drawn.height;
           plumeAnchors = drawn.plumeAnchors;
         } else {

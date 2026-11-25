@@ -228,7 +228,7 @@ nav button,
   position: absolute;
   z-index: 1;
   top: 96px;
-  bottom: 176px;
+  bottom: 236px;
   width: 30%;
   min-width: 0;
   min-height: 0;
@@ -239,8 +239,8 @@ nav button,
   box-shadow: none;
   border-radius: var(--radius-md);
   display: flex;
-  align-items: flex-end;
-  padding-bottom: 14px;
+  align-items: center;
+  padding-bottom: 0;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -292,8 +292,9 @@ nav button,
 }
 /* In Map View, shrink steer zones to compact edge buttons so map panning stays free */
 .map-view .steer-zone {
-  top: auto;
-  bottom: 186px;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
   width: 44px;
   height: 44px;
   padding: 0;
@@ -795,11 +796,12 @@ dialog ol {
   }
   .steer-zone {
     top: 86px;
-    bottom: 136px;
+    bottom: 162px;
     width: 24%;
   }
   .map-view .steer-zone {
-    bottom: 140px;
+    top: 50%;
+    bottom: auto;
   }
 }
 

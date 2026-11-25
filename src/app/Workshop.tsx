@@ -704,16 +704,19 @@ export function Workshop({
     const upperStage = hasTwoStages ? 1 : Math.min(1, limits.maxStages - 1);
 
     if (partId === "bracket_side" || partId === "srb_side") {
+      const preferredStage = selectedPart ? selectedPart.stage : 0;
       const hostTank =
+        layout.lowestTankByStage.get(preferredStage) ??
         layout.lowestTankByStage.get(0) ??
         layout.stackNodes.find((n) => n.def.category === "tank");
+      const targetStage = selectedPart ? preferredStage : (hostTank?.pt.stage ?? 0);
       const item: PlacedPart = {
         uid,
         partId,
-        stage: hostTank?.pt.stage ?? 0,
+        stage: targetStage,
         symmetry: 2,
         mount: "side",
-        ...(hostTank ? { parentUid: hostTank.pt.uid } : {}),
+        ...(hostTank && hostTank.pt.stage === targetStage ? { parentUid: hostTank.pt.uid } : {}),
       };
       mutateBlueprint((bp) => {
         bp.parts.push(item);

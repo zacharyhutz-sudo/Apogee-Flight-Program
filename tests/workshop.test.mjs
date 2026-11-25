@@ -164,3 +164,27 @@ test("syncBlueprintHierarchy keeps side-bracket children synced and cleans orpha
   assert.equal(synced.find((x) => x.uid === "st1")?.stage, 1);
   assert.equal(synced.find((x) => x.uid === "st1")?.symmetry, 2);
 });
+
+test("side SRB attached to stage 1 burns only on stage 1, not stage 0", () => {
+  const bp = {
+    id: "bp_srb_s1",
+    name: "Upper SRB",
+    version: 1,
+    parts: [
+      { uid: "p1", partId: "pod_mk1", stage: 1, symmetry: 1 },
+      { uid: "p2", partId: "tank_s", stage: 1, symmetry: 1 },
+      { uid: "p3", partId: "eng_dart", stage: 1, symmetry: 1 },
+      { uid: "p4", partId: "srb_side", stage: 1, symmetry: 2, mount: "side", parentUid: "p2" },
+      { uid: "p5", partId: "decoupler", stage: 0, symmetry: 1 },
+      { uid: "p6", partId: "tank_m", stage: 0, symmetry: 1 },
+      { uid: "p7", partId: "eng_kestrel", stage: 0, symmetry: 1 },
+    ],
+  };
+  const a = analyzeBlueprint(bp, LV1_LIMITS);
+  // Stage 0 has only Kestrel (480 kN) and Tank M (16 t)
+  assert.equal(a.stages[0].thrustKn, 480);
+  assert.equal(a.stages[0].fuelTonnes, 16);
+  // Stage 1 has Dart (140 kN) + 2x Side SRB (800 kN) = 940 kN and Tank S (6 t) + 2x SRB (13 t) = 19 t
+  assert.equal(a.stages[1].thrustKn, 940);
+  assert.equal(a.stages[1].fuelTonnes, 19);
+});
