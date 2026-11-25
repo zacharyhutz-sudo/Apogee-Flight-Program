@@ -71,9 +71,12 @@ export type Mode = "manual" | "guide" | "prograde" | "retrograde";
 export type Status = "pad" | "flying" | "landed" | "lost";
 
 export interface FlightVisualPart {
+  uid?: string;
   partId: string;
   stage: number;
   symmetry: 1 | 2;
+  mount?: "center" | "side";
+  parentUid?: string;
 }
 
 export interface Debris {
@@ -110,7 +113,6 @@ export interface Flight {
   chuteDeployed?: boolean;
   chuteRipped?: boolean;
   chuteMaxSpeed?: number;
-  chuteMaxSpeed?: number;
   /** Active sphere of influence (Earth or Moon). */
   body?: Body;
   moonVisited?: boolean;
@@ -129,6 +131,16 @@ export function stagesOf(s: Flight): readonly [StageSpec, StageSpec] {
 
 export function payloadOf(s: Flight): number {
   return s.customPayload !== undefined ? s.customPayload : DEFAULT_PAYLOAD;
+}
+
+/** Checks whether a part is still attached on the active or upper stages (not jettisoned). */
+export function hasActivePart(s: Flight, partId: string): boolean {
+  if (!s.blueprintParts) {
+    if (partId === "legs_mk1") return s.hasLegs !== false;
+    if (partId === "chute_mk1") return s.hasChute !== false;
+    return false;
+  }
+  return s.blueprintParts.some((p) => p.partId === partId && p.stage >= s.stage);
 }
 
 export function initial(
@@ -165,9 +177,16 @@ export function initial(
   if (customPayload !== undefined) f.customPayload = customPayload;
   if (vehicleName) f.vehicleName = vehicleName;
   if (blueprintParts) {
-    f.blueprintParts = blueprintParts.map((p) => ({ partId: p.partId, stage: p.stage, symmetry: p.symmetry }));
-    f.hasLegs = blueprintParts.some((p) => p.partId === "legs_mk1");
-    f.hasChute = blueprintParts.some((p) => p.partId === "chute_mk1");
+    f.blueprintParts = blueprintParts.map((p) => ({
+      ...(p.uid ? { uid: p.uid } : {}),
+      partId: p.partId,
+      stage: p.stage,
+      symmetry: p.symmetry,
+      ...(p.mount ? { mount: p.mount } : {}),
+      ...(p.parentUid ? { parentUid: p.parentUid } : {}),
+    }));
+    f.hasLegs = hasActivePart(f, "legs_mk1");
+    f.hasChute = hasActivePart(f, "chute_mk1");
   }
   return f;
 }
@@ -274,17 +293,23 @@ export function stage(s: Flight) {
   s.debris = [...(s.debris ?? []), piece].slice(-4);
   s.stage = 1;
   s.fuel[0] = 0;
+  if (s.blueprintParts) {
+    s.hasLegs = hasActivePart(s, "legs_mk1");
+    s.hasChute = hasActivePart(s, "chute_mk1");
+    if (!s.hasLegs) s.legsDeployed = false;
+    if (!s.hasChute) s.chuteDeployed = false;
+  }
   return true;
 }
 
 export function toggleLegs(s: Flight) {
-  if (!s.hasLegs && s.hasLegs !== undefined) return false;
+  if (!hasActivePart(s, "legs_mk1")) return false;
   s.legsDeployed = !s.legsDeployed;
   return true;
 }
 
 export function toggleChute(s: Flight): "deployed" | "ripped" | "cut" | "blocked" {
-  if (!s.hasChute && s.hasChute !== undefined) return "blocked";
+  if (!hasActivePart(s, "chute_mk1")) return "blocked";
   if (s.status !== "flying" || s.chuteRipped) return "blocked";
   const bp = bodyParams(s.body);
   const alt = radius(s) - bp.R;
@@ -458,9 +483,10 @@ export function step(s: Flight, dt = STEP) {
   const nextR = radius(s);
   if (s.body !== "moon") s.maxAlt = Math.max(s.maxAlt, nextR - bp.R);
   if (nextR <= bp.R) {
-    const maxVr = s.legsDeployed ? 14 : 6;
-    const maxVt = s.legsDeployed ? 7 : 3;
-    const maxTilt = s.legsDeployed ? 25 : 15;
+    const legsActive = Boolean(s.legsDeployed && hasActivePart(s, "legs_mk1"));
+    const maxVr = legsActive ? 14 : 6;
+    const maxVt = legsActive ? 7 : 3;
+    const maxTilt = legsActive ? 25 : 15;
     s.status =
       Math.abs(vr) < maxVr && Math.abs(vt) < maxVt && Math.abs(s.pitch) < maxTilt
         ? "landed"

@@ -443,3 +443,75 @@
   font: 600 11px var(--font-ui);
   color: var(--ink-muted);
 }
+
+/* Drag-and-drop & 2D VAB interaction styles */
+.workshop-game.is-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.vab-stage-canvas.drag-active {
+  border-color: var(--teal);
+  touch-action: none;
+}
+.part-card {
+  touch-action: none;
+  cursor: grab;
+}
+.part-card:active {
+  cursor: grabbing;
+}
+.svg-part {
+  touch-action: none;
+}
+.svg-part.dragging-origin {
+  opacity: 0.32;
+}
+.snap-reason {
+  fill: #ffc5bc;
+  font: 700 9px var(--font-mono);
+  paint-order: stroke;
+  stroke: #101924;
+  stroke-width: 3px;
+}
+.vab-drag-ghost {
+  position: fixed;
+  z-index: 90;
+  pointer-events: none;
+  transform: translate(-50%, -65%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  background: var(--panel);
+  border: 2px solid var(--teal);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 18px #040910cc;
+  font: 700 11px var(--font-mono);
+  color: var(--ink);
+}
+.vab-drag-ghost.invalid,
+.vab-drag-ghost.trash {
+  border-color: var(--coral);
+  color: #ffc5bc;
+}
+.vab-trash-zone {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  background: #22161b;
+  border: 2px dashed var(--coral-deep);
+  color: #ffc5bc;
+  font: 700 11px var(--font-mono);
+  pointer-events: none;
+}
+.vab-trash-zone.armed {
+  background: #3d181f;
+  border-style: solid;
+  border-color: var(--coral);
+}

@@ -49,11 +49,11 @@ export const PARTS = {
     heightM: 3.5,
     widthM: 2.2,
     areaM2: 4,
-    hardwareCost: 120,
+    hardwareCost: 150,
     propellantCost: 0,
     symmetric: false,
     requiredLabLevel: 0,
-    note: "Avionics & guidance core",
+    note: "Crewed avionics & guidance core",
   },
   pod_probe: {
     id: "pod_probe",
@@ -68,7 +68,7 @@ export const PARTS = {
     heightM: 2.0,
     widthM: 1.8,
     areaM2: 3,
-    hardwareCost: 90,
+    hardwareCost: 80,
     propellantCost: 0,
     symmetric: false,
     requiredLabLevel: 0,
@@ -79,8 +79,8 @@ export const PARTS = {
     name: "Small Cryo Tank",
     shortName: "Tank S",
     category: "tank",
-    dryTonnes: 0.8,
-    fuelTonnes: 6.5,
+    dryTonnes: 0.75,
+    fuelTonnes: 6.0,
     thrustKn: 0,
     ispSl: 0,
     ispVac: 0,
@@ -88,18 +88,18 @@ export const PARTS = {
     widthM: 2.2,
     areaM2: 5,
     hardwareCost: 70,
-    propellantCost: 180,
+    propellantCost: 120,
     symmetric: false,
     requiredLabLevel: 0,
-    note: "6.5 t kerolox upper tank",
+    note: "6.0 t kerolox upper tank",
   },
   tank_m: {
     id: "tank_m",
     name: "Medium Cryo Tank",
     shortName: "Tank M",
     category: "tank",
-    dryTonnes: 1.8,
-    fuelTonnes: 16.5,
+    dryTonnes: 1.75,
+    fuelTonnes: 16.0,
     thrustKn: 0,
     ispSl: 0,
     ispVac: 0,
@@ -107,17 +107,17 @@ export const PARTS = {
     widthM: 2.6,
     areaM2: 7,
     hardwareCost: 140,
-    propellantCost: 360,
+    propellantCost: 320,
     symmetric: false,
     requiredLabLevel: 0,
-    note: "16.5 t core booster tank",
+    note: "16.0 t core booster tank",
   },
   tank_l: {
     id: "tank_l",
     name: "Heavy Cryo Tank",
     shortName: "Tank L",
     category: "tank",
-    dryTonnes: 3.4,
+    dryTonnes: 3.5,
     fuelTonnes: 36.0,
     thrustKn: 0,
     ispSl: 0,
@@ -126,10 +126,10 @@ export const PARTS = {
     widthM: 3.2,
     areaM2: 10,
     hardwareCost: 260,
-    propellantCost: 680,
+    propellantCost: 720,
     symmetric: false,
     requiredLabLevel: 1,
-    note: "36 t heavy orbital tank",
+    note: "36.0 t heavy orbital tank",
   },
   eng_kestrel: {
     id: "eng_kestrel",
@@ -138,55 +138,55 @@ export const PARTS = {
     category: "engine",
     dryTonnes: 1.2,
     fuelTonnes: 0,
-    thrustKn: 520,
-    ispSl: 308,
-    ispVac: 332,
+    thrustKn: 480,
+    ispSl: 305,
+    ispVac: 335,
     heightM: 3.2,
     widthM: 2.2,
     areaM2: 5,
-    hardwareCost: 140,
+    hardwareCost: 150,
     propellantCost: 0,
     symmetric: false,
     requiredLabLevel: 0,
-    note: "520 kN sea-level workhorse",
+    note: "480 kN balanced sustainer",
   },
   eng_dart: {
     id: "eng_dart",
     name: "Dart Vacuum Engine",
     shortName: "Dart Vac",
     category: "engine",
-    dryTonnes: 0.5,
+    dryTonnes: 0.55,
     fuelTonnes: 0,
     thrustKn: 140,
-    ispSl: 240,
-    ispVac: 368,
+    ispSl: 220,
+    ispVac: 375,
     heightM: 2.4,
     widthM: 1.8,
     areaM2: 4,
-    hardwareCost: 110,
+    hardwareCost: 120,
     propellantCost: 0,
     symmetric: false,
     requiredLabLevel: 0,
-    note: "High-Isp orbital upper engine",
+    note: "High-Isp orbital & lander engine",
   },
   eng_titan: {
     id: "eng_titan",
     name: "Titan-4 Heavy Engine",
     shortName: "Titan-4",
     category: "engine",
-    dryTonnes: 2.6,
+    dryTonnes: 2.9,
     fuelTonnes: 0,
-    thrustKn: 1350,
-    ispSl: 318,
-    ispVac: 344,
+    thrustKn: 1250,
+    ispSl: 295,
+    ispVac: 320,
     heightM: 4.2,
     widthM: 3.0,
     areaM2: 8,
-    hardwareCost: 320,
+    hardwareCost: 360,
     propellantCost: 0,
     symmetric: false,
     requiredLabLevel: 1,
-    note: "1,350 kN heavy-lift cluster",
+    note: "1,250 kN heavy-lift cluster",
   },
   decoupler: {
     id: "decoupler",
@@ -207,24 +207,43 @@ export const PARTS = {
     requiredLabLevel: 0,
     note: "Separates upper & lower stages",
   },
+  bracket_side: {
+    id: "bracket_side",
+    name: "Side Bracket",
+    shortName: "Bracket",
+    category: "stage",
+    dryTonnes: 0.2,
+    fuelTonnes: 0,
+    thrustKn: 0,
+    ispSl: 0,
+    ispVac: 0,
+    heightM: 1.6,
+    widthM: 1.0,
+    areaM2: 1,
+    hardwareCost: 50,
+    propellantCost: 0,
+    symmetric: true,
+    requiredLabLevel: 0,
+    note: "Rigid side mount with fuel crossfeed",
+  },
   srb_side: {
     id: "srb_side",
     name: "Side Booster Pod",
     shortName: "Side SRB",
     category: "stage",
-    dryTonnes: 1.1,
-    fuelTonnes: 7.5,
-    thrustKn: 360,
-    ispSl: 285,
-    ispVac: 305,
+    dryTonnes: 1.4,
+    fuelTonnes: 6.5,
+    thrustKn: 400,
+    ispSl: 235,
+    ispVac: 260,
     heightM: 9.0,
     widthM: 1.3,
     areaM2: 3,
-    hardwareCost: 130,
-    propellantCost: 160,
+    hardwareCost: 100,
+    propellantCost: 105,
     symmetric: true,
     requiredLabLevel: 0,
-    note: "Radial booster (supports 2× mirror)",
+    note: "Cheap high-TWR radial solid booster",
   },
   chute_mk1: {
     id: "chute_mk1",
@@ -250,7 +269,7 @@ export const PARTS = {
     name: "Landing Legs",
     shortName: "Legs",
     category: "utility",
-    dryTonnes: 0.4,
+    dryTonnes: 0.25,
     fuelTonnes: 0,
     thrustKn: 0,
     ispSl: 0,
@@ -258,7 +277,7 @@ export const PARTS = {
     heightM: 1.4,
     widthM: 2.6,
     areaM2: 2,
-    hardwareCost: 90,
+    hardwareCost: 45,
     propellantCost: 0,
     symmetric: true,
     requiredLabLevel: 0,
@@ -295,6 +314,14 @@ export interface PlacedPart {
   stage: number;
   /** 1 = centerline single part, 2 = 2x radial mirror symmetry. */
   symmetry: 1 | 2;
+  /** Optional mount location: center stack or side radial mount/column. */
+  mount?: "center" | "side";
+  /**
+   * Optional parent anchor UID:
+   * - For `bracket_side`, `srb_side`, `legs_mk1`: UID of the host tank they attach to.
+   * - For parts stacked on a side bracket: UID of the `bracket_side`.
+   */
+  parentUid?: string;
 }
 
 export interface RocketBlueprint {
@@ -322,6 +349,8 @@ export interface ValidationWarning {
     | "NO_POD"
     | "LOW_TWR"
     | "NO_ENGINE"
+    | "UNFED_ENGINE"
+    | "UNUSED_FUEL"
     | "DISCONNECTED_STAGE"
     | "OVER_MASS"
     | "OVER_HEIGHT"
@@ -343,6 +372,23 @@ export interface FacilityLimits {
   labLevel: number;
 }
 
+export interface TankGroup {
+  id: string;
+  stage: number;
+  tankUids: string[];
+  fuelTonnes: number;
+  fedEngineUids: string[];
+  hasCrossfeed: boolean;
+}
+
+export interface FuelTopology {
+  tankGroups: TankGroup[];
+  tankGroupByUid: Record<string, string>;
+  fedEngineUids: Set<string>;
+  unfedEngineUids: Set<string>;
+  unusedTankGroupIds: Set<string>;
+}
+
 export interface BlueprintAnalysis {
   partCount: number;
   stageCount: number;
@@ -356,6 +402,7 @@ export interface BlueprintAnalysis {
   totalDeltaV: number;
   stages: StageStats[];
   warnings: ValidationWarning[];
+  topology: FuelTopology;
   canSimulate: boolean;
   canLaunchWithLimits: boolean;
 }
@@ -380,6 +427,257 @@ export interface VehicleInstance {
   propellantCost: number;
   payloadDryKg: number;
   stages: [VehicleStageSpec, VehicleStageSpec];
+}
+
+export function resolvePartMount(item: PlacedPart): "center" | "side" {
+  if (item.mount === "center" || item.mount === "side") return item.mount;
+  const def = PARTS[item.partId];
+  if (item.partId === "bracket_side") return "side";
+  if (def?.symmetric && item.symmetry === 2) return "side";
+  return "center";
+}
+
+export function isBracketChild(item: PlacedPart, partsByUid: Map<string, PlacedPart>): boolean {
+  if (resolvePartMount(item) !== "side" || !item.parentUid) return false;
+  const parent = partsByUid.get(item.parentUid);
+  return parent?.partId === "bracket_side";
+}
+
+export function partMultiplier(item: PlacedPart, partsByUid?: Map<string, PlacedPart>): 1 | 2 {
+  const def = PARTS[item.partId];
+  if (!def) return 1;
+  if (resolvePartMount(item) === "side") {
+    if (partsByUid && item.parentUid) {
+      const parent = partsByUid.get(item.parentUid);
+      if (parent?.partId === "bracket_side") return parent.symmetry === 2 ? 2 : 1;
+    }
+    return item.symmetry === 2 ? 2 : 1;
+  }
+  return def.symmetric ? item.symmetry : 1;
+}
+
+/**
+ * Keeps side-bracket children synced with their parent bracket's stage & symmetry,
+ * and syncs brackets with their parent centerline tank's stage when attached.
+ * Also removes orphaned bracket children if their parent bracket was removed.
+ */
+export function syncBlueprintHierarchy(parts: PlacedPart[]): PlacedPart[] {
+  const byUid = new Map<string, PlacedPart>();
+  for (const pt of parts) byUid.set(pt.uid, pt);
+
+  // 1. Sync bracket_side stage to its parent centerline tank if present
+  for (const pt of parts) {
+    if (pt.partId === "bracket_side") {
+      pt.mount = "side";
+      if (pt.parentUid) {
+        const host = byUid.get(pt.parentUid);
+        if (host && resolvePartMount(host) === "center") {
+          pt.stage = host.stage;
+        } else if (!host) {
+          delete pt.parentUid;
+        }
+      }
+    }
+  }
+
+  // 2. Sync radial attachments & filter orphaned side-column children
+  const valid: PlacedPart[] = [];
+  for (const pt of parts) {
+    if (pt.mount === "side" && pt.partId !== "bracket_side" && pt.partId !== "srb_side" && pt.partId !== "legs_mk1") {
+      const parent = pt.parentUid ? byUid.get(pt.parentUid) : undefined;
+      if (!parent || parent.partId !== "bracket_side") {
+        // Parent bracket was removed; drop orphaned side-stack part
+        continue;
+      }
+      pt.stage = parent.stage;
+      pt.symmetry = parent.symmetry;
+    } else if ((pt.partId === "legs_mk1" || pt.partId === "srb_side") && pt.parentUid) {
+      const host = byUid.get(pt.parentUid);
+      if (host) {
+        pt.stage = host.stage;
+        if (host.partId === "bracket_side") {
+          pt.mount = "side";
+          pt.symmetry = host.symmetry;
+        }
+      } else {
+        delete pt.parentUid;
+      }
+    }
+    valid.push(pt);
+  }
+  return valid;
+}
+
+/**
+ * Computes contiguous fuel tank pools (including crossfeed across `bracket_side`)
+ * and verifies that every liquid engine is placed directly beneath a fuel tank.
+ */
+export function computeFuelTopology(bp: RocketBlueprint): FuelTopology {
+  const byUid = new Map<string, PlacedPart>();
+  for (const pt of bp.parts) byUid.set(pt.uid, pt);
+
+  const centerCol: PlacedPart[] = [];
+  const brackets: PlacedPart[] = [];
+  const sideCols = new Map<string, PlacedPart[]>();
+
+  for (const pt of bp.parts) {
+    if (pt.partId === "bracket_side") {
+      brackets.push(pt);
+      sideCols.set(pt.uid, []);
+    } else if (resolvePartMount(pt) === "center") {
+      centerCol.push(pt);
+    } else if (pt.parentUid && byUid.get(pt.parentUid)?.partId === "bracket_side") {
+      const arr = sideCols.get(pt.parentUid);
+      if (arr) arr.push(pt);
+      else sideCols.set(pt.parentUid, [pt]);
+    }
+  }
+
+  // Disjoint-set union for tank UIDs
+  const dsuParent = new Map<string, string>();
+  const find = (u: string): string => {
+    let cur = u;
+    while (dsuParent.get(cur) !== cur) {
+      cur = dsuParent.get(cur)!;
+    }
+    let walk = u;
+    while (dsuParent.get(walk) !== cur) {
+      const next = dsuParent.get(walk)!;
+      dsuParent.set(walk, cur);
+      walk = next;
+    }
+    return cur;
+  };
+  const union = (a: string, b: string) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) dsuParent.set(rb, ra);
+  };
+
+  for (const pt of bp.parts) {
+    if (PARTS[pt.partId]?.category === "tank") {
+      dsuParent.set(pt.uid, pt.uid);
+    }
+  }
+
+  const fedEngineToTank = new Map<string, string>();
+  const fedEngineUids = new Set<string>();
+  const unfedEngineUids = new Set<string>();
+
+  const processColumn = (col: PlacedPart[]) => {
+    for (let i = 0; i < col.length; i++) {
+      const cur = col[i];
+      const def = PARTS[cur.partId];
+      if (!def) continue;
+      if (def.category === "tank" && i > 0) {
+        const prev = col[i - 1];
+        if (PARTS[prev.partId]?.category === "tank" && prev.stage === cur.stage) {
+          union(prev.uid, cur.uid);
+        }
+      }
+      if (def.category === "engine") {
+        const prev = i > 0 ? col[i - 1] : undefined;
+        if (prev && PARTS[prev.partId]?.category === "tank" && prev.stage === cur.stage) {
+          fedEngineUids.add(cur.uid);
+          fedEngineToTank.set(cur.uid, prev.uid);
+        } else {
+          unfedEngineUids.add(cur.uid);
+        }
+      }
+    }
+  };
+
+  processColumn(centerCol);
+  for (const col of sideCols.values()) {
+    processColumn(col);
+  }
+
+  // Crossfeed across side brackets: merge side-column tank runs with host centerline tank
+  const crossfedRoots = new Set<string>();
+  for (const br of brackets) {
+    let hostTank: PlacedPart | undefined =
+      br.parentUid && PARTS[byUid.get(br.parentUid)?.partId ?? "pod_mk1"]?.category === "tank"
+        ? byUid.get(br.parentUid)
+        : undefined;
+    if (!hostTank) {
+      // Fallback: lowest centerline tank in the same stage
+      for (let i = centerCol.length - 1; i >= 0; i--) {
+        if (centerCol[i].stage === br.stage && PARTS[centerCol[i].partId]?.category === "tank") {
+          hostTank = centerCol[i];
+          break;
+        }
+      }
+    }
+    if (!hostTank || hostTank.stage !== br.stage) continue;
+    const col = sideCols.get(br.uid) ?? [];
+    for (const child of col) {
+      if (PARTS[child.partId]?.category === "tank" && child.stage === hostTank.stage) {
+        union(hostTank.uid, child.uid);
+        crossfedRoots.add(find(hostTank.uid));
+      }
+    }
+  }
+
+  // Build final TankGroup objects
+  const groupMap = new Map<string, TankGroup>();
+  const tankGroupByUid: Record<string, string> = {};
+  let groupCounter = 0;
+  const rootToId = new Map<string, string>();
+
+  for (const pt of bp.parts) {
+    const def = PARTS[pt.partId];
+    if (!def || def.category !== "tank") continue;
+    const root = find(pt.uid);
+    let gid = rootToId.get(root);
+    if (!gid) {
+      gid = `tg_${++groupCounter}`;
+      rootToId.set(root, gid);
+      groupMap.set(gid, {
+        id: gid,
+        stage: pt.stage,
+        tankUids: [],
+        fuelTonnes: 0,
+        fedEngineUids: [],
+        hasCrossfeed: false,
+      });
+    }
+    const grp = groupMap.get(gid)!;
+    const mult = partMultiplier(pt, byUid);
+    grp.tankUids.push(pt.uid);
+    grp.fuelTonnes += def.fuelTonnes * mult;
+    tankGroupByUid[pt.uid] = gid;
+  }
+
+  for (const root of crossfedRoots) {
+    const finalRoot = find(root);
+    const gid = rootToId.get(finalRoot);
+    if (gid && groupMap.has(gid)) {
+      groupMap.get(gid)!.hasCrossfeed = true;
+    }
+  }
+
+  for (const [engUid, tankUid] of fedEngineToTank.entries()) {
+    const gid = tankGroupByUid[tankUid];
+    if (gid && groupMap.has(gid)) {
+      groupMap.get(gid)!.fedEngineUids.push(engUid);
+    }
+  }
+
+  const tankGroups = [...groupMap.values()];
+  const unusedTankGroupIds = new Set<string>();
+  for (const grp of tankGroups) {
+    if (grp.fuelTonnes > 0 && grp.fedEngineUids.length === 0) {
+      unusedTankGroupIds.add(grp.id);
+    }
+  }
+
+  return {
+    tankGroups,
+    tankGroupByUid,
+    fedEngineUids,
+    unfedEngineUids,
+    unusedTankGroupIds,
+  };
 }
 
 export function starterBlueprints(): RocketBlueprint[] {
@@ -415,23 +713,35 @@ export function analyzeBlueprint(
   limits: FacilityLimits,
 ): BlueprintAnalysis {
   const warnings: ValidationWarning[] = [];
+  const byUid = new Map<string, PlacedPart>();
+  for (const item of bp.parts) byUid.set(item.uid, item);
+
+  const topology = computeFuelTopology(bp);
+
   let partCount = 0;
   let dryTonnes = 0;
   let fuelTonnes = 0;
-  let heightMeters = 0;
+  let centerHeight = 0;
   let rawHardware = 0;
   let propellantCost = 0;
   let hasPod = false;
 
+  const sideHeights = new Map<string, number>();
   const stageIndices = new Set<number>();
+
   for (const item of bp.parts) {
     const def = PARTS[item.partId];
     if (!def) continue;
-    const mult = def.symmetric ? item.symmetry : 1;
+    const mult = partMultiplier(item, byUid);
+    const mount = resolvePartMount(item);
     partCount += mult;
     dryTonnes += def.dryTonnes * mult;
     fuelTonnes += def.fuelTonnes * mult;
-    if (mult === 1) heightMeters += def.heightM;
+    if (mount === "center") {
+      centerHeight += def.heightM;
+    } else if (item.parentUid && byUid.get(item.parentUid)?.partId === "bracket_side") {
+      sideHeights.set(item.parentUid, (sideHeights.get(item.parentUid) ?? 0) + def.heightM);
+    }
     rawHardware += def.hardwareCost * mult;
     propellantCost += def.propellantCost * mult;
     if (def.category === "pod") hasPod = true;
@@ -442,7 +752,27 @@ export function analyzeBlueprint(
         message: `${def.shortName} requires Research Lab Lv ${def.requiredLabLevel}.`,
       });
     }
+    if (topology.unfedEngineUids.has(item.uid)) {
+      warnings.push({
+        code: "UNFED_ENGINE",
+        severity: "error",
+        message: `${def.shortName} must be placed directly under a fuel tank.`,
+      });
+    }
     stageIndices.add(item.stage);
+  }
+
+  let heightMeters = centerHeight;
+  for (const sh of sideHeights.values()) {
+    heightMeters = Math.max(heightMeters, sh);
+  }
+
+  if (topology.unusedTankGroupIds.size > 0) {
+    warnings.push({
+      code: "UNUSED_FUEL",
+      severity: "warn",
+      message: "Fuel tank has no engine directly beneath it.",
+    });
   }
 
   const orderedStages = [...stageIndices].sort((a, b) => a - b);
@@ -468,19 +798,42 @@ export function analyzeBlueprint(
     const st = orderedStages[i];
     const items = bp.parts.filter((p) => p.stage === st);
     let stDry = 0;
-    let stFuel = 0;
+    let stTotalFuel = 0;
+    let stUsableFuel = 0;
     let stThrust = 0;
     let flowSl = 0;
     let flowVac = 0;
     let areaM2 = 4;
 
+    // Track which tank groups in this stage actually have a fed engine
+    const fedGroupsInStage = new Set<string>();
+    for (const grp of topology.tankGroups) {
+      if (grp.stage === st && grp.fedEngineUids.length > 0) {
+        fedGroupsInStage.add(grp.id);
+      }
+    }
+
     for (const item of items) {
       const def = PARTS[item.partId];
       if (!def) continue;
-      const mult = def.symmetric ? item.symmetry : 1;
+      const mult = partMultiplier(item, byUid);
       stDry += def.dryTonnes * mult;
-      stFuel += def.fuelTonnes * mult;
-      if (def.thrustKn > 0) {
+      const itemFuel = def.fuelTonnes * mult;
+      stTotalFuel += itemFuel;
+
+      if (def.category === "tank") {
+        const gid = topology.tankGroupByUid[item.uid];
+        if (gid && fedGroupsInStage.has(gid)) {
+          stUsableFuel += itemFuel;
+        }
+      } else if (itemFuel > 0) {
+        // Self-contained solid booster fuel
+        stUsableFuel += itemFuel;
+      }
+
+      const isFedEngine =
+        def.category !== "engine" || topology.fedEngineUids.has(item.uid);
+      if (def.thrustKn > 0 && isFedEngine) {
         const th = def.thrustKn * mult;
         stThrust += th;
         if (def.ispSl > 0) flowSl += th / def.ispSl;
@@ -497,27 +850,27 @@ export function analyzeBlueprint(
         if (item.stage !== upSt) continue;
         const def = PARTS[item.partId];
         if (!def) continue;
-        const mult = def.symmetric ? item.symmetry : 1;
+        const mult = partMultiplier(item, byUid);
         upperWet += (def.dryTonnes + def.fuelTonnes) * mult;
       }
     }
 
-    const wetAtStart = upperWet + stDry + stFuel;
-    const dryAtEnd = upperWet + stDry;
+    const wetAtStart = upperWet + stDry + stTotalFuel;
+    const dryAtEnd = wetAtStart - stUsableFuel;
     const ispSl = flowSl > 0 ? stThrust / flowSl : 0;
     const ispVac = flowVac > 0 ? stThrust / flowVac : 0;
     const twr = wetAtStart > 0 ? stThrust / (wetAtStart * G0) : 0;
     const effectiveIsp = st === 0 ? ispSl : ispVac;
     const dv =
-      stThrust > 0 && stFuel > 0 && wetAtStart > dryAtEnd && dryAtEnd > 0
+      stThrust > 0 && stUsableFuel > 0 && wetAtStart > dryAtEnd && dryAtEnd > 0
         ? effectiveIsp * G0 * Math.log(wetAtStart / dryAtEnd)
         : 0;
     totalDeltaV += dv;
 
     stages.push({
       stage: st,
-      dryTonnes: stDry,
-      fuelTonnes: stFuel,
+      dryTonnes: stDry + (stTotalFuel - stUsableFuel),
+      fuelTonnes: stUsableFuel,
       wetTonnes: wetAtStart,
       thrustKn: stThrust,
       ispSl,
@@ -546,7 +899,7 @@ export function analyzeBlueprint(
     warnings.push({
       code: "NO_ENGINE",
       severity: "error",
-      message: "Stage 1 needs an engine to lift off.",
+      message: "Stage 1 needs a fueled engine to lift off.",
     });
   } else if (liftoffTwr <= 1.0) {
     warnings.push({
@@ -595,6 +948,7 @@ export function analyzeBlueprint(
     (w) =>
       w.code === "NO_POD" ||
       w.code === "NO_ENGINE" ||
+      w.code === "UNFED_ENGINE" ||
       w.code === "LOW_TWR" ||
       w.code === "DISCONNECTED_STAGE" ||
       w.code === "LOCKED_PART",
@@ -614,6 +968,7 @@ export function analyzeBlueprint(
     totalDeltaV,
     stages,
     warnings,
+    topology,
     canSimulate: !structuralError,
     canLaunchWithLimits: !anyError,
   };
@@ -632,7 +987,7 @@ export function buildVehicleInstance(
         dry: Math.max(500, Math.round(s0.dryTonnes * 1000)),
         fuel: Math.max(1000, Math.round(s0.fuelTonnes * 1000)),
         thrust: Math.max(50000, Math.round(s0.thrustKn * 1000)),
-        isp: Math.max(220, Math.round(s0.ispSl || s0.ispVac || 308)),
+        isp: Math.max(220, Math.round(s0.ispSl || s0.ispVac || 305)),
         area: s0.areaM2,
       }
     : {
@@ -649,7 +1004,7 @@ export function buildVehicleInstance(
         name: "Orbital stage",
         dry: Math.max(400, Math.round(s1.dryTonnes * 1000)),
         fuel: Math.max(0, Math.round(s1.fuelTonnes * 1000)),
-        thrust: Math.max(20000, Math.round(s1.thrustKn * 1000)),
+        thrust: Math.max(0, Math.round(s1.thrustKn * 1000)),
         isp: Math.max(250, Math.round(s1.ispVac || s1.ispSl || 360)),
         area: s1.areaM2,
       }

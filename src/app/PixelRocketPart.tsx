@@ -54,6 +54,11 @@ export function getRadialPixelSize(partId: PartId, scalePx = 5.4) {
     const rows = 13;
     return { cols, rows, w: cols * VAB_PX, h: rows * VAB_PX };
   }
+  if (partId === "bracket_side") {
+    const cols = 5;
+    const rows = 8;
+    return { cols, rows, w: cols * VAB_PX, h: rows * VAB_PX };
+  }
   const cols = Math.max(
     6,
     Math.round((def.widthM * scalePx * 2.0) / (VAB_PX * 2)) * 2,
@@ -160,7 +165,6 @@ export function PixelRocketPart({
 
   switch (partId) {
     case "pod_mk1": {
-      // Stepped pixel conical nosecone matching vehicle.png
       const collarRows = 1;
       const coneRows = rows - collarRows;
       const mid = cols / 2;
@@ -169,19 +173,14 @@ export function PixelRocketPart({
         const hw = Math.max(1, Math.round((cols / 2 - 1) * Math.pow(t, 0.82)));
         const c0 = Math.round(mid - hw);
         const rw = hw * 2;
-        // Outline row
         r(c0 - 1, i, rw + 2, 1, edge);
-        // Nose fill
         r(c0, i, rw, 1, i === 0 ? PAL.highlight : PAL.hullNose);
-        // Left sunlit edge
         if (rw >= 4) r(c0, i, 1, 1, PAL.highlight);
-        // Right cool shadow
         if (rw >= 4) {
           const sh = Math.max(1, Math.round(rw * 0.28));
           r(c0 + rw - sh, i, sh, 1, PAL.shadow);
         }
       }
-      // Capsule viewport window in lower-middle cone
       if (coneRows >= 5 && cols >= 10) {
         const winW = Math.min(4, Math.max(2, Math.floor(cols * 0.28)));
         const winH = Math.max(2, Math.floor(coneRows * 0.28));
@@ -191,7 +190,6 @@ export function PixelRocketPart({
         r(winC, winR, Math.max(1, winW - 1), Math.max(1, winH - 1), PAL.windowBg);
         r(winC, winR, 1, 1, PAL.windowGlint);
       }
-      // Dark heatshield base collar
       r(0, coneRows, cols, collarRows, edge);
       r(1, coneRows, cols - 2, Math.max(1, collarRows - 1), PAL.steel);
       r(cols - 1 - shadowCols, coneRows, shadowCols, Math.max(1, collarRows - 1), PAL.steelDark);
@@ -200,22 +198,17 @@ export function PixelRocketPart({
     }
 
     case "pod_probe": {
-      // Compact octagonal satellite probe with twin antenna whips & gold foil
       const mid = Math.floor(cols / 2);
-      // Antenna tips (top 2 rows)
       r(mid - 2, 0, 1, 2, PAL.highlight);
       r(mid + 1, 0, 1, 2, PAL.shadow);
       const bodyTop = 2;
       const bodyH = Math.max(4, rows - 2);
-      // Tapered cap row
       r(1, bodyTop, cols - 2, 1, edge);
       r(2, bodyTop, cols - 4, 1, PAL.steelLight);
-      // Main probe bus
       r(0, bodyTop + 1, cols, bodyH - 1, edge);
       r(1, bodyTop + 1, cols - 2, bodyH - 2, PAL.hullUpper);
       r(1, bodyTop + 1, 1, bodyH - 2, PAL.highlight);
       r(cols - 1 - shadowCols, bodyTop + 1, shadowCols, bodyH - 2, PAL.shadow);
-      // Gold thermal foil band + teal optical sensor
       const bandR = bodyTop + Math.max(1, Math.floor((bodyH - 2) / 2));
       r(1, bandR, cols - 2, Math.min(2, bodyH - 2), PAL.stripeAmber);
       r(cols - 1 - shadowCols, bandR, shadowCols, Math.min(2, bodyH - 2), PAL.finCopper);
@@ -225,15 +218,12 @@ export function PixelRocketPart({
     }
 
     case "tank_s": {
-      // Upper cryo tank matching upper.png
       drawCylinder(0, rows, PAL.hullUpper);
-      // Burnt-orange roll band
       const bandR = Math.max(2, Math.round(rows * 0.42));
       const bandH = Math.max(2, Math.round(rows * 0.14));
       r(1, bandR, cols - 2, bandH, PAL.stripeOrange);
       r(1, bandR, 1, bandH, PAL.stripeAmber);
       r(cols - 1 - shadowCols, bandR, shadowCols, bandH, PAL.finCopper);
-      // Highlight bar in lower section like upper.png
       if (rows >= 10) {
         r(2, bandR + bandH + 1, 1, Math.max(2, rows - bandR - bandH - 3), PAL.highlightBright);
       }
@@ -241,15 +231,12 @@ export function PixelRocketPart({
     }
 
     case "tank_m": {
-      // Core booster tank matching vehicle.png
       drawCylinder(0, rows, PAL.hullCore);
-      // Upper orange roll stripe
       const bandR = Math.max(2, Math.round(rows * 0.16));
       const bandH = Math.max(2, Math.round(rows * 0.12));
       r(1, bandR, cols - 2, bandH, PAL.stripeBooster);
       r(1, bandR, 1, bandH, PAL.stripeAmber);
       r(cols - 1 - shadowCols, bandR, shadowCols, bandH, PAL.finCopper);
-      // Subtle vertical panel stringers in lower half (matching art.py line 112)
       const flTop = Math.round(rows * 0.56);
       const flH = Math.max(2, rows - flTop - 2);
       const innerStart = 3;
@@ -257,14 +244,12 @@ export function PixelRocketPart({
       for (let c = innerStart; c < innerEnd; c += 3) {
         r(c, flTop, 1, flH, PAL.stringer);
       }
-      // Subtle horizontal bulkhead seam
       r(1, Math.round(rows * 0.52), cols - 2, 1, PAL.stringer);
       r(cols - 1 - shadowCols, Math.round(rows * 0.52), shadowCols, 1, PAL.shadowDark);
       break;
     }
 
     case "tank_l": {
-      // Heavy cryo tank with double aerospace roll bands & external feedline
       drawCylinder(0, rows, PAL.hullCore);
       const band1 = Math.max(3, Math.round(rows * 0.14));
       const band2 = Math.max(band1 + 4, Math.round(rows * 0.72));
@@ -274,22 +259,18 @@ export function PixelRocketPart({
         r(1, br, 1, bh, PAL.stripeAmber);
         r(cols - 1 - shadowCols, br, shadowCols, bh, PAL.finCopper);
       }
-      // Checker accent in upper band
       for (let c = 2; c < cols - 2 - shadowCols; c += 3) {
         r(c, band1, 1, bh, PAL.steelDark);
       }
-      // Dark mid-tank structural intertank ring
       const midR = Math.round(rows * 0.48);
       r(1, midR, cols - 2, 2, PAL.steel);
       r(cols - 1 - shadowCols, midR, shadowCols, 2, PAL.steelDark);
-      // Vertical cryo feedline on left-center
       r(3, 2, 1, rows - 4, PAL.steelLight);
       r(2, 2, 1, rows - 4, PAL.highlightBright);
       break;
     }
 
     case "eng_kestrel": {
-      // Dark steel thrust mount + twin pixel thruster bells (matching vehicle.png)
       const collarH = Math.max(3, Math.round(rows * 0.36));
       const bellH = rows - collarH;
       r(0, 0, cols, collarH, edge);
@@ -300,7 +281,6 @@ export function PixelRocketPart({
       const rightCenter = Math.round(cols * 0.7);
       const topHW = Math.max(1, Math.floor(cols * 0.12));
       const botHW = Math.max(2, Math.floor(cols * 0.2));
-      // Compact stepped terracotta stabilizer fins matching vehicle.png
       for (let i = 0; i < collarH + 2; i++) {
         const fw = Math.min(3, Math.max(1, Math.floor((i + 2) / 2)));
         r(-fw, i - 1, fw, 1, PAL.finCopper);
@@ -313,7 +293,6 @@ export function PixelRocketPart({
     }
 
     case "eng_dart": {
-      // Compact upper-stage collar + single stepped vacuum bell (matching upper.png)
       const collarH = Math.max(2, Math.round(rows * 0.3));
       const bellH = rows - collarH;
       r(1, 0, cols - 2, collarH, edge);
@@ -330,14 +309,12 @@ export function PixelRocketPart({
     }
 
     case "eng_titan": {
-      // Heavy-lift thrust skirt + triple engine bell cluster
       const collarH = Math.max(4, Math.round(rows * 0.42));
       const bellH = rows - collarH;
       r(0, 0, cols, collarH, edge);
       r(1, 1, cols - 2, collarH - 2, PAL.steel);
       r(1, 1, 1, collarH - 2, PAL.steelLight);
       r(cols - 1 - shadowCols, 1, shadowCols, collarH - 2, PAL.steelDark);
-      // Orange heat-shield trim along lower skirt
       r(1, collarH - 2, cols - 2, 1, PAL.finCopper);
       const c1 = Math.round(cols * 0.22);
       const c2 = Math.round(cols * 0.5);
@@ -349,12 +326,10 @@ export function PixelRocketPart({
     }
 
     case "decoupler": {
-      // Dark interstage ring with orange/amber separation marks
       r(0, 0, cols, rows, edge);
       r(1, 1, cols - 2, rows - 2, PAL.steel);
       r(1, 1, 1, rows - 2, PAL.steelLight);
       r(cols - 1 - shadowCols, 1, shadowCols, rows - 2, PAL.steelDark);
-      // Separation hazard dashes across mid row
       const midR = Math.floor(rows / 2);
       for (let c = 2; c < cols - 2; c += 3) {
         r(c, midR, 2, 1, c < cols - 1 - shadowCols ? PAL.stripeAmber : PAL.finCopper);
@@ -362,13 +337,31 @@ export function PixelRocketPart({
       break;
     }
 
+    case "bracket_side": {
+      // Rigid steel radial mount truss with amber/teal crossfeed manifold pipe
+      const midR = Math.floor(rows / 2);
+      // Top & bottom heavy clamp struts
+      r(0, 0, cols, 2, edge);
+      r(0, 1, cols, 1, PAL.steelLight);
+      r(0, rows - 2, cols, 2, edge);
+      r(0, rows - 2, cols, 1, PAL.steel);
+      // Vertical structural web on core-facing & outer-facing edges
+      const innerC = radialSide === -1 ? cols - 1 : 0;
+      const outerC = radialSide === -1 ? 0 : cols - 1;
+      r(innerC, 0, 1, rows, PAL.steelLight);
+      r(outerC, 0, 1, rows, PAL.steelDark);
+      // Center crossfeed fuel line pipe (teal/amber)
+      r(0, midR - 1, cols, 3, edge);
+      r(0, midR, cols, 1, PAL.teal);
+      r(Math.floor(cols / 2), midR, 1, 1, PAL.stripeAmber);
+      break;
+    }
+
     case "srb_side": {
-      // Radial solid booster: stepped nosecone + slim casing + orange stripe + nozzle
       const noseH = Math.max(4, Math.round(cols * 0.65));
       const nozH = Math.max(3, Math.round(rows * 0.14));
       const bodyH = Math.max(4, rows - noseH - nozH);
       const mid = cols / 2;
-      // Stepped nosecone
       for (let i = 0; i < noseH; i++) {
         const t = (i + 1) / noseH;
         const hw = Math.max(1, Math.round((cols / 2 - 1) * t));
@@ -381,12 +374,10 @@ export function PixelRocketPart({
           r(c0 + rw - 1, i, 1, 1, PAL.shadow);
         }
       }
-      // Booster body
       drawCylinder(noseH, bodyH, PAL.hullCore);
       const stripeR = noseH + Math.max(2, Math.round(bodyH * 0.22));
       r(1, stripeR, cols - 2, 2, PAL.stripeBooster);
       r(cols - 1 - shadowCols, stripeR, shadowCols, 2, PAL.finCopper);
-      // Bottom nozzle
       drawBell(
         Math.round(mid),
         noseH + bodyH,
@@ -394,7 +385,6 @@ export function PixelRocketPart({
         Math.max(1, Math.floor(cols * 0.22)),
         Math.max(2, Math.floor(cols * 0.36)),
       );
-      // Radial decoupler struts connecting inward to core stack
       if (radialSide !== undefined) {
         const strutC = radialSide === -1 ? cols : -2;
         const topStrut = noseH + Math.round(bodyH * 0.22);
@@ -408,14 +398,12 @@ export function PixelRocketPart({
     }
 
     case "chute_mk1": {
-      // Compact pixel parachute canister with terracotta cover
       r(1, 0, cols - 2, 1, edge);
       r(0, 1, cols, rows - 1, edge);
       r(2, 1, cols - 4, 1, PAL.stripeOrange);
       r(1, 2, cols - 2, Math.max(1, rows - 3), PAL.hullUpper);
       r(1, 2, 1, Math.max(1, rows - 3), PAL.highlight);
       r(cols - 1 - shadowCols, 2, shadowCols, Math.max(1, rows - 3), PAL.shadow);
-      // Harness straps
       r(Math.floor(cols / 2) - 1, 1, 1, rows - 2, PAL.steelDark);
       r(Math.floor(cols / 2) + 1, 1, 1, rows - 2, PAL.steelDark);
       break;
@@ -423,23 +411,18 @@ export function PixelRocketPart({
 
     case "legs_mk1": {
       if (radialSide !== undefined) {
-        // Folded pixel landing leg pod mounted along the side of the core
         r(0, 0, cols, rows, edge);
         r(1, 1, cols - 2, rows - 2, PAL.steel);
         r(1, 1, 1, rows - 2, PAL.hullCore);
         r(cols - 2, 1, 1, rows - 2, PAL.steelDark);
-        // Telescoping strut inside housing
         const strutC = Math.floor(cols / 2);
         r(strutC, 2, 1, rows - 4, PAL.highlight);
-        // Orange footpad at bottom
         r(1, rows - 3, cols - 2, 2, PAL.stripeBooster);
         r(cols - 2, rows - 3, 1, 2, PAL.finCopper);
-        // Mounting bracket to core
         const brkC = radialSide === -1 ? cols : -2;
         r(brkC, 2, 2, 2, PAL.steelLight);
         r(brkC, rows - 4, 2, 2, PAL.steelLight);
       } else {
-        // Centerline leg-ring housing
         drawCylinder(0, rows, PAL.steelLight);
         r(2, 1, 2, rows - 2, PAL.stripeBooster);
         r(cols - 4, 1, 2, rows - 2, PAL.stripeBooster);
@@ -448,17 +431,13 @@ export function PixelRocketPart({
     }
 
     case "colony_kit": {
-      // Pressurized lunar outpost payload fairing with teal solar strip & docking collar
       drawCylinder(0, rows, PAL.hullNose);
-      // Top docking collar
       r(2, 0, cols - 4, 2, PAL.steel);
       r(3, 0, cols - 6, 1, PAL.stripeAmber);
-      // Teal telemetry / solar array band
       const bandR = Math.max(3, Math.round(rows * 0.35));
       const bandH = Math.max(3, Math.round(rows * 0.28));
       r(1, bandR, cols - 2, bandH, PAL.tealDark);
       r(2, bandR + 1, cols - 4 - shadowCols, Math.max(1, bandH - 2), PAL.teal);
-      // Structural ribs
       r(1, rows - 3, cols - 2, 2, PAL.steel);
       r(cols - 1 - shadowCols, rows - 3, shadowCols, 2, PAL.steelDark);
       break;
@@ -474,7 +453,8 @@ export function PixelRocketPart({
 
 /** Compact pixel-art preview icon for the VAB part catalog cards. */
 export function PartPixelThumb({ partId }: { partId: PartId }) {
-  const isRadialOnly = partId === "srb_side" || partId === "legs_mk1";
+  const isRadialOnly =
+    partId === "srb_side" || partId === "legs_mk1" || partId === "bracket_side";
   const { cols, rows, w, h } = isRadialOnly
     ? getRadialPixelSize(partId, 3.2)
     : getPartPixelSize(partId, 3.2);
@@ -497,7 +477,7 @@ export function PartPixelThumb({ partId }: { partId: PartId }) {
         cols={cols}
         rows={rows}
         px={VAB_PX}
-        radialSide={partId === "legs_mk1" ? 1 : undefined}
+        radialSide={partId === "legs_mk1" || partId === "bracket_side" ? 1 : undefined}
       />
     </svg>
   );
