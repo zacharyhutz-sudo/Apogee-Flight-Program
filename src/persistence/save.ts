@@ -35,24 +35,51 @@ export interface Tutorial {
   status: "welcome" | "active" | "complete" | "off";
   collectionTip: boolean;
   workshop: "offer" | "picker" | "done";
+  vabStep: number | "done";
+  contractsStep: number | "done";
+  apPeSeen: boolean;
   stagingSeen: boolean;
   hideInvite: boolean;
 }
 
 function tutorialDefaults(status: Tutorial["status"]): Tutorial {
-  return { status, collectionTip: false, workshop: "offer", stagingSeen: false, hideInvite: false };
+  const done = status === "complete" || status === "off";
+  return {
+    status,
+    collectionTip: false,
+    workshop: "offer",
+    vabStep: done ? "done" : 0,
+    contractsStep: done ? "done" : 0,
+    apPeSeen: done,
+    stagingSeen: false,
+    hideInvite: false,
+  };
+}
+
+function readStep(value: unknown, fallback: number | "done", maxStep: number): number | "done" {
+  if (value === "done") return "done";
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= maxStep) {
+    return value;
+  }
+  return fallback;
 }
 
 function readTutorial(raw: unknown): Tutorial {
   // Older programs can invite Milo from Earth. Never interrupt their current flight.
   if (!record(raw)) return tutorialDefaults("off");
-  const { status, collectionTip, workshop, stagingSeen, hideInvite } = raw;
+  const { status, collectionTip, workshop, vabStep, contractsStep, apPeSeen, stagingSeen, hideInvite } = raw;
   if (status !== "welcome" && status !== "active" && status !== "complete" && status !== "off")
     return tutorialDefaults("off");
+  const parsedWorkshop = workshop === "picker" || workshop === "done" ? workshop : "offer";
+  const defaultVab: number | "done" = status === "complete" || parsedWorkshop === "done" ? "done" : 0;
+  const defaultContracts: number | "done" = status === "complete" ? "done" : 0;
   return {
     status,
     collectionTip: collectionTip === true,
-    workshop: workshop === "picker" || workshop === "done" ? workshop : "offer",
+    workshop: parsedWorkshop,
+    vabStep: readStep(vabStep, defaultVab, 5),
+    contractsStep: readStep(contractsStep, defaultContracts, 2),
+    apPeSeen: typeof apPeSeen === "boolean" ? apPeSeen : status === "complete",
     stagingSeen: stagingSeen === true,
     hideInvite: hideInvite === true,
   };

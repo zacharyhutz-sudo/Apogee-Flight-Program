@@ -132,8 +132,15 @@ export function Workshop({
 }) {
   const p = m.mission.program;
   const tutorial = m.mission.tutorial;
+  const vabTour =
+    m.loaded &&
+    tutorial.status === "active" &&
+    tutorial.vabStep !== "done";
+  const vabStepNum = typeof tutorial.vabStep === "number" ? tutorial.vabStep : 0;
+  const finishVabTour = () => m.updateTutorial({ vabStep: "done" });
   const lesson =
     m.loaded &&
+    !vabTour &&
     (tutorial.status === "active" || tutorial.status === "complete") &&
     tutorial.workshop !== "done";
   const dismissLesson = () => m.updateTutorial({ workshop: "done" });
@@ -1033,6 +1040,7 @@ export function Workshop({
   }
 
   function launchMode(mode: "practice" | "real") {
+    if (tutorial.vabStep !== "done") m.updateTutorial({ vabStep: "done" });
     const err = m.launchBlueprint(activeBp.id, mode);
     if (err) setNotice(err);
   }
@@ -1043,6 +1051,7 @@ export function Workshop({
       setReplaceTarget({ useBlueprint });
       return;
     }
+    if (tutorial.vabStep !== "done") m.updateTutorial({ vabStep: "done" });
     const err =
       pendingContract.kind === "fixed"
         ? m.stageContract(
@@ -1097,7 +1106,7 @@ export function Workshop({
           <Landmark />
         </button>
 
-        <div className="bp-picker">
+        <div className="bp-picker" data-milo-focus={vabTour && vabStepNum === 3}>
           <select
             data-milo-focus={lesson && tutorial.workshop === "picker"}
             aria-label="Select blueprint"
@@ -1171,13 +1180,64 @@ export function Workshop({
         </section>
       )}
 
-      {soundingGuide && !saveDialogOpen && (
-        <MiloGuide dismiss={() => m.updateTutorial({ status: "off", collectionTip: false })}>
-          Pick or build a rocket here, or tap Sponsored Rocket to launch for 0 credits.
+      {vabTour && !saveDialogOpen && (
+        <MiloGuide
+          title={`Milo Voss · VAB Tour (${vabStepNum + 1}/6)`}
+          dismissLabel="Skip VAB tour"
+          dismiss={finishVabTour}
+          actions={
+            <>
+              {vabStepNum > 0 && (
+                <button
+                  type="button"
+                  onClick={() => m.updateTutorial({ vabStep: vabStepNum - 1 })}
+                >
+                  Back
+                </button>
+              )}
+              {vabStepNum < 5 ? (
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => m.updateTutorial({ vabStep: vabStepNum + 1 })}
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={finishVabTour}
+                >
+                  Finish tour
+                </button>
+              )}
+            </>
+          }
+        >
+          {vabStepNum === 0
+            ? "Welcome to the Vehicle Assembly Building (VAB)! Drag parts onto the rocket stack, or tap any placed part to move it, switch its stage (S1/S2), toggle 2× symmetry, or drag it outside the bay to remove it."
+            : vabStepNum === 1
+              ? "Check your live engineering gauges: MASS must fit your Launchpad cap; Δv (Delta-v) is your total speed-change budget (~1,600+ m/s for orbit); TWR (Thrust-to-Weight) must exceed 1.00 to lift off; PARTS is capped by your VAB level."
+              : vabStepNum === 2
+                ? "Pick parts from Pods, Tanks, Engines, Stages, and Payload below. Liquid Engines must sit directly under a Fuel Tank to draw fuel; stacked tanks share one fuel pool. Use a Decoupler to split stages, or Side Brackets for radial boosters with fuel crossfeed."
+                : vabStepNum === 3
+                  ? "Use the blueprint picker above to switch starter rockets (Pioneer Orbital for 2-stage missions, Sounding Arrow for light hops). Tap Save to keep a named design, or Clone to experiment safely."
+                  : vabStepNum === 4
+                    ? "Any rocket with a Mk-1 Command Pod can seat a pilot from Crew Quarters for bonus Isp and Credit payouts — just land them safely so you don’t have to recover their escape pod!"
+                    : fixedJob === "sounding"
+                      ? "Ready to stage! Tap Sponsored (0 C) for a free sponsor rocket (150 Prop only), or tap Fly Blueprint to launch your own VAB rocket — you start with enough Credits and Propellant for either."
+                      : "When your design passes all checks, tap Simulate Free to test-fly at 0 cost, or tap Fly Contract / Launch to roll onto the pad for real."}
         </MiloGuide>
       )}
 
-      {!soundingGuide && lesson && !saveDialogOpen && (
+      {!vabTour && soundingGuide && !saveDialogOpen && (
+        <MiloGuide dismiss={() => m.updateTutorial({ status: "off", collectionTip: false })}>
+          Pick or build a rocket here, or tap Sponsored (0 C) to launch for zero hardware credits.
+        </MiloGuide>
+      )}
+
+      {!vabTour && !soundingGuide && lesson && !saveDialogOpen && (
         <MiloGuide dismissLabel="Dismiss design lesson" dismiss={dismissLesson}>
           {tutorial.workshop === "picker"
             ? "Your saved design is selected above. Open the dropdown to switch rockets."
@@ -1185,7 +1245,7 @@ export function Workshop({
         </MiloGuide>
       )}
 
-      <div className="vab-pilot-bar" aria-label="Pilot assignment">
+      <div className="vab-pilot-bar" aria-label="Pilot assignment" data-milo-focus={vabTour && vabStepNum === 4}>
         <UserCheck size={14} />
         {hasCrewedPod ? (
           <>
@@ -1217,7 +1277,7 @@ export function Workshop({
         )}
       </div>
 
-      <div className="vab-metrics" aria-label="Vehicle engineering readouts">
+      <div className="vab-metrics" aria-label="Vehicle engineering readouts" data-milo-focus={vabTour && vabStepNum === 1}>
         <div className="vab-stat">
           <span>MASS</span>
           <strong className={analysis.wetTonnes > limits.maxMassTonnes ? "over-limit" : ""}>
@@ -1251,6 +1311,7 @@ export function Workshop({
         ref={canvasRef}
         className={"vab-stage-canvas" + (drag?.active ? " drag-active" : "")}
         aria-label="Rocket assembly bay"
+        data-milo-focus={vabTour && vabStepNum === 0}
       >
         <svg
           ref={svgRef}
@@ -1609,7 +1670,7 @@ export function Workshop({
         </div>
       )}
 
-      <section className="vab-tray" aria-label="Part catalog">
+      <section className="vab-tray" aria-label="Part catalog" data-milo-focus={vabTour && vabStepNum === 2}>
         <div className="tray-tabs">
           {CATEGORIES.map((c) => (
             <button
@@ -1686,12 +1747,12 @@ export function Workshop({
         </div>
       )}
 
-      <footer className="vab-actions">
+      <footer className="vab-actions" data-milo-focus={vabTour && vabStepNum === 5}>
         {fixedJob === "sounding" ? (
           <>
             <button
               className="sim-btn"
-              data-milo-focus={soundingGuide}
+              data-milo-focus={soundingGuide && !vabTour}
               aria-label="Fly Sponsored Rocket"
               onClick={() => stageSelectedContract(false)}
             >

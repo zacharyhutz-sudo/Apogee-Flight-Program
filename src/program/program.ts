@@ -98,6 +98,7 @@ import {
 } from "./workshop.ts";
 
 export const MAX_LEVEL = 4;
+export const ROTATING_CONTRACTS_MIN_MC_LEVEL = 3;
 
 export interface Cost {
   propellant?: number;
@@ -548,8 +549,8 @@ export const startProgram = (): Program => {
   }));
   const blueprints = starterBlueprints();
   return {
-    credits: 300,
-    propellant: 350,
+    credits: 850,
+    propellant: 600,
     research: 0,
     collectors: { credits: 0, propellant: 0 },
     lastRealTimestampMs: 0,
@@ -954,7 +955,7 @@ export function facilityBenefit(k: Kind, n: number): string {
     case "command":
       if (lv === 1) return "Starter 6 facilities · Tier 1 contracts";
       if (lv === 2) return "Unlocks VAB, Tracking, Lab · Tier 2 contracts";
-      if (lv === 3) return "Facility cap Lv 3 · Lunar tier ready";
+      if (lv === 3) return "Facility cap Lv 3 · Rotating contracts · Lunar tier";
       return "Facility cap Lv 4 · Interplanetary tier ready";
     case "pad":
       return `${padCaps(lv).tonnes} t max wet mass · ${padCaps(lv).height} m`;
@@ -990,6 +991,7 @@ export function upgradeStatDelta(k: Kind, currentLevel: number): string {
   switch (k) {
     case "command":
       if (nxt === 2) return "Unlocks VAB, Tracking, Lab & Tier 2 contracts";
+      if (nxt === 3) return "Raises facility caps to Lv 3 · Unlocks Rotating Contracts";
       return `Raises all facility level caps to Lv ${nxt}`;
     case "pad":
       return `+${padCaps(nxt).tonnes - padCaps(cur).tonnes} t wet mass · +${padCaps(nxt).height - padCaps(cur).height} m`;
@@ -1472,12 +1474,24 @@ export function quote(p: Program, job: Job, spec = stagedVehicle(p, job), pilotI
   };
 }
 
+export function hasRotatingContracts(p: Program): boolean {
+  return level(p, "command") >= ROTATING_CONTRACTS_MIN_MC_LEVEL;
+}
+
 export function ensureRotatingBoard(
   p: Program,
   nowMs = Date.now(),
   rng: () => number = Math.random,
 ): RotatingBoardState {
   const mcLv = Math.max(1, level(p, "command"));
+  if (mcLv < ROTATING_CONTRACTS_MIN_MC_LEVEL) {
+    return {
+      offers: [],
+      nextRefreshAtMs: nowMs,
+      freeRerollsUsed: 0,
+      rerollCount: 0,
+    };
+  }
   const officeLv = Math.max(1, level(p, "office"));
   const cur = p.rotatingBoard;
   if (cur && nowMs < cur.nextRefreshAtMs) {
@@ -1502,6 +1516,9 @@ export function rerollRotatingBoard(
   nowMs = Date.now(),
   rng: () => number = Math.random,
 ): string {
+  if (!hasRotatingContracts(p)) {
+    return `Requires Mission Control Lv ${ROTATING_CONTRACTS_MIN_MC_LEVEL}.`;
+  }
   const board = ensureRotatingBoard(p, nowMs, rng);
   const cost = rerollCostCredits(board);
   if (cost > 0 && p.credits < cost) {
@@ -1567,6 +1584,9 @@ export function launchIssue(
 ): string {
   if (job === "practice") return "";
   if (job === "rotating") {
+    if (!hasRotatingContracts(p)) {
+      return `Requires Mission Control Lv ${ROTATING_CONTRACTS_MIN_MC_LEVEL}.`;
+    }
     if (!p.activeRotating) return "No rotating contract selected.";
     const v = vehicle ?? p.contractVehicle;
     if (!v) return "Select a rocket blueprint in the VAB.";
@@ -1844,7 +1864,9 @@ export function inspectRotatingBlueprint(
     cargo: offer.cargoKg,
   };
   let error = "";
-  if (seat.error) {
+  if (!hasRotatingContracts(p)) {
+    error = `Requires Mission Control Lv ${ROTATING_CONTRACTS_MIN_MC_LEVEL}.`;
+  } else if (seat.error) {
     error = seat.error;
   } else if (!analysis.canLaunchWithLimits) {
     error = analysis.warnings.find((w) => w.severity === "error")?.message

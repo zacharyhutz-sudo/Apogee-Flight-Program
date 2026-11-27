@@ -49,6 +49,7 @@ import {
   contractVehicle,
   ensureCrew,
   ensureRotatingBoard,
+  hasRotatingContracts,
   type Cost,
   canReclaimTile,
   countBuilt,
@@ -265,6 +266,9 @@ export function LaunchSite({
 
   function pick(job: Job | "practice") {
     if (job !== "practice") {
+      if (tutorial.contractsStep !== "done") {
+        m.updateTutorial({ contractsStep: "done" });
+      }
       P(null);
       onWorkshop({ kind: "fixed", job });
       return;
@@ -327,7 +331,7 @@ export function LaunchSite({
   function showPanel(v: "build" | "board" | "cloud" | "store" | "crew") {
     cancel();
     setBoardNotice("");
-    if (v === "board") m.refreshRotatingBoard();
+    if (v === "board" && hasRotatingContracts(p)) m.refreshRotatingBoard();
     P(v);
   }
 
@@ -348,20 +352,23 @@ export function LaunchSite({
   const skipTour = () => m.updateTutorial({ status: "off", collectionTip: false });
   const finishTour = () => m.updateTutorial({ status: "complete", collectionTip: true });
 
+  const contractsTour = touring && tutorial.contractsStep !== "done";
+  const contractsStepNum = typeof tutorial.contractsStep === "number" ? tutorial.contractsStep : 0;
+
   function siteGuide() {
     if (!m.loaded) return null;
     if (tutorial.status === "welcome")
       return <MiloGuide title="Milo Voss · Range crew" actions={<>
-        <button className="primary" onClick={() => m.updateTutorial({ status: "active" })}>Let’s fly</button>
+        <button className="primary" onClick={() => m.updateTutorial({ status: "active", contractsStep: 0, vabStep: 0, apPeSeen: false })}>Let’s fly</button>
         <button onClick={skipTour}>Skip tutorial</button>
-      </>}>See that pad? Let’s put something in the sky.</MiloGuide>;
+      </>}>See that pad? I’ll walk you through contracts, building rockets in the VAB, and reading flight telemetry for your first launch.</MiloGuide>;
     if (needsFlight)
       return <MiloGuide dismiss={skipTour}>{resumeFlight
-        ? "Your sounding rocket is ready on the flight deck. Tap Resume to return."
-        : "Open Contracts. I’ve lined up a first flight for us."}</MiloGuide>;
+        ? "Your sounding rocket is ready on the flight deck. Tap Resume to launch."
+        : "First stop: open Contracts. I’ll show you how missions, payouts, and free simulations work."}</MiloGuide>;
     if (buildingLesson && hasTwoFoundries)
       return <MiloGuide actions={<button className="primary" onClick={finishTour}>Got it</button>}>
-        Two foundries on the range! When a credit badge appears, tap either foundry to collect.
+        Two foundries on the range! Tap gold Credit badges and teal Propellant badges above collectors to bank resources. Upgrade Mission Control to unlock Tier 2 contracts, the VAB, Lab, and Rotating Contracts at Lv 3.
       </MiloGuide>;
     if (buildingLesson)
       return <MiloGuide actions={<button onClick={() => {
@@ -383,7 +390,7 @@ export function LaunchSite({
         <button
           className="milo-invite-open"
           aria-label="Ask Milo for guidance"
-          onClick={() => m.updateTutorial({ status: "active", hideInvite: false })}
+          onClick={() => m.updateTutorial({ status: "active", hideInvite: false, contractsStep: 0, vabStep: 0, apPeSeen: false })}
         >
           <span className="milo-face" aria-hidden="true" />Ask Milo
         </button>
@@ -774,17 +781,62 @@ export function LaunchSite({
           )}
           {panel === "board" && (
             <>
-              {needsFlight && <MiloGuide dismiss={skipTour}>
-                The sponsor supplies the rocket. We supply the fuel. Pick Atmospheric Sounding to choose a rocket in the VAB.
-              </MiloGuide>}
+              {contractsTour ? (
+                <MiloGuide
+                  title={`Milo Voss · Contracts (${contractsStepNum + 1}/3)`}
+                  dismiss={skipTour}
+                  actions={
+                    <>
+                      {contractsStepNum > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => m.updateTutorial({ contractsStep: contractsStepNum - 1 })}
+                        >
+                          Back
+                        </button>
+                      )}
+                      {contractsStepNum < 2 ? (
+                        <button
+                          type="button"
+                          className="primary"
+                          onClick={() => m.updateTutorial({ contractsStep: contractsStepNum + 1 })}
+                        >
+                          Next
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="primary"
+                          onClick={() => m.updateTutorial({ contractsStep: "done" })}
+                        >
+                          Got it
+                        </button>
+                      )}
+                    </>
+                  }
+                >
+                  {contractsStepNum === 0
+                    ? "Contracts fund your space program with Credits (C) and Research Data (RD). Use Free simulation at the top anytime to test a rocket at zero credit or fuel cost."
+                    : contractsStepNum === 1
+                      ? "Each Program Milestone shows its goal, estimated hardware & propellant cost, mass, and payout. Upgrading Mission Control unlocks Tier 2 contracts at Lv 2 and Rotating Contracts at Lv 3."
+                      : "Let’s start with Atmospheric Sounding (reach 15 km). The sponsor covers hardware (0 C) if you use their rocket, or you can fly your own VAB blueprint. Tap VAB on Atmospheric Sounding to continue!"}
+                </MiloGuide>
+              ) : (
+                needsFlight && (
+                  <MiloGuide dismiss={skipTour}>
+                    The sponsor supplies the rocket (0 C) or you can fly your own VAB design. Pick Atmospheric Sounding to enter the VAB.
+                  </MiloGuide>
+                )
+              )}
               <button
                 className="practice-btn"
+                data-milo-focus={contractsTour && contractsStepNum === 0}
                 onClick={() => pick("practice")}
               >
                 <Rocket />
                 Free simulation · No cost or payout
               </button>
-              {(() => {
+              {hasRotatingContracts(p) && (() => {
                 const board = ensureRotatingBoard(p, nowMs);
                 const rerollPrice = rerollCostCredits(board);
                 const refreshLeftSec = Math.max(0, Math.ceil((board.nextRefreshAtMs - nowMs) / 1000));
@@ -891,6 +943,7 @@ export function LaunchSite({
                       className={
                         "contract" + (reason ? " contract-locked" : "")
                       }
+                      data-milo-focus={contractsTour && contractsStepNum === 1 && job === "sounding"}
                       key={job}
                     >
                       <header>
@@ -930,7 +983,7 @@ export function LaunchSite({
                         <button
                           className={!reason ? "primary" : ""}
                           disabled={Boolean(reason)}
-                          data-milo-focus={needsFlight && job === "sounding" && !reason}
+                          data-milo-focus={needsFlight && job === "sounding" && !reason && (!contractsTour || contractsStepNum === 2)}
                           aria-label={"Accept " + c.name}
                           onClick={() => pick(job)}
                         >

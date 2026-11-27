@@ -390,8 +390,33 @@ export default function App() {
   const radioMessage = radio && (
     <div className="flight-milo">
       <MiloGuide
-        dismissLabel={sortie === "hop" ? "Dismiss staging lesson" : "Hide tutorial"}
-        dismiss={() => m.updateTutorial(sortie === "hop" ? { stagingSeen: true } : { status: "off" })}
+        title={radio.title}
+        actions={
+          radio.ack === "apPeSeen" ? (
+            <button
+              className="primary"
+              onClick={() => m.updateTutorial({ apPeSeen: true })}
+            >
+              Got it
+            </button>
+          ) : undefined
+        }
+        dismissLabel={
+          radio.ack === "apPeSeen"
+            ? "Dismiss AP and PE lesson"
+            : sortie === "hop"
+              ? "Dismiss staging lesson"
+              : "Hide tutorial"
+        }
+        dismiss={() =>
+          m.updateTutorial(
+            radio.ack === "apPeSeen"
+              ? { apPeSeen: true }
+              : sortie === "hop"
+                ? { stagingSeen: true }
+                : { status: "off" },
+          )
+        }
       >
         {radio.text}
       </MiloGuide>
@@ -407,7 +432,14 @@ export default function App() {
     </div>
   );
   const instrument = (label: string, value: string, unit: string) => (
-    <div className="meter" key={label} data-milo-focus={label === "ALT" && radio?.target === "altitude"}>
+    <div
+      className="meter"
+      key={label}
+      data-milo-focus={
+        (label === "ALT" && radio?.target === "altitude") ||
+        ((label === "AP" || label === "PE") && radio?.target === "appe")
+      }
+    >
       <span>{label}</span>
       <strong>
         {value}
@@ -560,32 +592,28 @@ export default function App() {
           </header>
 
           {(!pad || !active) && (
-            <div className="telemetry">
+            <div className={"telemetry" + (active && !pad ? " telemetry-flight" : "")}>
               {m.alt < 1000 ? instrument("ALT", String(Math.round(m.alt)), "m") : instrument("ALT", distance(m.alt), "km")}
               {instrument(
                 "VEL",
                 Math.round(speed(s)).toLocaleString("en-US"),
                 "m/s",
               )}
-              {active ? (
+              {active &&
                 instrument(
                   s.chuteDeployed ? "CHUTE" : "PITCH",
                   s.chuteDeployed ? "LOCK" : `${Math.round(s.pitch)}°`,
                   "",
-                )
-              ) : (
-                <>
-                  {instrument(
-                    "AP",
-                    pad ? "—" : distance(Math.max(0, o.ap)),
-                    pad || !Number.isFinite(o.ap) ? "" : "km",
-                  )}
-                  {instrument(
-                    "PE",
-                    pad ? "—" : distance(o.pe),
-                    pad ? "" : "km",
-                  )}
-                </>
+                )}
+              {instrument(
+                "AP",
+                pad ? "—" : distance(Math.max(0, o.ap)),
+                pad || !Number.isFinite(o.ap) ? "" : "km",
+              )}
+              {instrument(
+                "PE",
+                pad ? "—" : distance(o.pe),
+                pad ? "" : "km",
               )}
               {!pad && (
                 <div className="meter fuel-meter" data-milo-focus={radio?.target === "fuel"}>
@@ -984,12 +1012,38 @@ export default function App() {
                   deploying Chute, and extend Legs before touchdown.
                 </li>
               </ol>
+              <h3>Orbital telemetry (AP &amp; PE)</h3>
+              <p>
+                <b>AP (Apoapsis)</b> is the highest altitude your current
+                trajectory will reach. <b>PE (Periapsis)</b> is the lowest
+                point. Pitch sideways during ascent and burn near AP to raise PE
+                above 30 km for a stable orbit.
+              </p>
               <h3>Keyboard</h3>
               <p>
                 <kbd>M</kbd> map · <kbd>P</kbd> pause · <kbd>Space</kbd> action
-                · <kbd>← → / A D</kbd> pitch · <kbd>↑ ↓ / W S</kbd> throttle ·{" "}
-                <kbd>L</kbd> legs · <kbd>C</kbd> chute
+                · <kbd>X</kbd> engine on/off · <kbd>← → / A D</kbd> pitch ·{" "}
+                <kbd>↑ ↓ / W S</kbd> throttle · <kbd>L</kbd> legs ·{" "}
+                <kbd>C</kbd> chute
               </p>
+              <div className="dialog-actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    m.updateTutorial({
+                      status: "active",
+                      vabStep: 0,
+                      contractsStep: 0,
+                      apPeSeen: false,
+                      stagingSeen: false,
+                      hideInvite: false,
+                    });
+                    D("");
+                  }}
+                >
+                  Replay Milo’s tutorial
+                </button>
+              </div>
             </>
           )}
           {dialog === "data" && (

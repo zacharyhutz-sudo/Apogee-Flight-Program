@@ -49,7 +49,8 @@
 .flight-milo { position:relative; z-index:2; margin-top:6px; width:min(320px,100%); pointer-events:none; }
 .flight-milo .milo-face { width:30px; height:30px; }
 .flight-milo .milo-card { align-items:center; padding:4px 6px; font-size:13px; }
-.flight-milo .milo-close { pointer-events:auto; }
+.flight-milo .milo-close, .flight-milo .milo-actions, .flight-milo .milo-actions button { pointer-events:auto; }
+.flight-milo .milo-actions button { min-height:36px; padding:0 12px; font-size:13px; }
 dialog .milo-card, .inspector .milo-card { margin:6px 0; }
 .workshop-game > .milo-card { flex:none; align-self:stretch; }
 [data-milo-focus="true"] { outline: 2px solid #ffcf79 !important; outline-offset:-3px; box-shadow:inset 0 0 0 4px #4c371c !important; }

@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fresh, validate } from "../src/persistence/save.ts";
 import {
+  ROTATING_CONTRACTS_MIN_MC_LEVEL,
   contractTasks,
   ensureRotatingBoard,
+  hasRotatingContracts,
   inspectRotatingBlueprint,
   payLaunch,
   prepareRotatingContractBlueprint,
@@ -11,6 +13,7 @@ import {
   rerollRotatingBoard,
   rotatingSlotCount,
   settle,
+  syncBuildingLevels,
 } from "../src/program/program.ts";
 
 function makeRng(seed = 42) {
@@ -21,8 +24,35 @@ function makeRng(seed = 42) {
   };
 }
 
-test("rotating board scales with Contract Office level and supports free then paid rerolls", () => {
+function setMcLevel(p, lv) {
+  const cmd = p.buildings.find((b) => b.kind === "command");
+  cmd.level = lv;
+  p.buildingLevels = syncBuildingLevels(p.buildings);
+}
+
+test("rotating contracts stay locked until Mission Control Lv 3", () => {
   const p = fresh().program;
+  const now = 1_700_000_000_000;
+  assert.equal(ROTATING_CONTRACTS_MIN_MC_LEVEL, 3);
+
+  for (const lv of [1, 2]) {
+    setMcLevel(p, lv);
+    assert.equal(hasRotatingContracts(p), false);
+    const board = ensureRotatingBoard(p, now, makeRng(1));
+    assert.equal(board.offers.length, 0);
+    assert.equal(p.rotatingBoard, undefined);
+    assert.match(rerollRotatingBoard(p, now, makeRng(2)), /Mission Control Lv 3/);
+  }
+
+  setMcLevel(p, 3);
+  assert.equal(hasRotatingContracts(p), true);
+  const board = ensureRotatingBoard(p, now, makeRng(1));
+  assert.equal(board.offers.length, 2);
+});
+
+test("rotating board scales with Contract Office level and supports free then paid rerolls at MC Lv 3", () => {
+  const p = fresh().program;
+  setMcLevel(p, 3);
   assert.equal(rotatingSlotCount(1), 2);
   assert.equal(rotatingSlotCount(2), 3);
   assert.equal(rotatingSlotCount(4), 4);
@@ -48,6 +78,7 @@ test("rotating board scales with Contract Office level and supports free then pa
 test("VAB modifiers validate constraints, apply subsidy discount, and settle rotating contracts cleanly", () => {
   const save = fresh();
   const p = save.program;
+  setMcLevel(p, 3);
   p.credits = 2000;
   p.propellant = 750;
   const bp = p.blueprints[0];

@@ -759,6 +759,16 @@ dialog ol {
     display: flex;
     width: 100%;
   }
+  .telemetry.telemetry-flight {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .telemetry.telemetry-flight .meter:nth-child(4) {
+    border-left: 0;
+  }
+  .telemetry.telemetry-flight .meter:nth-child(n + 4) {
+    border-top: 1px solid var(--line);
+  }
   .meter {
     flex: 1;
     padding: 4px 6px;

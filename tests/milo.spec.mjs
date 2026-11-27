@@ -39,7 +39,7 @@ test("Milo guides a new program through a paid flight, reload and a single found
   await page.goto("./");
   await button(page, "Let’s fly").click();
   await button(page, "Contracts").click();
-  await expect(guide(page)).toContainText("sponsor");
+  await expect(guide(page)).toContainText("Free simulation");
   await button(page, "Close dialog").click();
   await expect(button(page, "Contracts")).toHaveAttribute("data-milo-focus", "true");
   await button(page, "Contracts").click();
@@ -62,8 +62,8 @@ test("Milo guides a new program through a paid flight, reload and a single found
   await expect(guide(page)).toContainText("Two foundries");
   await button(page, "Got it").click();
   const data = await saved(page);
-  expect(data.program.credits).toBe(150);
-  expect(data.program.propellant).toBe(100);
+  expect(data.program.credits).toBe(700);
+  expect(data.program.propellant).toBe(350);
   expect(data.program.completed.sounding).toBe(1);
   expect(data.program.buildings.filter(b => b.kind === "foundry")).toHaveLength(2);
   expect(data.tutorial.status).toBe("complete");
@@ -78,7 +78,7 @@ test("Milo guides a new program through a paid flight, reload and a single found
   };
   await island.click({ position: badge });
   await expect(guide(page)).toHaveCount(0);
-  expect((await saved(page)).program.credits).toBeGreaterThan(150);
+  expect((await saved(page)).program.credits).toBeGreaterThan(700);
   await expect(button(page, "Ask Milo for guidance")).toHaveCount(0);
   await page.reload();
   await expect(button(page, "Contracts")).toBeEnabled();
@@ -98,6 +98,7 @@ test("legacy programs opt in, skip silently, and learn to save a named rocket", 
   await expect(button(page, "Ask Milo for guidance")).toBeVisible();
   await button(page, "Ask Milo for guidance").click();
   await button(page, "Rocket Workshop").click();
+  await button(page, "Skip VAB tour").click();
   await expect(guide(page)).toContainText("save icon");
   await button(page, "Save rocket design").click();
   await page.locator("#bp-name-input").fill("Milo I");

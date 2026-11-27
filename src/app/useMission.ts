@@ -10,6 +10,7 @@ import {
   completeFinishedUpgrades,
   contractVehicle,
   ensureRotatingBoard,
+  hasRotatingContracts,
   launchIssue,
   payLaunch,
   place,
@@ -301,6 +302,7 @@ export function useMission() {
 
   function refreshRotatingBoard() {
     if (!ready.current) return;
+    if (!hasRotatingContracts(mission.current.program)) return;
     ensureRotatingBoard(mission.current.program, Date.now());
     save();
     refresh();
