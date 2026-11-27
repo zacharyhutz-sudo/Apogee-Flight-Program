@@ -4,9 +4,12 @@ import {
   useRef,
   useState,
   type FormEvent,
+  useLayoutEffect,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
+  Minus,
+  Scan,
   ArrowDown,
   ArrowUp,
   Check,
@@ -37,6 +40,7 @@ import {
   type PartId,
   type PlacedPart,
   type RocketBlueprint,
+  type ValidationWarning,
 } from "../program/workshop";
 import {
   CONTRACTS,
@@ -53,6 +57,7 @@ import {
   pilotStats,
   quote,
 } from "../program/program";
+import { useBayCamera, type PartBounds } from "./useBayCamera";
 import { MiloGuide } from "./MiloGuide";
 import { Dialog } from "./Dialog";
 import {
@@ -71,7 +76,7 @@ const CATEGORIES: Array<{ id: PartCategory; label: string }> = [
   { id: "pod", label: "Pods" },
   { id: "tank", label: "Tanks" },
   { id: "engine", label: "Engines" },
-  { id: "stage", label: "Stages" },
+  { id: "stage", label: "Staging" },
   { id: "utility", label: "Payload" },
 ];
 
@@ -110,7 +115,10 @@ type SnapTarget =
       reason?: string;
     };
 
+type Panel = "parts" | "stages" | "preflight" | "edit" | "choose";
+
 interface DragState {
+  pointerId: number;
   source: "tray" | "canvas";
   partId: PartId;
   uid?: string;
@@ -120,7 +128,6 @@ interface DragState {
   y: number;
   active: boolean;
   snap: SnapTarget | null;
-  overTrash: boolean;
 }
 
 export function Workshop({
@@ -134,9 +141,11 @@ export function Workshop({
   const tutorial = m.mission.tutorial;
   const vabTour =
     m.loaded &&
+    !m.pendingContract &&
     tutorial.status === "active" &&
     tutorial.vabStep !== "done";
-  const vabStepNum = typeof tutorial.vabStep === "number" ? tutorial.vabStep : 0;
+  const vabStepNum =
+    typeof tutorial.vabStep === "number" ? tutorial.vabStep : 0;
   const finishVabTour = () => m.updateTutorial({ vabStep: "done" });
   const lesson =
     m.loaded &&
@@ -155,20 +164,42 @@ export function Workshop({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [dialogError, setDialogError] = useState("");
-  const [replaceTarget, setReplaceTarget] = useState<{ useBlueprint: boolean } | null>(null);
+  const [replaceTarget, setReplaceTarget] = useState<{
+    useBlueprint: boolean;
+  } | null>(null);
   const [selectedPilotId, setSelectedPilotId] = useState("");
   const [drag, setDrag] = useState<DragState | null>(null);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const canvasRef = useRef<HTMLElement | null>(null);
+  const limitDetails = useRef<HTMLDetailsElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
-  dragRef.current = drag;
+  const [panel, setPanel] = useState<Panel | null>(
+    m.pendingContract ? "preflight" : null,
+  );
+  const [placing, setPlacing] = useState<PartId | null>(null);
+  const [candidates, setCandidates] = useState<string[]>([]);
+  const focusAfterEdit = useRef<string | null>(null);
+  const touches = useRef(
+    new Map<
+      number,
+      {
+        x: number;
+        y: number;
+        startX: number;
+        startY: number;
+        hits: string[];
+        moved: boolean;
+      }
+    >(),
+  );
 
   const crew = ensureCrew(p);
   const readyPilots = crew.pilots.filter((x) => x.status === "ready");
   const hasCrewedPod = activeBp.parts.some((pt) => pt.partId === "pod_mk1");
   const effectivePilotId =
-    hasCrewedPod && readyPilots.some((x) => x.id === selectedPilotId) ? selectedPilotId : "";
+    hasCrewedPod && readyPilots.some((x) => x.id === selectedPilotId)
+      ? selectedPilotId
+      : "";
   const seatedPilot = effectivePilotId
     ? readyPilots.find((x) => x.id === effectivePilotId)
     : undefined;
@@ -176,8 +207,10 @@ export function Workshop({
   const seatedStats = seatedPilot ? pilotStats(seatedPilot) : null;
 
   const pendingContract = m.pendingContract;
-  const fixedJob = pendingContract?.kind === "fixed" ? pendingContract.job : null;
-  const rotatingOffer = pendingContract?.kind === "rotating" ? pendingContract.offer : null;
+  const fixedJob =
+    pendingContract?.kind === "fixed" ? pendingContract.job : null;
+  const rotatingOffer =
+    pendingContract?.kind === "rotating" ? pendingContract.offer : null;
   const contractName = fixedJob
     ? CONTRACTS[fixedJob].name
     : rotatingOffer
@@ -196,14 +229,36 @@ export function Workshop({
     : rotatingOffer
       ? {
           credits: rotatingOffer.credits,
-          research: Math.round(rotatingOffer.research * (1 + 0.1 * level(p, "lab"))),
+          research: Math.round(
+            rotatingOffer.research * (1 + 0.1 * level(p, "lab")),
+          ),
         }
       : null;
   const contractCheck = useMemo(() => {
-    if (fixedJob) return inspectContractBlueprint(p, fixedJob, activeBp.id, effectivePilotId || undefined);
-    if (rotatingOffer) return inspectRotatingBlueprint(p, rotatingOffer, activeBp.id, effectivePilotId || undefined);
+    if (fixedJob)
+      return inspectContractBlueprint(
+        p,
+        fixedJob,
+        activeBp.id,
+        effectivePilotId || undefined,
+      );
+    if (rotatingOffer)
+      return inspectRotatingBlueprint(
+        p,
+        rotatingOffer,
+        activeBp.id,
+        effectivePilotId || undefined,
+      );
     return null;
-  }, [fixedJob, rotatingOffer, p, activeBp, p.credits, p.propellant, effectivePilotId]);
+  }, [
+    fixedJob,
+    rotatingOffer,
+    p,
+    activeBp,
+    p.credits,
+    p.propellant,
+    effectivePilotId,
+  ]);
   const soundingGuide =
     m.loaded &&
     tutorial.status === "active" &&
@@ -219,13 +274,15 @@ export function Workshop({
     activeBp.parts.find((pt) => pt.uid === selectedUid) ?? null;
 
   const selectedTankGroup = useMemo(() => {
-    if (!selectedPart || PARTS[selectedPart.partId]?.category !== "tank") return null;
+    if (!selectedPart || PARTS[selectedPart.partId]?.category !== "tank")
+      return null;
     const gid = analysis.topology.tankGroupByUid[selectedPart.uid];
     if (!gid) return null;
     return analysis.topology.tankGroups.find((g) => g.id === gid) ?? null;
   }, [selectedPart, analysis.topology]);
 
   function mutateBlueprint(fn: (bp: RocketBlueprint) => RocketBlueprint) {
+    camera.hold();
     const next = fn(structuredClone(activeBp));
     next.parts = syncBlueprintHierarchy(next.parts);
     m.saveBlueprint(next);
@@ -250,7 +307,10 @@ export function Workshop({
         bracketChildren.set(pt.uid, []);
       } else if (resolvePartMount(pt) === "center") {
         centerParts.push(pt);
-      } else if (pt.parentUid && byUid.get(pt.parentUid)?.partId === "bracket_side") {
+      } else if (
+        pt.parentUid &&
+        byUid.get(pt.parentUid)?.partId === "bracket_side"
+      ) {
         const arr = bracketChildren.get(pt.parentUid);
         if (arr) arr.push(pt);
         else bracketChildren.set(pt.parentUid, [pt]);
@@ -262,7 +322,10 @@ export function Workshop({
     // First pass: measure widths to pick svgW so side columns never clip
     let coreHalfW = 16;
     for (const pt of centerParts) {
-      coreHalfW = Math.max(coreHalfW, getPartPixelSize(pt.partId, scalePx).w / 2);
+      coreHalfW = Math.max(
+        coreHalfW,
+        getPartPixelSize(pt.partId, scalePx).w / 2,
+      );
     }
     let maxSideSpan = 0;
     const brSize = getRadialPixelSize("bracket_side", scalePx);
@@ -274,7 +337,10 @@ export function Workshop({
       maxSideSpan = Math.max(maxSideSpan, brSize.w + colMaxW + 18);
     }
     for (const rp of standaloneRadial) {
-      maxSideSpan = Math.max(maxSideSpan, getRadialPixelSize(rp.partId, scalePx).w + 16);
+      maxSideSpan = Math.max(
+        maxSideSpan,
+        getRadialPixelSize(rp.partId, scalePx).w + 16,
+      );
     }
 
     const svgW = Math.max(320, Math.ceil((coreHalfW + maxSideSpan + 74) * 2));
@@ -290,14 +356,21 @@ export function Workshop({
     });
 
     const nodeByUid = new Map(stackNodes.map((n) => [n.pt.uid, n]));
-    const stageBounds = new Map<number, { minY: number; maxY: number; maxHalfW: number }>();
+    const stageBounds = new Map<
+      number,
+      { minY: number; maxY: number; maxHalfW: number }
+    >();
     const lowestTankByStage = new Map<number, (typeof stackNodes)[number]>();
 
     for (const n of stackNodes) {
       const cur = stageBounds.get(n.pt.stage);
       const hw = n.w / 2;
       if (!cur) {
-        stageBounds.set(n.pt.stage, { minY: n.y, maxY: n.y + n.h, maxHalfW: hw });
+        stageBounds.set(n.pt.stage, {
+          minY: n.y,
+          maxY: n.y + n.h,
+          maxHalfW: hw,
+        });
       } else {
         cur.minY = Math.min(cur.minY, n.y);
         cur.maxY = Math.max(cur.maxY, n.y + n.h);
@@ -317,7 +390,8 @@ export function Workshop({
         stackNodes[stackNodes.length - 1];
       const hostHw = hostNode ? hostNode.w / 2 : coreHalfW;
       const anchorY = hostNode
-        ? Math.round((hostNode.y + hostNode.h / 2 - brSize.h / 2) / VAB_PX) * VAB_PX
+        ? Math.round((hostNode.y + hostNode.h / 2 - brSize.h / 2) / VAB_PX) *
+          VAB_PX
         : Math.max(48, cursorY - brSize.h - 8);
       const leftBrX = cx - hostHw - brSize.w;
       const rightBrX = cx + hostHw;
@@ -333,7 +407,9 @@ export function Workshop({
       });
 
       const hostBottom = hostNode ? hostNode.y + hostNode.h : cursorY;
-      const hasEngine = children.some((c) => PARTS[c.partId]?.category === "engine");
+      const hasEngine = children.some(
+        (c) => PARTS[c.partId]?.category === "engine",
+      );
       const targetBottom = hasEngine ? hostBottom + 10 : hostBottom;
       let childY = Math.max(
         26,
@@ -370,7 +446,8 @@ export function Workshop({
         colMaxW,
         colStartY: childNodes[0]?.y ?? anchorY,
         colEndY: childNodes.length
-          ? childNodes[childNodes.length - 1].y + childNodes[childNodes.length - 1].h
+          ? childNodes[childNodes.length - 1].y +
+            childNodes[childNodes.length - 1].h
           : anchorY + brSize.h,
         childNodes,
       };
@@ -384,14 +461,19 @@ export function Workshop({
         (pt.parentUid ? nodeByUid.get(pt.parentUid) : undefined) ??
         lowestTankByStage.get(pt.stage);
       const stBound = stageBounds.get(pt.stage);
-      const hostHw = hostNode ? hostNode.w / 2 : (stBound?.maxHalfW ?? coreHalfW);
+      const hostHw = hostNode
+        ? hostNode.w / 2
+        : (stBound?.maxHalfW ?? coreHalfW);
       const anchorBottom = hostNode
         ? hostNode.y + hostNode.h
         : (stBound?.maxY ?? cursorY);
       const gap = VAB_PX * 2;
       const y = Math.max(
         28,
-        Math.round((anchorBottom - sz.h - (idx > 0 && !pt.parentUid ? idx * 6 : 0)) / VAB_PX) * VAB_PX,
+        Math.round(
+          (anchorBottom - sz.h - (idx > 0 && !pt.parentUid ? idx * 6 : 0)) /
+            VAB_PX,
+        ) * VAB_PX,
       );
       maxBottomY = Math.max(maxBottomY, y + sz.h);
       const leftX = cx - hostHw - gap - sz.w;
@@ -399,7 +481,7 @@ export function Workshop({
       return { pt, def, ...sz, y, leftX, rightX };
     });
 
-    const baseY = Math.max(210, maxBottomY + 8);
+    const baseY = maxBottomY + 3;
     const svgH = Math.max(248, baseY + 26);
 
     return {
@@ -418,14 +500,99 @@ export function Workshop({
     };
   }, [activeBp]);
 
+  const hitBoxes = useMemo(() => {
+    const boxes: PartBounds[] = layout.stackNodes.map((n) => ({
+      uid: n.pt.uid,
+      x: n.x,
+      y: n.y,
+      w: n.w,
+      h: n.h,
+    }));
+    function sides(
+      pt: PlacedPart,
+      left: number,
+      right: number,
+      y: number,
+      w: number,
+      h: number,
+      mirrored: boolean,
+    ) {
+      boxes.push({ uid: pt.uid, x: right, y, w, h });
+      if (mirrored) boxes.push({ uid: pt.uid, x: left, y, w, h });
+    }
+    for (const b of layout.bracketLayouts) {
+      const mirror = b.pt.symmetry === 2;
+      sides(
+        b.pt,
+        b.leftBrX,
+        b.rightBrX,
+        b.anchorY,
+        b.brSize.w,
+        b.brSize.h,
+        mirror,
+      );
+      for (const n of b.childNodes)
+        sides(n.pt, n.leftX, n.rightX, n.y, n.w, n.h, mirror);
+    }
+    for (const n of layout.radialLayouts)
+      sides(n.pt, n.leftX, n.rightX, n.y, n.w, n.h, n.pt.symmetry === 2);
+    return boxes;
+  }, [layout]);
+  const slots = placing ? computeSnapTargets(placing) : [];
+  const validSlots = slots.filter((s) => s.valid);
+  // A short, narrow vehicle can have attachment sockets beyond its silhouette.
+  const fitBoxes = validSlots.length
+    ? hitBoxes.concat(
+        validSlots.map((s, index) => ({
+          uid: "socket-" + index,
+          x: s.x - s.w / 2,
+          y: s.y - 4,
+          w: s.w,
+          h: 8,
+        })),
+      )
+    : hitBoxes;
+  const camera = useBayCamera(svgRef, fitBoxes, activeBp.id);
+
+  useLayoutEffect(() => {
+    const uid = focusAfterEdit.current;
+    if (uid && hitBoxes.some((p) => p.uid === uid)) {
+      camera.focus(uid);
+      focusAfterEdit.current = null;
+    }
+  }, [hitBoxes]);
+
+  useEffect(() => {
+    setPlacing(null);
+    setCandidates([]);
+    setSelectedUid(null);
+    setPanel(m.pendingContract ? "preflight" : null);
+    clearDrag();
+    touches.current.clear();
+  }, [activeBp.id]);
+
+  useEffect(() => {
+    if (vabTour)
+      setPanel(
+        ([null, "preflight", "parts", null, "preflight", "preflight"] as const)[
+          vabStepNum
+        ] ?? null,
+      );
+  }, [vabTour, vabStepNum]);
+
   // Compute valid snap targets for a given dragged part
-  function computeSnapTargets(partId: PartId, draggedUid?: string): SnapTarget[] {
+  function computeSnapTargets(
+    partId: PartId,
+    draggedUid?: string,
+  ): SnapTarget[] {
     const def = PARTS[partId];
     const targets: SnapTarget[] = [];
     const center = layout.stackNodes.filter((n) => n.pt.uid !== draggedUid);
     const isRadialOnly = partId === "bracket_side" || partId === "srb_side";
     const canMountOnFlank =
-      partId === "bracket_side" || partId === "srb_side" || partId === "legs_mk1";
+      partId === "bracket_side" ||
+      partId === "srb_side" ||
+      partId === "legs_mk1";
     const canStackInSide =
       def.category === "tank" ||
       def.category === "engine" ||
@@ -443,7 +610,8 @@ export function Workshop({
           y: 70,
           w: 36,
           valid: def.category !== "engine",
-          reason: def.category === "engine" ? "Place under a fuel tank" : undefined,
+          reason:
+            def.category === "engine" ? "Place under a fuel tank" : undefined,
         });
       } else {
         for (let i = 0; i <= center.length; i++) {
@@ -454,8 +622,10 @@ export function Workshop({
 
           let stage = above?.pt.stage ?? below?.pt.stage ?? 0;
           if (partId === "decoupler" && below) stage = below.pt.stage;
-          else if (above && above.pt.partId === "decoupler" && below) stage = below.pt.stage;
-          else if (def.category === "pod" && i === 0) stage = below?.pt.stage ?? Math.min(1, limits.maxStages - 1);
+          else if (above && above.pt.partId === "decoupler" && below)
+            stage = below.pt.stage;
+          else if (def.category === "pod" && i === 0)
+            stage = below?.pt.stage ?? Math.min(1, limits.maxStages - 1);
 
           let valid = true;
           let reason: string | undefined;
@@ -485,7 +655,8 @@ export function Workshop({
     // 2. Centerline tank flanks (for Side Brackets, Side SRBs, Landing Legs)
     if (canMountOnFlank) {
       const tanks = center.filter((n) => n.def.category === "tank");
-      const flankHosts = tanks.length > 0 ? tanks : partId === "legs_mk1" ? center : [];
+      const flankHosts =
+        tanks.length > 0 ? tanks : partId === "legs_mk1" ? center : [];
       for (const host of flankHosts) {
         targets.push({
           kind: "tank-flank",
@@ -513,7 +684,11 @@ export function Workshop({
     // 3. Side-bracket columns (for Tanks, Engines, Chutes, Legs)
     if (canStackInSide) {
       for (const bl of layout.bracketLayouts) {
-        if (bl.pt.uid === draggedUid) continue;
+        if (
+          draggedUid &&
+          (bl.pt.uid === draggedUid || bl.pt.parentUid === draggedUid)
+        )
+          continue;
         const kids = bl.childNodes.filter((c) => c.pt.uid !== draggedUid);
         const colCenters =
           bl.pt.symmetry === 2
@@ -542,7 +717,10 @@ export function Workshop({
               const slotY = above ? above.y + above.h : below!.y;
               let valid = true;
               let reason: string | undefined;
-              if (def.category === "engine" && (!above || above.def.category !== "tank")) {
+              if (
+                def.category === "engine" &&
+                (!above || above.def.category !== "tank")
+              ) {
                 valid = false;
                 reason = "Place under a fuel tank";
               }
@@ -567,7 +745,10 @@ export function Workshop({
     return targets;
   }
 
-  function clientToSvg(clientX: number, clientY: number): { x: number; y: number } | null {
+  function clientToSvg(
+    clientX: number,
+    clientY: number,
+  ): { x: number; y: number } | null {
     const svg = svgRef.current;
     if (!svg) return null;
     const ctm = svg.getScreenCTM();
@@ -584,55 +765,45 @@ export function Workshop({
     clientY: number,
     partId: PartId,
     draggedUid?: string,
-  ): { snap: SnapTarget | null; overTrash: boolean } {
-    const canvasRect = canvasRef.current?.getBoundingClientRect();
-    const insideCanvas = Boolean(
-      canvasRect &&
-        clientX >= canvasRect.left - 12 &&
-        clientX <= canvasRect.right + 12 &&
-        clientY >= canvasRect.top - 12 &&
-        clientY <= canvasRect.bottom + 12,
-    );
-    if (!insideCanvas) {
-      return { snap: null, overTrash: Boolean(draggedUid) };
-    }
-    const svgPt = clientToSvg(clientX, clientY);
-    if (!svgPt) return { snap: null, overTrash: false };
-
-    const candidates = computeSnapTargets(partId, draggedUid);
+    validOnly = false,
+  ): SnapTarget | null {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (
+      !rect ||
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    )
+      return null;
+    const pt = clientToSvg(clientX, clientY);
+    if (!pt) return null;
     let best: SnapTarget | null = null;
-    let bestDist = 52; // SVG units snap radius
-    for (const t of candidates) {
-      const d = Math.hypot(svgPt.x - t.x, svgPt.y - t.y);
-      // Slight preference for valid slots when nearly equidistant
-      const score = t.valid ? d : d + 10;
-      if (score < bestDist) {
-        bestDist = score;
+    let bestDistance = validOnly ? 25 : 48;
+    for (const t of computeSnapTargets(partId, draggedUid)) {
+      if (validOnly && !t.valid) continue;
+      const dy = Math.abs(pt.y - t.y) * camera.scale;
+      const dx = Math.abs(pt.x - t.x) * camera.scale;
+      const distance = Math.hypot(
+        t.kind === "tank-flank"
+          ? dx
+          : Math.max(0, dx - (t.w * camera.scale) / 2),
+        dy,
+      );
+      const score = distance + (t.valid ? 0 : 8);
+      if (score < bestDistance) {
+        bestDistance = score;
         best = t;
       }
     }
-    return { snap: best, overTrash: false };
+    return best;
   }
 
-  function commitDrop(state: DragState) {
-    const { source, partId, uid, snap, overTrash } = state;
-
-    if (source === "canvas" && uid && overTrash) {
-      mutateBlueprint((bp) => {
-        bp.parts = bp.parts.filter((x) => x.uid !== uid && x.parentUid !== uid);
-        bp.version++;
-        return bp;
-      });
-      if (selectedUid === uid) setSelectedUid(null);
-      return;
-    }
-
-    if (!snap) return;
+  function commitDrop(partId: PartId, snap: SnapTarget, uid?: string) {
     if (!snap.valid) {
       setNotice(snap.reason ?? "Cannot place part there.");
       return;
     }
-
     const def = PARTS[partId];
     const newUid = uid ?? "pt_" + Math.random().toString(36).slice(2, 8);
 
@@ -697,6 +868,9 @@ export function Workshop({
     });
 
     setSelectedUid(newUid);
+    setPanel("edit");
+    setPlacing(null);
+    focusAfterEdit.current = newUid;
   }
 
   // Smart tap fallback when user taps a catalog card without dragging
@@ -707,6 +881,9 @@ export function Workshop({
       return;
     }
     const uid = "pt_" + Math.random().toString(36).slice(2, 8);
+    setPlacing(null);
+    setPanel("edit");
+    focusAfterEdit.current = uid;
     const hasTwoStages = activeBp.parts.some((x) => x.stage >= 1);
     const upperStage = hasTwoStages ? 1 : Math.min(1, limits.maxStages - 1);
 
@@ -716,14 +893,18 @@ export function Workshop({
         layout.lowestTankByStage.get(preferredStage) ??
         layout.lowestTankByStage.get(0) ??
         layout.stackNodes.find((n) => n.def.category === "tank");
-      const targetStage = selectedPart ? preferredStage : (hostTank?.pt.stage ?? 0);
+      const targetStage = selectedPart
+        ? preferredStage
+        : (hostTank?.pt.stage ?? 0);
       const item: PlacedPart = {
         uid,
         partId,
         stage: targetStage,
         symmetry: 2,
         mount: "side",
-        ...(hostTank && hostTank.pt.stage === targetStage ? { parentUid: hostTank.pt.uid } : {}),
+        ...(hostTank && hostTank.pt.stage === targetStage
+          ? { parentUid: hostTank.pt.uid }
+          : {}),
       };
       mutateBlueprint((bp) => {
         bp.parts.push(item);
@@ -758,7 +939,10 @@ export function Workshop({
     }
 
     const defaultStage =
-      def.category === "pod" || partId === "eng_dart" || partId === "eng_valkyrie" || partId === "tank_s"
+      def.category === "pod" ||
+      partId === "eng_dart" ||
+      partId === "eng_valkyrie" ||
+      partId === "tank_s"
         ? upperStage
         : 0;
 
@@ -805,89 +989,215 @@ export function Workshop({
     setSelectedUid(uid);
   }
 
-  function startTrayDrag(e: ReactPointerEvent, partId: PartId) {
-    const def = PARTS[partId];
-    if (def.requiredLabLevel > limits.labLevel) {
-      setNotice(`Requires Research Lab Lv ${def.requiredLabLevel}.`);
+  function selectForEdit(uid: string, worldX?: number) {
+    setCandidates([]);
+    setPlacing(null);
+    setSelectedUid(uid);
+    setPanel("edit");
+    camera.focus(uid, worldX);
+  }
+
+  function pickPart(clientX: number, clientY: number, directUid?: string) {
+    if (directUid) return [directUid];
+    const point = clientToSvg(clientX, clientY);
+    if (!point) return [];
+    const nearby = new Set<string>();
+    const exact = new Set<string>();
+    for (const box of hitBoxes) {
+      const dx = Math.abs(point.x - box.x - box.w / 2);
+      const dy = Math.abs(point.y - box.y - box.h / 2);
+      if (dx <= box.w / 2 && dy <= box.h / 2) exact.add(box.uid);
+      if (
+        dx <= Math.max(22 / camera.scale, box.w / 2) &&
+        dy <= Math.max(22 / camera.scale, box.h / 2)
+      )
+        nearby.add(box.uid);
+    }
+    return [...(exact.size ? exact : nearby)];
+  }
+
+  function chooseCatalogPart(id: PartId) {
+    if (PARTS[id].requiredLabLevel > limits.labLevel) {
+      setNotice(`Requires Research Lab Lv ${PARTS[id].requiredLabLevel}.`);
       return;
     }
-    if (e.button !== 0 && e.pointerType === "mouse") return;
-    setDrag({
-      source: "tray",
+    setSelectedUid(null);
+    setCandidates([]);
+    setPlacing(id);
+    setPanel(null);
+    setNotice("");
+    camera.fit();
+  }
+
+  function startTrayDrag(e: ReactPointerEvent, partId: PartId) {
+    if (e.button !== 0 || touches.current.size) return;
+    if (PARTS[partId].requiredLabLevel > limits.labLevel) {
+      setNotice(`Requires Research Lab Lv ${PARTS[partId].requiredLabLevel}.`);
+      return;
+    }
+    e.currentTarget.setPointerCapture(e.pointerId);
+    startDrag(e, partId, "tray");
+  }
+
+  function startDrag(
+    e: ReactPointerEvent,
+    partId: PartId,
+    source: "tray" | "canvas",
+    uid?: string,
+  ) {
+    const next = {
+      pointerId: e.pointerId,
+      source,
       partId,
+      uid,
       startX: e.clientX,
       startY: e.clientY,
       x: e.clientX,
       y: e.clientY,
       active: false,
       snap: null,
-      overTrash: false,
-    });
+    };
+    dragRef.current = next;
+    setDrag(next);
   }
 
-  function startCanvasDrag(e: ReactPointerEvent, pt: PlacedPart) {
-    e.stopPropagation();
-    if (e.button !== 0 && e.pointerType === "mouse") return;
-    setDrag({
-      source: "canvas",
-      partId: pt.partId,
-      uid: pt.uid,
-      startX: e.clientX,
-      startY: e.clientY,
+  function clearDrag() {
+    dragRef.current = null;
+    setDrag(null);
+  }
+
+  function bayDown(e: ReactPointerEvent<SVGSVGElement>) {
+    if (e.button !== 0) return;
+    const direct = (e.target as Element)
+      .closest("[data-part-uid]")
+      ?.getAttribute("data-part-uid");
+    if (touches.current.size >= 2) return;
+    const hits = placing
+      ? []
+      : pickPart(e.clientX, e.clientY, direct ?? undefined);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const point = {
       x: e.clientX,
       y: e.clientY,
-      active: false,
-      snap: null,
-      overTrash: false,
-    });
+      startX: e.clientX,
+      startY: e.clientY,
+      hits,
+      moved: false,
+    };
+    touches.current.set(e.pointerId, point);
+    if (touches.current.size > 1 || dragRef.current?.source === "tray") {
+      clearDrag();
+      touches.current.forEach((t) => {
+        t.moved = true;
+      });
+      return;
+    }
+    const part =
+      hits.length === 1 && activeBp.parts.find((p) => p.uid === hits[0]);
+    if (part) startDrag(e, part.partId, "canvas", part.uid);
   }
 
-  useEffect(() => {
-    if (!drag) return;
-    const onMove = (e: PointerEvent) => {
-      const cur = dragRef.current;
-      if (!cur) return;
-      const dist = Math.hypot(e.clientX - cur.startX, e.clientY - cur.startY);
-      const isActive = cur.active || dist >= DRAG_THRESHOLD_PX;
-      if (!isActive) return;
-      const { snap, overTrash } = findBestSnap(
+  function pointerMove(e: ReactPointerEvent) {
+    const points = touches.current;
+    const point = points.get(e.pointerId);
+    if (point && points.size > 1) {
+      const other = [...points.entries()].find(
+        ([id]) => id !== e.pointerId,
+      )![1];
+      const oldDistance = Math.hypot(point.x - other.x, point.y - other.y);
+      const newDistance = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+      camera.transform(
+        (point.x + other.x) / 2,
+        (point.y + other.y) / 2,
+        (e.clientX + other.x) / 2,
+        (e.clientY + other.y) / 2,
+        newDistance / Math.max(1, oldDistance),
+      );
+      point.x = e.clientX;
+      point.y = e.clientY;
+      return;
+    }
+    const current = dragRef.current;
+    if (current?.pointerId === e.pointerId) {
+      if (
+        !current.active &&
+        Math.hypot(e.clientX - current.startX, e.clientY - current.startY) <
+          DRAG_THRESHOLD_PX
+      )
+        return;
+      const snap = findBestSnap(
         e.clientX,
         e.clientY,
-        cur.partId,
-        cur.uid,
+        current.partId,
+        current.uid,
       );
-      setDrag({
-        ...cur,
+      const next = {
+        ...current,
+        active: true,
         x: e.clientX,
         y: e.clientY,
-        active: true,
         snap,
-        overTrash,
-      });
-    };
-    const onUp = () => {
-      const cur = dragRef.current;
-      setDrag(null);
-      if (!cur) return;
-      if (cur.active) {
-        commitDrop(cur);
-      } else if (cur.source === "tray") {
-        addPart(cur.partId);
-      } else if (cur.uid) {
-        setSelectedUid(cur.uid);
-      }
-    };
-    const onCancel = () => setDrag(null);
+      };
+      dragRef.current = next;
+      setDrag(next);
+    } else if (point) {
+      if (
+        !point.moved &&
+        Math.hypot(e.clientX - point.startX, e.clientY - point.startY) <
+          DRAG_THRESHOLD_PX
+      )
+        return;
+      point.moved = true;
+      camera.transform(point.x, point.y, e.clientX, e.clientY, 1);
+    }
+    if (point) {
+      point.x = e.clientX;
+      point.y = e.clientY;
+    }
+  }
 
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onCancel);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onCancel);
-    };
-  }, [Boolean(drag), layout, activeBp]);
+  function pointerEnd(e: ReactPointerEvent, canceled = false) {
+    const point = touches.current.get(e.pointerId);
+    touches.current.delete(e.pointerId);
+    const current = dragRef.current;
+    if (current?.pointerId === e.pointerId) {
+      clearDrag();
+      if (canceled) return;
+      if (current.active) {
+        const snap = findBestSnap(
+          e.clientX,
+          e.clientY,
+          current.partId,
+          current.uid,
+        );
+        if (snap) commitDrop(current.partId, snap, current.uid);
+      } else if (current.source === "tray") chooseCatalogPart(current.partId);
+      else if (current.uid)
+        selectForEdit(current.uid, clientToSvg(e.clientX, e.clientY)?.x);
+      return;
+    }
+    if (!point || canceled || point.moved) return;
+    if (placing) {
+      const snap = findBestSnap(e.clientX, e.clientY, placing, undefined, true);
+      if (snap) commitDrop(placing, snap);
+    } else if (point.hits.length > 1) {
+      setCandidates(point.hits);
+      setPanel("choose");
+    } else {
+      setPanel(null);
+      setSelectedUid(null);
+      setCandidates([]);
+    }
+  }
+
+  function showPanel(next: Panel) {
+    setPanel((old) => (old === next ? null : next));
+    setSelectedUid(null);
+    camera.fit();
+    setCandidates([]);
+    setPlacing(null);
+    setNotice("");
+  }
 
   function moveSelected(delta: -1 | 1) {
     if (!selectedPart) return;
@@ -954,11 +1264,14 @@ export function Workshop({
       return bp;
     });
     setSelectedUid(null);
+    setPanel(null);
   }
 
   function cloneBlueprint() {
     if (p.blueprints.length >= MAX_BLUEPRINTS) {
-      setNotice(`Design hangar full (${MAX_BLUEPRINTS}/${MAX_BLUEPRINTS}). Delete an older design first.`);
+      setNotice(
+        `Design hangar full (${MAX_BLUEPRINTS}/${MAX_BLUEPRINTS}). Delete an older design first.`,
+      );
       return;
     }
     const id = "bp_" + Math.random().toString(36).slice(2, 7);
@@ -1091,9 +1404,59 @@ export function Workshop({
     return seams;
   }, [layout.stackNodes]);
 
+  const placementHint = validSlots.length
+    ? "Tap a highlighted socket"
+    : (slots.find((s) => s.reason)?.reason ?? "Add a compatible tank first");
+  const shortfall = pendingContract
+    ? ""
+    : p.credits < analysis.hardwareCost
+      ? "Insufficient credits"
+      : p.propellant < analysis.propellantCost
+        ? "Insufficient propellant"
+        : "";
+  const blocking =
+    contractCheck?.error ||
+    analysis.warnings.find((w) => w.severity === "error")?.message ||
+    shortfall;
+  const { x: vx, y: vy, w: vw, h: vh } = camera.bounds;
+
+  function inspectWarning(warning: ValidationWarning) {
+    if (warning.partUid) {
+      selectForEdit(warning.partUid);
+      return;
+    }
+    if (
+      [
+        "OVER_MASS",
+        "OVER_HEIGHT",
+        "OVER_PARTS",
+        "OVER_STAGES",
+        "OVER_TANK_CAP",
+      ].includes(warning.code)
+    ) {
+      const details = limitDetails.current;
+      if (details) {
+        details.open = true;
+        details
+          .querySelector<HTMLElement>(`[data-limit="${warning.code}"]`)
+          ?.focus();
+      }
+    } else if (
+      warning.code === "NO_ENGINE" ||
+      warning.code === "NO_POD" ||
+      warning.code === "LOW_TWR"
+    ) {
+      setCategory(warning.code === "NO_POD" ? "pod" : "engine");
+      setPanel("parts");
+    } else setPanel("stages");
+  }
   return (
     <main
       className={"game workshop-game" + (drag?.active ? " is-dragging" : "")}
+      onPointerMove={pointerMove}
+      onPointerUp={(e) => pointerEnd(e)}
+      onPointerCancel={(e) => pointerEnd(e, true)}
+      onLostPointerCapture={(e) => pointerEnd(e, true)}
       aria-label="Rocket Workshop"
     >
       <header className="vab-top">
@@ -1106,7 +1469,10 @@ export function Workshop({
           <Landmark />
         </button>
 
-        <div className="bp-picker" data-milo-focus={vabTour && vabStepNum === 3}>
+        <div
+          className="bp-picker"
+          data-milo-focus={vabTour && vabStepNum === 3}
+        >
           <select
             data-milo-focus={lesson && tutorial.workshop === "picker"}
             aria-label="Select blueprint"
@@ -1134,51 +1500,8 @@ export function Workshop({
           >
             <Save size={16} />
           </button>
-          <button
-            aria-label="Clone blueprint"
-            title="Clone blueprint"
-            onClick={cloneBlueprint}
-          >
-            <Copy size={16} />
-          </button>
         </div>
       </header>
-
-      {contractName && contractGoal && contractPayout && (
-        <section className="vab-contract-banner" aria-label="Selected contract">
-          <div className="vab-contract-info">
-            <div className="vab-contract-head">
-              <ClipboardList size={14} />
-              <strong>{contractName}</strong>
-              <span className="vab-contract-payout">
-                +{contractPayout.credits.toLocaleString("en-US")} C · +{contractPayout.research} RD
-              </span>
-            </div>
-            <p>{contractGoal}</p>
-            {rotatingOffer && rotatingOffer.modifiers.length > 0 && (
-              <div className="vab-mod-strip">
-                {rotatingOffer.modifiers.map((mod) => (
-                  <span
-                    key={mod}
-                    className={"mod-chip mod-" + MODIFIER_META[mod].type}
-                    title={MODIFIER_META[mod].summary}
-                  >
-                    {MODIFIER_META[mod].label}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            className="vab-contract-clear"
-            aria-label="Clear selected contract"
-            onClick={m.clearPendingContract}
-          >
-            <X size={15} />
-          </button>
-        </section>
-      )}
 
       {vabTour && !saveDialogOpen && (
         <MiloGuide
@@ -1215,25 +1538,27 @@ export function Workshop({
             </>
           }
         >
-          {vabStepNum === 0
-            ? "Welcome to the Vehicle Assembly Building (VAB)! Drag parts onto the rocket stack, or tap any placed part to move it, switch its stage (S1/S2), toggle 2× symmetry, or drag it outside the bay to remove it."
-            : vabStepNum === 1
-              ? "Check your live engineering gauges: MASS must fit your Launchpad cap; Δv (Delta-v) is your total speed-change budget (~1,600+ m/s for orbit); TWR (Thrust-to-Weight) must exceed 1.00 to lift off; PARTS is capped by your VAB level."
-              : vabStepNum === 2
-                ? "Pick parts from Pods, Tanks, Engines, Stages, and Payload below. Liquid Engines must sit directly under a Fuel Tank to draw fuel; stacked tanks share one fuel pool. Use a Decoupler to split stages, or Side Brackets for radial boosters with fuel crossfeed."
-                : vabStepNum === 3
-                  ? "Use the blueprint picker above to switch starter rockets (Pioneer Orbital for 2-stage missions, Sounding Arrow for light hops). Tap Save to keep a named design, or Clone to experiment safely."
-                  : vabStepNum === 4
-                    ? "Any rocket with a Mk-1 Command Pod can seat a pilot from Crew Quarters for bonus Isp and Credit payouts — just land them safely so you don’t have to recover their escape pod!"
-                    : fixedJob === "sounding"
-                      ? "Ready to stage! Tap Sponsored (0 C) for a free sponsor rocket (150 Prop only), or tap Fly Blueprint to launch your own VAB rocket — you start with enough Credits and Propellant for either."
-                      : "When your design passes all checks, tap Simulate Free to test-fly at 0 cost, or tap Fly Contract / Launch to roll onto the pad for real."}
+          {
+            [
+              "Tap a rocket part to edit it. Drag empty space to pan, pinch to zoom, or tap Fit for the whole rocket.",
+              "Preflight shows mass, range (Δv), liftoff thrust-to-weight and part count. Tap a warning to inspect the problem.",
+              "Pick a part, then tap a glowing socket. Try an engine beneath a tank. Open Stages to find small or mirrored parts by name.",
+              "Choose a rocket at the top right. Tap the save icon to name a copy or clone your design.",
+              "A Mk-1 Command Pod can seat a pilot. Choose one in Preflight to see their bonuses.",
+              "Choose Simulate Free for a test flight. For a paid flight, check the credit and propellant quote before staging.",
+            ][vabStepNum]
+          }
         </MiloGuide>
       )}
 
       {!vabTour && soundingGuide && !saveDialogOpen && (
-        <MiloGuide dismiss={() => m.updateTutorial({ status: "off", collectionTip: false })}>
-          Pick or build a rocket here, or tap Sponsored (0 C) to launch for zero hardware credits.
+        <MiloGuide
+          dismiss={() =>
+            m.updateTutorial({ status: "off", collectionTip: false })
+          }
+        >
+          Open Preflight to stage the Sponsored rocket, or choose Parts to build
+          your own.
         </MiloGuide>
       )}
 
@@ -1245,499 +1570,909 @@ export function Workshop({
         </MiloGuide>
       )}
 
-      <div className="vab-pilot-bar" aria-label="Pilot assignment" data-milo-focus={vabTour && vabStepNum === 4}>
-        <UserCheck size={14} />
-        {hasCrewedPod ? (
-          <>
-            <select
-              aria-label="Assign pilot"
-              value={effectivePilotId}
-              onChange={(e) => setSelectedPilotId(e.target.value)}
-            >
-              <option value="">Uncrewed (No Pilot)</option>
-              {readyPilots.map((owned) => {
-                const def = PILOT_BY_ID[owned.id];
-                if (!def) return null;
-                return (
-                  <option key={owned.id} value={owned.id}>
-                    “{def.callsign}” {def.name} · Lv {owned.level} {RARITY_META[def.rarity].label}
-                  </option>
-                );
-              })}
-            </select>
-            {seatedDef && seatedStats && (
-              <span className="vab-pilot-bonus">
-                +{(seatedStats.isp * 100).toFixed(1)}% Isp · +{(seatedStats.credits * 100).toFixed(1)}% C
-                {seatedDef.perk ? ` · ${PERK_META[seatedDef.perk].label}` : ""}
-              </span>
-            )}
-          </>
-        ) : (
-          <span className="vab-pilot-hint">Uncrewed probe — add Mk-1 Pod to seat a pilot</span>
-        )}
-      </div>
-
-      <div className="vab-metrics" aria-label="Vehicle engineering readouts" data-milo-focus={vabTour && vabStepNum === 1}>
-        <div className="vab-stat">
-          <span>MASS</span>
-          <strong className={analysis.wetTonnes > limits.maxMassTonnes ? "over-limit" : ""}>
-            {analysis.wetTonnes.toFixed(1)}
-            <small>/{limits.maxMassTonnes}t</small>
-          </strong>
-        </div>
-        <div className="vab-stat">
-          <span>Δv</span>
-          <strong>
-            {Math.round(analysis.totalDeltaV).toLocaleString("en-US")}
-            <small>m/s</small>
-          </strong>
-        </div>
-        <div className="vab-stat">
-          <span>TWR</span>
-          <strong className={analysis.liftoffTwr <= 1 ? "over-limit" : ""}>
-            {analysis.liftoffTwr.toFixed(2)}
-          </strong>
-        </div>
-        <div className="vab-stat">
-          <span>PARTS</span>
-          <strong className={analysis.partCount > limits.maxParts ? "over-limit" : ""}>
-            {analysis.partCount}
-            <small>/{limits.maxParts}</small>
-          </strong>
-        </div>
-      </div>
-
-      <section
-        ref={canvasRef}
-        className={"vab-stage-canvas" + (drag?.active ? " drag-active" : "")}
-        aria-label="Rocket assembly bay"
-        data-milo-focus={vabTour && vabStepNum === 0}
-      >
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${layout.svgW} ${layout.svgH}`}
-          className="vab-svg"
-          onClick={() => setSelectedUid(null)}
+      <div className={"vab-workspace" + (panel ? " has-panel" : "")}>
+        <section
+          className={"vab-stage-canvas" + (drag?.active ? " drag-active" : "")}
+          aria-label="Rocket assembly bay"
+          data-milo-focus={vabTour && vabStepNum === 0}
         >
-          <defs>
-            <pattern
-              id="vab-grid"
-              width="20"
-              height="20"
-              patternUnits="userSpaceOnUse"
-            >
-              <path
-                d="M20 0H0V20"
-                fill="none"
-                stroke="#85a8b322"
-                strokeWidth="0.7"
-              />
-            </pattern>
-          </defs>
-          <rect width={layout.svgW} height={layout.svgH} fill="url(#vab-grid)" />
-          <line
-            x1={layout.cx}
-            y1="10"
-            x2={layout.cx}
-            y2={layout.baseY}
-            stroke="#72d6c62b"
-            strokeDasharray="4 4"
-          />
+          <svg
+            ref={svgRef}
+            viewBox={`${vx} ${vy} ${vw} ${vh}`}
+            className="vab-svg"
+            onPointerDown={bayDown}
+          >
+            <defs>
+              <pattern
+                id="vab-grid"
+                width="20"
+                height="20"
+                patternUnits="userSpaceOnUse"
+              >
+                <path
+                  d="M20 0H0V20"
+                  fill="none"
+                  stroke="#85a8b322"
+                  strokeWidth="0.7"
+                />
+              </pattern>
+            </defs>
+            <rect x={vx} y={vy} width={vw} height={vh} fill="url(#vab-grid)" />
+            <line
+              x1={layout.cx}
+              y1="10"
+              x2={layout.cx}
+              y2={layout.baseY}
+              stroke="#72d6c62b"
+              strokeDasharray="4 4"
+            />
 
-          {/* Pixel-art launchpad assembly stand matching FlightScene pad */}
-          <g shapeRendering="crispEdges">
-            <rect x={layout.cx - 116} y={layout.baseY} width="232" height="8" fill="#283643" />
-            <rect x={layout.cx - 120} y={layout.baseY - 2} width="240" height="3" fill="#b8b2a1" />
-            {[-88, -60, -32, 32, 60, 88].map((dx) => (
+            {/* Pixel-art launchpad assembly stand matching FlightScene pad */}
+            <g shapeRendering="crispEdges">
               <rect
-                key={dx}
-                x={layout.cx + dx - 4}
-                y={layout.baseY + 1}
-                width="8"
-                height="2"
-                fill="#d99357"
+                x={layout.cx - 116}
+                y={layout.baseY}
+                width="232"
+                height="8"
+                fill="#283643"
+              />
+              <rect
+                x={layout.cx - 120}
+                y={layout.baseY - 2}
+                width="240"
+                height="3"
+                fill="#b8b2a1"
+              />
+              {[-88, -60, -32, 32, 60, 88].map((dx) => (
+                <rect
+                  key={dx}
+                  x={layout.cx + dx - 4}
+                  y={layout.baseY + 1}
+                  width="8"
+                  height="2"
+                  fill="#d99357"
+                />
+              ))}
+            </g>
+
+            {/* Contiguous tank manifold connectors */}
+            {tankSeams.map((s, i) => (
+              <rect
+                key={`seam-${i}`}
+                x={s.x}
+                y={s.y - 4}
+                width="2"
+                height="8"
+                fill="#72d6c6"
+                opacity="0.85"
+                shapeRendering="crispEdges"
               />
             ))}
-          </g>
 
-          {/* Contiguous tank manifold connectors */}
-          {tankSeams.map((s, i) => (
-            <rect
-              key={`seam-${i}`}
-              x={s.x}
-              y={s.y - 4}
-              width="2"
-              height="8"
-              fill="#72d6c6"
-              opacity="0.85"
-              shapeRendering="crispEdges"
-            />
-          ))}
-
-          {/* Centerline stack */}
-          {layout.stackNodes.map(({ pt, def, cols, rows, x, y, w, h }) => {
-            const isSel = pt.uid === selectedUid;
-            const isUnfed = analysis.topology.unfedEngineUids.has(pt.uid);
-            const isDragged = drag?.active && drag.uid === pt.uid;
-            return (
-              <g
-                key={pt.uid}
-                className={"svg-part" + (isDragged ? " dragging-origin" : "")}
-                onPointerDown={(e) => startCanvasDrag(e, pt)}
-              >
-                <PixelRocketPart
-                  partId={pt.partId}
-                  x={x}
-                  y={y}
-                  cols={cols}
-                  rows={rows}
-                  px={VAB_PX}
-                  selected={isSel}
-                />
-                {isUnfed && (
-                  <rect
-                    x={x - 3}
-                    y={y - 2}
-                    width={w + 6}
-                    height={h + 4}
-                    fill="none"
-                    stroke="#f07c6b"
-                    strokeWidth="1.5"
-                    strokeDasharray="3 2"
-                    shapeRendering="crispEdges"
-                  />
-                )}
-                {isSel && !isUnfed && (
-                  <rect
-                    x={x - 3}
-                    y={y - 2}
-                    width={w + 6}
-                    height={h + 4}
-                    fill="none"
-                    stroke="#ffd166"
-                    strokeWidth="1.2"
-                    strokeDasharray="4 2"
-                    shapeRendering="crispEdges"
-                  />
-                )}
-                {layout.bracketLayouts.length === 0 && (
-                  <text
-                    x={Math.max(x + w, layout.cx + layout.coreHalfW) + 12}
-                    y={y + h / 2 + 3}
-                    className={isSel ? "stage-tag active" : "stage-tag"}
-                  >
-                    S{pt.stage + 1} · {def.shortName}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-
-          {/* Side brackets & their mirrored side-column stacks */}
-          {layout.bracketLayouts.map((bl) => {
-            const isBrSel = bl.pt.uid === selectedUid;
-            const isBrDragged = drag?.active && drag.uid === bl.pt.uid;
-            return (
-              <g key={bl.pt.uid}>
+            {/* Centerline stack */}
+            {layout.stackNodes.map(({ pt, def, cols, rows, x, y, w, h }) => {
+              const isSel = pt.uid === selectedUid;
+              const isUnfed = analysis.topology.unfedEngineUids.has(pt.uid);
+              const isDragged = drag?.active && drag.uid === pt.uid;
+              return (
                 <g
-                  className={"svg-part" + (isBrDragged ? " dragging-origin" : "")}
-                  onPointerDown={(e) => startCanvasDrag(e, bl.pt)}
+                  key={pt.uid}
+                  className={"svg-part" + (isDragged ? " dragging-origin" : "")}
+                  data-part-uid={pt.uid}
                 >
-                  {bl.pt.symmetry === 2 && (
+                  <PixelRocketPart
+                    partId={pt.partId}
+                    x={x}
+                    y={y}
+                    cols={cols}
+                    rows={rows}
+                    px={VAB_PX}
+                    selected={isSel}
+                  />
+                  {isUnfed && (
+                    <rect
+                      x={x - 3}
+                      y={y - 2}
+                      width={w + 6}
+                      height={h + 4}
+                      fill="none"
+                      stroke="#f07c6b"
+                      strokeWidth="1.5"
+                      strokeDasharray="3 2"
+                      shapeRendering="crispEdges"
+                    />
+                  )}
+                  {isSel && !isUnfed && (
+                    <rect
+                      x={x - 3}
+                      y={y - 2}
+                      width={w + 6}
+                      height={h + 4}
+                      fill="none"
+                      stroke="#ffd166"
+                      strokeWidth="1.2"
+                      strokeDasharray="4 2"
+                      shapeRendering="crispEdges"
+                    />
+                  )}
+                </g>
+              );
+            })}
+
+            {/* Side brackets & their mirrored side-column stacks */}
+            {layout.bracketLayouts.map((bl) => {
+              const isBrSel = bl.pt.uid === selectedUid;
+              const isBrDragged = drag?.active && drag.uid === bl.pt.uid;
+              return (
+                <g key={bl.pt.uid}>
+                  <g
+                    className={
+                      "svg-part" + (isBrDragged ? " dragging-origin" : "")
+                    }
+                    data-part-uid={bl.pt.uid}
+                  >
+                    {bl.pt.symmetry === 2 && (
+                      <PixelRocketPart
+                        partId="bracket_side"
+                        x={bl.leftBrX}
+                        y={bl.anchorY}
+                        cols={bl.brSize.cols}
+                        rows={bl.brSize.rows}
+                        px={VAB_PX}
+                        selected={isBrSel}
+                        radialSide={-1}
+                      />
+                    )}
                     <PixelRocketPart
                       partId="bracket_side"
-                      x={bl.leftBrX}
+                      x={bl.rightBrX}
                       y={bl.anchorY}
                       cols={bl.brSize.cols}
                       rows={bl.brSize.rows}
                       px={VAB_PX}
                       selected={isBrSel}
-                      radialSide={-1}
+                      radialSide={1}
                     />
-                  )}
-                  <PixelRocketPart
-                    partId="bracket_side"
-                    x={bl.rightBrX}
-                    y={bl.anchorY}
-                    cols={bl.brSize.cols}
-                    rows={bl.brSize.rows}
-                    px={VAB_PX}
-                    selected={isBrSel}
-                    radialSide={1}
-                  />
-                </g>
+                  </g>
 
-                {bl.childNodes.map((ch) => {
-                  const isSel = ch.pt.uid === selectedUid;
-                  const isUnfed = analysis.topology.unfedEngineUids.has(ch.pt.uid);
-                  const isDragged = drag?.active && drag.uid === ch.pt.uid;
-                  return (
-                    <g
-                      key={ch.pt.uid}
-                      className={"svg-part" + (isDragged ? " dragging-origin" : "")}
-                      onPointerDown={(e) => startCanvasDrag(e, ch.pt)}
-                    >
-                      {bl.pt.symmetry === 2 && (
+                  {bl.childNodes.map((ch) => {
+                    const isSel = ch.pt.uid === selectedUid;
+                    const isUnfed = analysis.topology.unfedEngineUids.has(
+                      ch.pt.uid,
+                    );
+                    const isDragged = drag?.active && drag.uid === ch.pt.uid;
+                    return (
+                      <g
+                        key={ch.pt.uid}
+                        className={
+                          "svg-part" + (isDragged ? " dragging-origin" : "")
+                        }
+                        data-part-uid={ch.pt.uid}
+                      >
+                        {bl.pt.symmetry === 2 && (
+                          <PixelRocketPart
+                            partId={ch.pt.partId}
+                            x={ch.leftX}
+                            y={ch.y}
+                            cols={ch.cols}
+                            rows={ch.rows}
+                            px={VAB_PX}
+                            selected={isSel}
+                          />
+                        )}
                         <PixelRocketPart
                           partId={ch.pt.partId}
-                          x={ch.leftX}
+                          x={ch.rightX}
                           y={ch.y}
                           cols={ch.cols}
                           rows={ch.rows}
                           px={VAB_PX}
                           selected={isSel}
                         />
-                      )}
+                        {isUnfed && (
+                          <rect
+                            x={ch.rightX - 3}
+                            y={ch.y - 2}
+                            width={ch.w + 6}
+                            height={ch.h + 4}
+                            fill="none"
+                            stroke="#f07c6b"
+                            strokeWidth="1.4"
+                            strokeDasharray="3 2"
+                            shapeRendering="crispEdges"
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+
+            {/* Standalone radial parts (stage-anchored Landing Legs & Side SRBs) */}
+            {layout.radialLayouts.map(
+              ({ pt, def, cols, rows, w, h, y, leftX, rightX }) => {
+                const isSel = pt.uid === selectedUid;
+                const isDragged = drag?.active && drag.uid === pt.uid;
+                return (
+                  <g
+                    key={pt.uid}
+                    className={
+                      "svg-part" + (isDragged ? " dragging-origin" : "")
+                    }
+                    data-part-uid={pt.uid}
+                  >
+                    {pt.symmetry === 2 && (
                       <PixelRocketPart
-                        partId={ch.pt.partId}
-                        x={ch.rightX}
-                        y={ch.y}
-                        cols={ch.cols}
-                        rows={ch.rows}
+                        partId={pt.partId}
+                        x={leftX}
+                        y={y}
+                        cols={cols}
+                        rows={rows}
                         px={VAB_PX}
                         selected={isSel}
+                        radialSide={-1}
                       />
-                      {isUnfed && (
-                        <rect
-                          x={ch.rightX - 3}
-                          y={ch.y - 2}
-                          width={ch.w + 6}
-                          height={ch.h + 4}
-                          fill="none"
-                          stroke="#f07c6b"
-                          strokeWidth="1.4"
-                          strokeDasharray="3 2"
-                          shapeRendering="crispEdges"
-                        />
-                      )}
-                      <text
-                        x={ch.rightX + ch.w + 8}
-                        y={ch.y + ch.h / 2 + 3}
-                        className={isSel ? "stage-tag active" : "stage-tag"}
-                      >
-                        S{ch.pt.stage + 1} · {bl.pt.symmetry}× {ch.def.shortName}
-                      </text>
-                    </g>
-                  );
-                })}
-              </g>
-            );
-          })}
-
-          {/* Standalone radial parts (stage-anchored Landing Legs & Side SRBs) */}
-          {layout.radialLayouts.map(({ pt, def, cols, rows, w, h, y, leftX, rightX }) => {
-            const isSel = pt.uid === selectedUid;
-            const isDragged = drag?.active && drag.uid === pt.uid;
-            return (
-              <g
-                key={pt.uid}
-                className={"svg-part" + (isDragged ? " dragging-origin" : "")}
-                onPointerDown={(e) => startCanvasDrag(e, pt)}
-              >
-                {pt.symmetry === 2 && (
-                  <PixelRocketPart
-                    partId={pt.partId}
-                    x={leftX}
-                    y={y}
-                    cols={cols}
-                    rows={rows}
-                    px={VAB_PX}
-                    selected={isSel}
-                    radialSide={-1}
-                  />
-                )}
-                <PixelRocketPart
-                  partId={pt.partId}
-                  x={rightX}
-                  y={y}
-                  cols={cols}
-                  rows={rows}
-                  px={VAB_PX}
-                  selected={isSel}
-                  radialSide={1}
-                />
-                <text
-                  x={rightX + w + 8}
-                  y={y + h / 2 + 3}
-                  className={isSel ? "stage-tag active" : "stage-tag"}
-                >
-                  S{pt.stage + 1} · {pt.symmetry}× {def.shortName}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Live drag-and-drop snap indicator */}
-          {drag?.active && drag.snap && (
-            <g className="snap-indicator" pointerEvents="none">
-              {drag.snap.kind === "tank-flank" ? (
-                <rect
-                  x={drag.snap.x - drag.snap.w / 2}
-                  y={drag.snap.y - drag.snap.h / 2}
-                  width={drag.snap.w}
-                  height={drag.snap.h}
-                  rx="2"
-                  fill={drag.snap.valid ? "#72d6c644" : "#f07c6b44"}
-                  stroke={drag.snap.valid ? "#72d6c6" : "#f07c6b"}
-                  strokeWidth="1.6"
-                  strokeDasharray="3 2"
-                />
-              ) : (
-                <>
-                  <line
-                    x1={drag.snap.x - drag.snap.w / 2 - 6}
-                    y1={drag.snap.y}
-                    x2={drag.snap.x + drag.snap.w / 2 + 6}
-                    y2={drag.snap.y}
-                    stroke={drag.snap.valid ? "#72d6c6" : "#f07c6b"}
-                    strokeWidth="2.5"
-                  />
-                  <circle
-                    cx={drag.snap.x}
-                    cy={drag.snap.y}
-                    r="4"
-                    fill={drag.snap.valid ? "#72d6c6" : "#f07c6b"}
-                  />
-                </>
-              )}
-              {drag.snap.reason && (
-                <text
-                  x={drag.snap.x}
-                  y={Math.max(16, drag.snap.y - 10)}
-                  textAnchor="middle"
-                  className="snap-reason"
-                >
-                  {drag.snap.reason}
-                </text>
-              )}
-            </g>
-          )}
-        </svg>
-
-        {drag?.active && drag.source === "canvas" && (
-          <div className={"vab-trash-zone" + (drag.overTrash ? " armed" : "")}>
-            <Trash2 size={15} />
-            <span>{drag.overTrash ? "Release to Remove Part" : "Drag outside bay to remove"}</span>
-          </div>
-        )}
-
-        {!drag?.active && selectedPart && (
-          <div className="part-toolbar" aria-label="Selected part controls">
-            <span className="part-toolbar-name">
-              {PARTS[selectedPart.partId].shortName} · S{selectedPart.stage + 1}
-              {selectedTankGroup && selectedTankGroup.tankUids.length > 1
-                ? ` · ${selectedTankGroup.fuelTonnes.toFixed(1)}t pool`
-                : ""}
-            </span>
-            <button aria-label="Move part up" onClick={() => moveSelected(-1)}>
-              <ArrowUp size={16} />
-            </button>
-            <button aria-label="Move part down" onClick={() => moveSelected(1)}>
-              <ArrowDown size={16} />
-            </button>
-            <button aria-label="Switch stage" onClick={cycleStage}>
-              <Layers2 size={16} />
-              S{selectedPart.stage + 1}
-            </button>
-            {PARTS[selectedPart.partId].symmetric && (
-              <button aria-label="Toggle mirror symmetry" onClick={toggleSymmetry}>
-                <Split size={16} />
-                {selectedPart.symmetry}×
-              </button>
+                    )}
+                    <PixelRocketPart
+                      partId={pt.partId}
+                      x={rightX}
+                      y={y}
+                      cols={cols}
+                      rows={rows}
+                      px={VAB_PX}
+                      selected={isSel}
+                      radialSide={1}
+                    />
+                  </g>
+                );
+              },
             )}
-            <button
-              className="danger"
-              aria-label="Remove part"
-              onClick={removeSelected}
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        )}
-      </section>
 
-      {savedMsg && !notice && (
-        <div className="vab-saved-toast" role="status">
-          <Check size={14} />
-          <span>{savedMsg}</span>
-        </div>
-      )}
-
-      {(analysis.warnings.length > 0 || notice || contractCheck?.error) && (
-        <div className="vab-warnings" role="status">
-          <TriangleAlert size={14} />
-          <span>{notice || contractCheck?.error || analysis.warnings[0].message}</span>
-        </div>
-      )}
-
-      <section className="vab-tray" aria-label="Part catalog" data-milo-focus={vabTour && vabStepNum === 2}>
-        <div className="tray-tabs">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c.id}
-              className={category === c.id ? "active" : ""}
-              onClick={() => setCategory(c.id)}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-        <div className="tray-grid">
-          {visibleParts.map((id) => {
-            const def = PARTS[id];
-            const locked = def.requiredLabLevel > limits.labLevel;
-            return (
-              <button
-                key={id}
-                type="button"
-                className={"part-card" + (locked ? " locked" : "")}
-                aria-label={"Add " + def.name}
-                onPointerDown={(e) => startTrayDrag(e, id)}
+            {validSlots.map((slot, index) => (
+              <g
+                key={index}
+                data-socket={slot.kind}
+                role="button"
+                tabIndex={0}
+                aria-label={`Place ${placing && PARTS[placing].shortName} at ${slot.kind === "tank-flank" ? "tank side" : slot.kind === "side-insert" ? "side stack" : "center stack"} socket ${index + 1}, stage ${slot.stage + 1}`}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
+                  if (placing && (e.key === "Enter" || e.key === " ")) {
                     e.preventDefault();
-                    addPart(id);
+                    commitDrop(placing, slot);
                   }
                 }}
               >
-                <div className="part-card-body">
-                  <PartPixelThumb partId={id} />
-                  <div className="part-card-info">
-                    <div className="part-card-top">
-                      <strong>{def.shortName}</strong>
-                      {locked ? (
-                        <span className="part-lock">
-                          <Lock size={11} /> Lab {def.requiredLabLevel}
+                {slot.kind !== "tank-flank" && (
+                  <line
+                    x1={slot.x - slot.w / 2}
+                    x2={slot.x + slot.w / 2}
+                    y1={slot.y}
+                    y2={slot.y}
+                    stroke="#8cf0cf"
+                    vectorEffect="non-scaling-stroke"
+                    strokeWidth="3"
+                  />
+                )}
+                <circle
+                  cx={slot.x}
+                  cy={slot.y}
+                  r={8 / camera.scale}
+                  fill="#183f42"
+                  stroke="#8cf0cf"
+                  strokeWidth={2 / camera.scale}
+                />
+                <path
+                  d={`M ${slot.x - 4 / camera.scale} ${slot.y} h ${8 / camera.scale} M ${slot.x} ${slot.y - 4 / camera.scale} v ${8 / camera.scale}`}
+                  stroke="#eaffd7"
+                  strokeWidth={1.5 / camera.scale}
+                />
+              </g>
+            ))}
+            {/* Live drag-and-drop snap indicator */}
+            {drag?.active && drag.snap && (
+              <g className="snap-indicator" pointerEvents="none">
+                {drag.snap.kind === "tank-flank" ? (
+                  <rect
+                    x={drag.snap.x - drag.snap.w / 2}
+                    y={drag.snap.y - drag.snap.h / 2}
+                    width={drag.snap.w}
+                    height={drag.snap.h}
+                    rx="2"
+                    fill={drag.snap.valid ? "#72d6c644" : "#f07c6b44"}
+                    stroke={drag.snap.valid ? "#72d6c6" : "#f07c6b"}
+                    strokeWidth="1.6"
+                    strokeDasharray="3 2"
+                  />
+                ) : (
+                  <>
+                    <line
+                      x1={drag.snap.x - drag.snap.w / 2 - 6}
+                      y1={drag.snap.y}
+                      x2={drag.snap.x + drag.snap.w / 2 + 6}
+                      y2={drag.snap.y}
+                      stroke={drag.snap.valid ? "#72d6c6" : "#f07c6b"}
+                      strokeWidth="2.5"
+                    />
+                    <circle
+                      cx={drag.snap.x}
+                      cy={drag.snap.y}
+                      r="4"
+                      fill={drag.snap.valid ? "#72d6c6" : "#f07c6b"}
+                    />
+                  </>
+                )}
+                {drag.snap.reason && (
+                  <text
+                    x={drag.snap.x}
+                    y={Math.max(16, drag.snap.y - 10)}
+                    textAnchor="middle"
+                    className="snap-reason"
+                  >
+                    {drag.snap.reason}
+                  </text>
+                )}
+              </g>
+            )}
+          </svg>
+
+          <button
+            className={"vab-readiness" + (blocking ? " flagged" : "")}
+            onClick={() => showPanel("preflight")}
+          >
+            {blocking ? <TriangleAlert size={14} /> : <Check size={14} />}
+            {blocking ? "Check vehicle" : "Flight ready"}
+          </button>
+          <div className="bay-camera" aria-label="Bay camera">
+            <button aria-label="Zoom in" onClick={() => camera.zoom(1.25)}>
+              <Plus />
+            </button>
+            <button aria-label="Zoom out" onClick={() => camera.zoom(0.8)}>
+              <Minus />
+            </button>
+            <button aria-label="Fit rocket" onClick={camera.fit}>
+              <Scan /> Fit
+            </button>
+          </div>
+          {!placing && !activeBp.parts.length && (
+            <button className="bay-empty" onClick={() => showPanel("parts")}>
+              Add your first part
+            </button>
+          )}
+        </section>
+        {panel && (
+          <aside className="vab-drawer" aria-label="Workshop panel">
+            <div className="vab-drawer-heading">
+              <strong>
+                {
+                  {
+                    parts: "Parts",
+                    stages: "Stages",
+                    preflight: "Preflight",
+                    edit: selectedPart
+                      ? PARTS[selectedPart.partId].name
+                      : "Part",
+                    choose: "Select a part",
+                  }[panel]
+                }
+              </strong>
+              <button
+                aria-label="Close panel"
+                onClick={() => {
+                  setPanel(null);
+                  setSelectedUid(null);
+                }}
+              >
+                <X />
+              </button>
+            </div>
+            {panel === "choose" &&
+              candidates.map((uid) => {
+                const part = activeBp.parts.find((p) => p.uid === uid);
+                return (
+                  part && (
+                    <button key={uid} onClick={() => selectForEdit(uid)}>
+                      {PARTS[part.partId].name} · Stage {part.stage + 1}
+                    </button>
+                  )
+                );
+              })}
+            {panel === "stages" && (
+              <div className="vab-stage-list">
+                {!activeBp.parts.length && (
+                  <button onClick={() => setPanel("parts")}>
+                    Add your first part
+                  </button>
+                )}
+                {analysis.stages.map(({ stage }) => (
+                  <section key={stage}>
+                    <h3>
+                      Stage {stage + 1}
+                      {stage === 0 ? " · Liftoff" : ""}
+                    </h3>
+                    {activeBp.parts
+                      .filter((pt) => pt.stage === stage)
+                      .map((pt) => (
+                        <button
+                          key={pt.uid}
+                          data-stage-part={pt.uid}
+                          onClick={() => selectForEdit(pt.uid)}
+                        >
+                          <PartPixelThumb partId={pt.partId} />
+                          <span>{PARTS[pt.partId].name}</span>
+                          <small>
+                            {pt.symmetry === 2 ? "2×" : ""}
+                            {resolvePartMount(pt) === "side" ? " Side" : ""}
+                          </small>
+                        </button>
+                      ))}
+                  </section>
+                ))}
+              </div>
+            )}
+            {panel === "edit" && selectedPart && (
+              <div className="part-toolbar" aria-label="Selected part controls">
+                <span className="part-toolbar-name">
+                  Stage {selectedPart.stage + 1}
+                  {selectedTankGroup && selectedTankGroup.tankUids.length > 1
+                    ? ` · ${selectedTankGroup.fuelTonnes.toFixed(1)}t pool`
+                    : ""}
+                </span>
+                <button
+                  aria-label="Move part up"
+                  onClick={() => moveSelected(-1)}
+                >
+                  <ArrowUp size={16} /> Up
+                </button>
+                <button
+                  aria-label="Move part down"
+                  onClick={() => moveSelected(1)}
+                >
+                  <ArrowDown size={16} /> Down
+                </button>
+                <button aria-label="Switch stage" onClick={cycleStage}>
+                  <Layers2 size={16} />
+                  Switch stage
+                </button>
+                {PARTS[selectedPart.partId].symmetric && (
+                  <button
+                    aria-label="Toggle mirror symmetry"
+                    onClick={toggleSymmetry}
+                  >
+                    <Split size={16} />
+                    Mirror {selectedPart.symmetry}×
+                  </button>
+                )}
+                <button
+                  className="danger"
+                  aria-label="Remove part"
+                  onClick={removeSelected}
+                >
+                  <Trash2 size={16} /> Remove
+                </button>
+              </div>
+            )}
+            {panel === "parts" && (
+              <section
+                className="vab-tray"
+                aria-label="Part catalog"
+                data-milo-focus={vabTour && vabStepNum === 2}
+              >
+                <div className="tray-tabs">
+                  {CATEGORIES.map((c) => (
+                    <button
+                      key={c.id}
+                      className={category === c.id ? "active" : ""}
+                      onClick={() => setCategory(c.id)}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="tray-grid">
+                  {visibleParts.map((id) => {
+                    const def = PARTS[id];
+                    const locked = def.requiredLabLevel > limits.labLevel;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        className={"part-card" + (locked ? " locked" : "")}
+                        aria-label={"Add " + def.name}
+                        onPointerDown={(e) => startTrayDrag(e, id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            chooseCatalogPart(id);
+                          }
+                        }}
+                      >
+                        <div className="part-card-body">
+                          <PartPixelThumb partId={id} />
+                          <div className="part-card-info">
+                            <div className="part-card-top">
+                              <strong>{def.shortName}</strong>
+                              {locked ? (
+                                <span className="part-lock">
+                                  <Lock size={11} /> Lab {def.requiredLabLevel}
+                                </span>
+                              ) : (
+                                <Plus size={14} />
+                              )}
+                            </div>
+                            <small>
+                              {def.thrustKn > 0
+                                ? `${def.thrustKn} kN · ${def.ispVac}s`
+                                : def.fuelTonnes > 0
+                                  ? `${def.fuelTonnes} t fuel`
+                                  : `${def.dryTonnes} t`}
+                            </small>
+                            <em className="part-cost">
+                              {def.hardwareCost} C
+                              {def.propellantCost > 0
+                                ? ` · ${def.propellantCost} P`
+                                : ""}
+                            </em>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+            {panel === "preflight" && (
+              <>
+                {contractName && contractGoal && contractPayout && (
+                  <section
+                    className="vab-contract-banner"
+                    aria-label="Selected contract"
+                  >
+                    <div className="vab-contract-info">
+                      <div className="vab-contract-head">
+                        <ClipboardList size={14} />
+                        <strong>{contractName}</strong>
+                        <span className="vab-contract-payout">
+                          +{contractPayout.credits.toLocaleString("en-US")} C ·
+                          +{contractPayout.research} RD
                         </span>
-                      ) : (
-                        <Plus size={14} />
+                      </div>
+                      <p>{contractGoal}</p>
+                      {rotatingOffer && rotatingOffer.modifiers.length > 0 && (
+                        <div className="vab-mod-strip">
+                          {rotatingOffer.modifiers.map((mod) => (
+                            <span
+                              key={mod}
+                              className={
+                                "mod-chip mod-" + MODIFIER_META[mod].type
+                              }
+                              title={MODIFIER_META[mod].summary}
+                            >
+                              {MODIFIER_META[mod].label}
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    <small>
-                      {def.thrustKn > 0
-                        ? `${def.thrustKn} kN · ${def.ispVac}s`
-                        : def.fuelTonnes > 0
-                          ? `${def.fuelTonnes} t fuel`
-                          : `${def.dryTonnes} t`}
-                    </small>
-                    <em className="part-cost">
-                      {def.hardwareCost} C
-                      {def.propellantCost > 0 ? ` · ${def.propellantCost} P` : ""}
-                    </em>
+                    <button
+                      type="button"
+                      className="vab-contract-clear"
+                      aria-label="Clear selected contract"
+                      onClick={m.clearPendingContract}
+                    >
+                      <X size={15} />
+                    </button>
+                  </section>
+                )}
+
+                <div
+                  className="vab-pilot-bar"
+                  aria-label="Pilot assignment"
+                  data-milo-focus={vabTour && vabStepNum === 4}
+                >
+                  <UserCheck size={14} />
+                  {hasCrewedPod ? (
+                    <>
+                      <select
+                        aria-label="Assign pilot"
+                        value={effectivePilotId}
+                        onChange={(e) => setSelectedPilotId(e.target.value)}
+                      >
+                        <option value="">Uncrewed (No Pilot)</option>
+                        {readyPilots.map((owned) => {
+                          const def = PILOT_BY_ID[owned.id];
+                          if (!def) return null;
+                          return (
+                            <option key={owned.id} value={owned.id}>
+                              “{def.callsign}” {def.name} · Lv {owned.level}{" "}
+                              {RARITY_META[def.rarity].label}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      {seatedDef && seatedStats && (
+                        <span className="vab-pilot-bonus">
+                          +{(seatedStats.isp * 100).toFixed(1)}% Isp · +
+                          {(seatedStats.credits * 100).toFixed(1)}% C
+                          {seatedDef.perk
+                            ? ` · ${PERK_META[seatedDef.perk].label}`
+                            : ""}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="vab-pilot-hint">
+                      Uncrewed probe — add Mk-1 Pod to seat a pilot
+                    </span>
+                  )}
+                </div>
+
+                <div
+                  className="vab-metrics"
+                  aria-label="Vehicle engineering readouts"
+                  data-milo-focus={vabTour && vabStepNum === 1}
+                >
+                  <div className="vab-stat">
+                    <span>MASS</span>
+                    <strong
+                      className={
+                        analysis.wetTonnes > limits.maxMassTonnes
+                          ? "over-limit"
+                          : ""
+                      }
+                    >
+                      {analysis.wetTonnes.toFixed(1)}
+                      <small>/{limits.maxMassTonnes}t</small>
+                    </strong>
+                  </div>
+                  <div className="vab-stat">
+                    <span>Δv</span>
+                    <strong>
+                      {Math.round(analysis.totalDeltaV).toLocaleString("en-US")}
+                      <small>m/s</small>
+                    </strong>
+                  </div>
+                  <div className="vab-stat">
+                    <span>TWR</span>
+                    <strong
+                      className={analysis.liftoffTwr <= 1 ? "over-limit" : ""}
+                    >
+                      {analysis.liftoffTwr.toFixed(2)}
+                    </strong>
+                  </div>
+                  <div className="vab-stat">
+                    <span>PARTS</span>
+                    <strong
+                      className={
+                        analysis.partCount > limits.maxParts ? "over-limit" : ""
+                      }
+                    >
+                      {analysis.partCount}
+                      <small>/{limits.maxParts}</small>
+                    </strong>
                   </div>
                 </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
 
+                <div className="flight-checks">
+                  {analysis.warnings.map((w, i) => (
+                    <button
+                      key={i}
+                      className="check-issue"
+                      onClick={() => inspectWarning(w)}
+                    >
+                      <TriangleAlert size={16} />
+                      <span>{w.message}</span>
+                      <span aria-hidden="true">›</span>
+                    </button>
+                  ))}
+                  {(contractCheck?.error || shortfall) && (
+                    <p className="vab-warnings">
+                      {contractCheck?.error || shortfall}
+                    </p>
+                  )}
+                </div>
+                <details className="vab-limits" ref={limitDetails}>
+                  <summary>Vehicle limits</summary>
+                  <dl>
+                    {[
+                      [
+                        "OVER_MASS",
+                        "Launchpad mass",
+                        `${analysis.wetTonnes.toFixed(1)} / ${limits.maxMassTonnes} t`,
+                      ],
+                      [
+                        "OVER_HEIGHT",
+                        "Launchpad height",
+                        `${analysis.heightMeters.toFixed(1)} / ${limits.maxHeightMeters} m`,
+                      ],
+                      [
+                        "OVER_PARTS",
+                        "Parts",
+                        `${analysis.partCount} / ${limits.maxParts}`,
+                      ],
+                      [
+                        "OVER_STAGES",
+                        "Stages",
+                        `${analysis.stageCount} / ${limits.maxStages}`,
+                      ],
+                      [
+                        "OVER_TANK_CAP",
+                        "Cryo capacity",
+                        `${analysis.propellantCost} / ${limits.maxPropellantCap} P`,
+                      ],
+                    ].map(([code, label, value]) => (
+                      <div key={code} tabIndex={-1} data-limit={code}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </details>
+                <footer
+                  className="vab-actions"
+                  data-milo-focus={vabTour && vabStepNum === 5}
+                >
+                  {fixedJob === "sounding" ? (
+                    <>
+                      <button
+                        className="sim-btn"
+                        data-milo-focus={soundingGuide && !vabTour}
+                        aria-label="Fly Sponsored Rocket"
+                        onClick={() => stageSelectedContract(false)}
+                      >
+                        <Rocket size={16} />
+                        Sponsored (0 C ·{" "}
+                        {contractVehicle(p, "sounding").propellantCost} P)
+                      </button>
+                      <button
+                        className="primary launch-btn"
+                        aria-label={`Fly ${contractName} with ${activeBp.name}`}
+                        disabled={Boolean(contractCheck?.error)}
+                        onClick={() => stageSelectedContract(true)}
+                      >
+                        <span>Fly Blueprint</span>
+                        <small className="vab-launch-price">
+                          <span>
+                            <Coins />
+                            {contractCheck?.vehicle?.hardwareCost ??
+                              analysis.hardwareCost}
+                          </span>
+                          <span>
+                            <Flame />
+                            {contractCheck?.vehicle?.propellantCost ??
+                              analysis.propellantCost}
+                          </span>
+                        </small>
+                      </button>
+                    </>
+                  ) : pendingContract ? (
+                    <>
+                      <button
+                        className="sim-btn"
+                        disabled={!analysis.canSimulate}
+                        onClick={() => launchMode("practice")}
+                      >
+                        <Wrench size={16} />
+                        Simulate Free
+                      </button>
+                      <button
+                        className="primary launch-btn"
+                        aria-label={`Fly ${contractName} with ${activeBp.name}`}
+                        disabled={Boolean(contractCheck?.error)}
+                        onClick={() => stageSelectedContract(true)}
+                      >
+                        <span>Fly Contract</span>
+                        <small className="vab-launch-price">
+                          <span>
+                            <Coins />
+                            {contractCheck?.vehicle?.hardwareCost ??
+                              analysis.hardwareCost}
+                          </span>
+                          <span>
+                            <Flame />
+                            {contractCheck?.vehicle?.propellantCost ??
+                              analysis.propellantCost}
+                          </span>
+                        </small>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="sim-btn"
+                        disabled={!analysis.canSimulate}
+                        onClick={() => launchMode("practice")}
+                      >
+                        <Wrench size={16} />
+                        Simulate Free
+                      </button>
+                      <button
+                        className="primary launch-btn"
+                        aria-label={`Launch · ${analysis.hardwareCost} credits + ${analysis.propellantCost} propellant`}
+                        disabled={!canAffordReal}
+                        onClick={() => launchMode("real")}
+                      >
+                        <span>Launch</span>
+                        <small className="vab-launch-price">
+                          <span>
+                            <Coins />
+                            {analysis.hardwareCost}
+                          </span>
+                          <span>
+                            <Flame />
+                            {analysis.propellantCost}
+                          </span>
+                        </small>
+                      </button>
+                    </>
+                  )}
+                </footer>
+              </>
+            )}
+          </aside>
+        )}
+      </div>
+      {(notice || savedMsg) && (
+        <div
+          className={notice ? "vab-warnings" : "vab-saved-toast"}
+          role="status"
+        >
+          {notice || savedMsg}
+          <button
+            aria-label="Dismiss message"
+            onClick={() => {
+              setNotice("");
+              setSavedMsg("");
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {placing && (
+        <div className="placement-bar">
+          <div>
+            <strong>{PARTS[placing].name}</strong>
+            <small>{placementHint}</small>
+          </div>
+          {validSlots.length > 0 && (
+            <button onClick={() => addPart(placing)}>Quick add</button>
+          )}
+          <button
+            aria-label="Cancel placement"
+            onClick={() => {
+              setPlacing(null);
+              setPanel("parts");
+            }}
+          >
+            <X />
+          </button>
+        </div>
+      )}
+      <nav className="vab-tools" aria-label="Workshop tools">
+        <button
+          aria-pressed={panel === "parts"}
+          onClick={() => showPanel("parts")}
+        >
+          <Plus /> Parts
+        </button>
+        <button
+          aria-pressed={panel === "stages"}
+          onClick={() => showPanel("stages")}
+        >
+          <Layers2 /> Stages
+        </button>
+        <button
+          aria-pressed={panel === "preflight"}
+          onClick={() => showPanel("preflight")}
+        >
+          <ClipboardList /> Preflight
+        </button>
+      </nav>
       {drag?.active && (
         <div
           className={
-            "vab-drag-ghost" +
-            (drag.snap && !drag.snap.valid ? " invalid" : "") +
-            (drag.overTrash ? " trash" : "")
+            "vab-drag-ghost" + (drag.snap && !drag.snap.valid ? " invalid" : "")
           }
           style={{ left: drag.x, top: drag.y }}
           aria-hidden="true"
@@ -1747,108 +2482,24 @@ export function Workshop({
         </div>
       )}
 
-      <footer className="vab-actions" data-milo-focus={vabTour && vabStepNum === 5}>
-        {fixedJob === "sounding" ? (
-          <>
-            <button
-              className="sim-btn"
-              data-milo-focus={soundingGuide && !vabTour}
-              aria-label="Fly Sponsored Rocket"
-              onClick={() => stageSelectedContract(false)}
-            >
-              <Rocket size={16} />
-              Sponsored (0 C)
-            </button>
-            <button
-              className="primary launch-btn"
-              aria-label={`Fly ${contractName} with ${activeBp.name}`}
-              disabled={Boolean(contractCheck?.error)}
-              onClick={() => stageSelectedContract(true)}
-            >
-              <span>Fly Blueprint</span>
-              <small className="vab-launch-price">
-                <span>
-                  <Coins />
-                  {contractCheck?.vehicle?.hardwareCost ?? analysis.hardwareCost}
-                </span>
-                <span>
-                  <Flame />
-                  {contractCheck?.vehicle?.propellantCost ?? analysis.propellantCost}
-                </span>
-              </small>
-            </button>
-          </>
-        ) : pendingContract ? (
-          <>
-            <button
-              className="sim-btn"
-              disabled={!analysis.canSimulate}
-              onClick={() => launchMode("practice")}
-            >
-              <Wrench size={16} />
-              Simulate Free
-            </button>
-            <button
-              className="primary launch-btn"
-              aria-label={`Fly ${contractName} with ${activeBp.name}`}
-              disabled={Boolean(contractCheck?.error)}
-              onClick={() => stageSelectedContract(true)}
-            >
-              <span>Fly Contract</span>
-              <small className="vab-launch-price">
-                <span>
-                  <Coins />
-                  {contractCheck?.vehicle?.hardwareCost ?? analysis.hardwareCost}
-                </span>
-                <span>
-                  <Flame />
-                  {contractCheck?.vehicle?.propellantCost ?? analysis.propellantCost}
-                </span>
-              </small>
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              className="sim-btn"
-              disabled={!analysis.canSimulate}
-              onClick={() => launchMode("practice")}
-            >
-              <Wrench size={16} />
-              Simulate Free
-            </button>
-            <button
-              className="primary launch-btn"
-              aria-label={`Launch · ${analysis.hardwareCost} credits + ${analysis.propellantCost} propellant`}
-              disabled={!canAffordReal}
-              onClick={() => launchMode("real")}
-            >
-              <span>Launch</span>
-              <small className="vab-launch-price">
-                <span>
-                  <Coins />
-                  {analysis.hardwareCost}
-                </span>
-                <span>
-                  <Flame />
-                  {analysis.propellantCost}
-                </span>
-              </small>
-            </button>
-          </>
-        )}
-      </footer>
-
       {replaceTarget && contractName && (
-        <Dialog tone="warning" title="Replace flight?" close={() => setReplaceTarget(null)}>
+        <Dialog
+          tone="warning"
+          title="Replace flight?"
+          close={() => setReplaceTarget(null)}
+        >
           <p>
             Retire the active vehicle and stage{" "}
-            {replaceTarget.useBlueprint ? activeBp.name : "the Sponsored Rocket"} for{" "}
-            {contractName}?
+            {replaceTarget.useBlueprint
+              ? activeBp.name
+              : "the Sponsored Rocket"}{" "}
+            for {contractName}?
           </p>
           <button
             className="primary"
-            onClick={() => stageSelectedContract(replaceTarget.useBlueprint, true)}
+            onClick={() =>
+              stageSelectedContract(replaceTarget.useBlueprint, true)
+            }
           >
             Prepare flight
           </button>
@@ -1856,9 +2507,15 @@ export function Workshop({
       )}
 
       {saveDialogOpen && (
-        <Dialog title="Save Rocket Design" close={() => setSaveDialogOpen(false)}>
+        <Dialog
+          title="Save Rocket Design"
+          close={() => setSaveDialogOpen(false)}
+        >
           {lesson && (
-            <MiloGuide dismissLabel="Dismiss design lesson" dismiss={dismissLesson}>
+            <MiloGuide
+              dismissLabel="Dismiss design lesson"
+              dismiss={dismissLesson}
+            >
               {p.blueprints.length < MAX_BLUEPRINTS
                 ? "Give the rocket a name and choose Save as New."
                 : "All design slots are full. Update Current to keep changes to this design."}
@@ -1888,7 +2545,9 @@ export function Workshop({
             <div className="save-bp-summary">
               <span>{analysis.partCount} parts</span>
               <span>{analysis.wetTonnes.toFixed(1)} t</span>
-              <span>{Math.round(analysis.totalDeltaV).toLocaleString("en-US")} m/s</span>
+              <span>
+                {Math.round(analysis.totalDeltaV).toLocaleString("en-US")} m/s
+              </span>
               <span>TWR {analysis.liftoffTwr.toFixed(2)}</span>
             </div>
 
@@ -1913,6 +2572,18 @@ export function Workshop({
               </button>
             </div>
 
+            <button
+              aria-label="Clone blueprint"
+              title="Clone blueprint"
+              type="button"
+              disabled={p.blueprints.length >= MAX_BLUEPRINTS}
+              onClick={() => {
+                cloneBlueprint();
+                setSaveDialogOpen(false);
+              }}
+            >
+              <Copy size={16} /> Clone design
+            </button>
             {p.blueprints.length > 1 && (
               <div className="save-bp-danger-row">
                 <button

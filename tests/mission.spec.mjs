@@ -185,8 +185,11 @@ test("Workshop rockets fly paid Atmospheric Sounding missions with persistent co
   await page.goto("./");
   await button("Rocket Workshop").click();
   await page.getByLabel("Select blueprint").selectOption("bp_sounding_dart");
+  await button("Save rocket design").click();
   await button("Clone blueprint").click();
+  await button("Parts").click();
   await button("Add Medium Cryo Tank").click();
+  await button("Quick add").click();
   const heavyId = await page.getByLabel("Select blueprint").inputValue();
   const heavyName = await page.getByLabel("Select blueprint").locator("option:checked").textContent();
   await button("Earth launch site").click();

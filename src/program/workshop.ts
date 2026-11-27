@@ -364,6 +364,7 @@ export interface StageStats {
 }
 
 export interface ValidationWarning {
+  partUid?: string;
   code:
     | "NO_POD"
     | "LOW_TWR"
@@ -767,6 +768,7 @@ export function analyzeBlueprint(
     if (def.requiredLabLevel > limits.labLevel) {
       warnings.push({
         code: "LOCKED_PART",
+        partUid: item.uid,
         severity: "error",
         message: `${def.shortName} requires Research Lab Lv ${def.requiredLabLevel}.`,
       });
@@ -774,6 +776,7 @@ export function analyzeBlueprint(
     if (topology.unfedEngineUids.has(item.uid)) {
       warnings.push({
         code: "UNFED_ENGINE",
+        partUid: item.uid,
         severity: "error",
         message: `${def.shortName} must be placed directly under a fuel tank.`,
       });
@@ -789,6 +792,7 @@ export function analyzeBlueprint(
   if (topology.unusedTankGroupIds.size > 0) {
     warnings.push({
       code: "UNUSED_FUEL",
+      partUid: topology.tankGroups.find(group => topology.unusedTankGroupIds.has(group.id))?.tankUids[0],
       severity: "warn",
       message: "Fuel tank has no engine directly beneath it.",
     });
