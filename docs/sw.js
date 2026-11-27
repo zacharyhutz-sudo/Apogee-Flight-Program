@@ -1,5 +1,5 @@
 const prefix='apogee:'+self.registration.scope+':'
-const name=prefix+'9af630125b7f636b'
+const name=prefix+'c1738d0ad4d52584'
 const assets=["./THIRD-PARTY-NOTICES.txt","./art/canopy.png","./art/credits.png","./art/dusk.png","./art/milo-guide.css","./art/milo-voss.png","./art/propellant.png","./art/range.png","./art/site.png","./art/space.png","./art/tower.png","./art/upper.png","./art/vehicle.png","./assets/barlow-latin-400-normal-fsAxiSwU.woff","./assets/barlow-latin-400-normal-qiz4-Cze.woff2","./assets/barlow-latin-600-normal-CNwfPWQD.woff","./assets/barlow-latin-600-normal-DILqtrty.woff2","./assets/barlow-latin-700-normal-A9pxMQ4z.woff2","./assets/barlow-latin-700-normal-__SGTsZ1.woff","./assets/ibm-plex-mono-latin-500-normal-CB9ihrfo.woff","./assets/ibm-plex-mono-latin-500-normal-DSY6xOcd.woff2","./assets/index-DmxnUOrG.css","./assets/index-nhysIl0K.js","./assets/phaser-Czz4FBZH.js","./icon-192.png","./icon-512.png","./index.html","./manifest.webmanifest"]
 self.addEventListener('install',event=>{
   self.skipWaiting()
