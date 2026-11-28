@@ -30,7 +30,7 @@ export function flightPrompt(save: Snapshot, paused: boolean): FlightGuidePrompt
       : "Payout received.";
     return {
       target: "base",
-      text: `Good reading! ${payout} Watch AP and PE as you coast, or tap Base to plan your next build.`,
+      text: `Good reading! ${payout} Watch AP and PE in telemetry as you coast, or tap Base to plan your next build.`,
     };
   }
 
@@ -88,7 +88,7 @@ export function flightPrompt(save: Snapshot, paused: boolean): FlightGuidePrompt
       target: "appe",
       title: "Milo Voss · Orbit Telemetry",
       ack: "apPeSeen",
-      text: "Watch AP & PE above: AP (Apoapsis) is the highest point your trajectory will reach; PE (Periapsis) is the lowest point. Push AP past your altitude target — and on orbital flights, pitch sideways to raise PE above 30 km for a stable orbit.",
+      text: "Watch AP & PE in telemetry (tap the three-dot button for additional readouts): AP (Apoapsis) is the highest point your trajectory will reach; PE (Periapsis) is the lowest point. Push AP past your altitude target — and on orbital flights, pitch sideways to raise PE above 30 km for a stable orbit.",
     };
   }
 
@@ -102,7 +102,7 @@ export function flightPrompt(save: Snapshot, paused: boolean): FlightGuidePrompt
   if (sounding) {
     return {
       target: "altitude",
-      text: `Watch ALT and AP. At ${SOUNDING_TARGET / 1000} kilometers, that reading is ours. Hold the left or right screen edges if you need to steer.`,
+      text: `Watch ALT. Tap telemetry details to check AP, your projected high point. At ${SOUNDING_TARGET / 1000} kilometers, that reading is ours. Hold the left or right screen edges if you need to steer.`,
     };
   }
 

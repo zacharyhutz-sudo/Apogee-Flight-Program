@@ -31,6 +31,10 @@ test("the active contract checks off in the launch HUD and clears for a free fli
   await expect(scene).toHaveAttribute("data-zoom","1.00");
   await button("Orbital map").click();
   await button("Launch vehicle").click();
+  const chip = panel.getByRole("button");
+  await expect(chip).toHaveText(/1\/2.*Reach 15 km/);
+  await expect(chip).toHaveAttribute("aria-expanded","false");
+  await chip.click();
   await expect(checkbox("Lift off")).toBeChecked();
   const result = page.getByRole("dialog",{name:"Mission complete"});
   await expect(result).toContainText("+450",{timeout:30000});
@@ -43,9 +47,12 @@ test("the active contract checks off in the launch HUD and clears for a free fli
   await expect(result).toBeVisible();
   await button("Continue flying").click();
   await expect(button("Flight view")).toBeVisible();
+  await expect(chip).toHaveText(/2\/2.*Objectives complete/);
+  await chip.click();
   await expect(checkbox("Reach 15 km")).toBeChecked();
   await page.reload();
   await expect(result).toHaveCount(0);
+  await chip.click();
   await expect(checkbox("Reach 15 km")).toBeChecked();
   await button("Earth launch site").click();
   await button("Contracts").click();

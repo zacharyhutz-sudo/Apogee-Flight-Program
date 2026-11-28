@@ -39,6 +39,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { FlightTelemetry, type FlightMetric } from "./FlightTelemetry";
 import { FlightScene } from "../game/scenes/FlightScene";
 import { OrbitalMap } from "../game/orbital/OrbitalMap";
 import {
@@ -78,6 +79,9 @@ const distance = (n: number) =>
       })
     : "Escape";
 
+const compactNumber = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const hudDistance = (meters: number) =>
+  Math.abs(meters) >= 1000000 && Number.isFinite(meters) ? compactNumber.format(meters / 1000) : distance(meters);
 const wrapPitch = (deg: number) => {
   const p = ((((deg + 180) % 360) + 360) % 360) - 180;
   return p === -180 && deg > 0 ? 180 : p;
@@ -103,12 +107,14 @@ export default function App() {
   const mapCam = useRef<Camera | null>(null);
   const [mapEntry, setMapEntry] = useState<number | null>(null);
   const [mapKey, remountMap] = useState(0);
-  const [collapsed, collapse] = useState(false);
+  const [checklist, setChecklist] = useState<{ flight: typeof s; pad: boolean; open: boolean } | null>(null);
+  const [telemetryOpen, setTelemetryOpen] = useState(false);
   const [mapVisited, visitMap] = useState(false);
   const [fading, fade] = useState(false);
   const inFlight = active || m.mission.view === "map";
   useEffect(() => {
-    if (!inFlight) { visitMap(false); setMapEntry(null); collapse(false); }
+    if (!inFlight) { visitMap(false); setMapEntry(null); setChecklist(null); }
+    setTelemetryOpen(false);
     if (!active && inFlight) visitMap(true);
     const id = setTimeout(() => fade(false), 170);
     return () => clearTimeout(id);
@@ -319,7 +325,9 @@ export default function App() {
           toggleView(active);
           break;
         case "Escape":
-          if (!active) toggleView(false);
+          if (telemetryOpen) setTelemetryOpen(false);
+          else if (checklistOpen && !pad) setChecklist({ flight: s, pad, open: false });
+          else if (!active) toggleView(false);
           break;
         case "KeyP":
           m.togglePause();
@@ -466,22 +474,38 @@ export default function App() {
       </button>
     </div>
   );
-  const instrument = (label: string, value: string, unit: string) => (
-    <div
-      className="meter"
-      key={label}
-      data-milo-focus={
-        (label === "ALT" && radio?.target === "altitude") ||
-        ((label === "AP" || label === "PE") && radio?.target === "appe")
-      }
-    >
-      <span>{label}</span>
-      <strong>
-        {value}
-        {unit && <small>{unit}</small>}
-      </strong>
-    </div>
-  );
+  const checklistOpen = checklist?.flight === s && checklist.pad === pad ? checklist.open : pad;
+  const objectivesDone = objectives.filter(task => task.done).length;
+  const missionSummary = objectives[current]?.name ?? "Objectives complete";
+
+  const { vr, vt } = surfaceVelocity(s);
+  const landing = active && flying && vr < -0.5 && m.alt < (s.body === "moon" ? 5000 : 2000);
+  const altitude = m.alt < 1000
+    ? { label: "ALT", value: String(Math.round(m.alt)), unit: "m" }
+    : { label: "ALT", value: hudDistance(m.alt), unit: "km" };
+  const velocity = { label: "VEL", value: compactNumber.format(Math.round(speed(s))), unit: "m/s" };
+  const pitchMetric = s.chuteDeployed
+    ? { label: "CHUTE", value: "LOCK" }
+    : { label: "PITCH", value: `${Math.round(s.pitch)}°` };
+  const fuel = { label: `S${s.stage + 1} FUEL`, value: String(Math.ceil(fuelPct)), unit: "%", fuel: fuelPct };
+  const apoapsis = { label: "AP", value: pad ? "—" : hudDistance(Math.max(0, o.ap)),
+    unit: !pad && Number.isFinite(o.ap) ? "km" : undefined };
+  const periapsis = { label: "PE", value: pad ? "—" : hudDistance(o.pe), unit: pad ? undefined : "km" };
+
+  const touchdown = landingLimits(s);
+  const descentMetric = (label: string, value: number, limit: number, unit: string): FlightMetric => ({
+    label, value: unit === "°" ? String(Math.round(value)) : value.toFixed(1), unit,
+    tone: Math.abs(value) >= limit ? "danger" : Math.abs(value) >= limit * 0.65 ? "warn" : "safe",
+  });
+  const primaryMetrics = landing ? [
+    altitude,
+    descentMetric("V/S", vr, touchdown.maxVr, "m/s"),
+    descentMetric("H/S", Math.abs(vt), touchdown.maxVt, "m/s"),
+    descentMetric("TILT", Math.abs(s.pitch), touchdown.maxTilt, "°"),
+  ] : active ? [altitude, velocity, pitchMetric, fuel]
+    : pad ? [apoapsis, periapsis, altitude, velocity] : [apoapsis, periapsis, pitchMetric, fuel];
+  const extraMetrics = landing ? [apoapsis, periapsis, velocity, fuel] : active
+    ? [apoapsis, periapsis] : pad ? [pitchMetric, fuel] : [altitude, velocity];
 
   if (m.mission.view === "site")
     return (
@@ -632,98 +656,53 @@ export default function App() {
           </header>
 
           {(!pad || !active) && (
-            <div className={"telemetry" + (!pad ? " telemetry-flight" : "")}>
-              {m.alt < 1000 ? instrument("ALT", String(Math.round(m.alt)), "m") : instrument("ALT", distance(m.alt), "km")}
-              {instrument(
-                "VEL",
-                Math.round(speed(s)).toLocaleString("en-US"),
-                "m/s",
-              )}
-              {!pad &&
-                instrument(
-                  s.chuteDeployed ? "CHUTE" : "PITCH",
-                  s.chuteDeployed ? "LOCK" : `${Math.round(s.pitch)}°`,
-                  "",
-                )}
-              {instrument(
-                "AP",
-                pad ? "—" : distance(Math.max(0, o.ap)),
-                pad || !Number.isFinite(o.ap) ? "" : "km",
-              )}
-              {instrument(
-                "PE",
-                pad ? "—" : distance(o.pe),
-                pad ? "" : "km",
-              )}
-              {!pad && (
-                <div className="meter fuel-meter" data-milo-focus={radio?.target === "fuel"}>
-                  <span>S{s.stage + 1} fuel</span>
-                  <strong>{Math.ceil(fuelPct)}<small>%</small></strong>
-                  <div className="fuel-track" aria-hidden="true">
-                    <i style={{ width: fuelPct + "%" }} />
-                  </div>
-                </div>
-              )}
-            </div>
+            <FlightTelemetry primary={primaryMetrics} secondary={extraMetrics} landing={landing}
+              expanded={telemetryOpen} guide={radio?.target}
+              toggle={() => {
+                if (!telemetryOpen) setChecklist({ flight: s, pad, open: false });
+                setTelemetryOpen(!telemetryOpen);
+              }}
+            />
           )}
 
-          {active &&
-            flying &&
-            ((s.body === "moon" && m.alt < 5000) ||
-              (s.body !== "moon" && m.alt < 2000)) && (() => {
-              const { vr, vt } = surfaceVelocity(s);
-              const lim = landingLimits(s);
-              const vrAbs = Math.abs(vr);
-              const vtAbs = Math.abs(vt);
-              const tiltAbs = Math.abs(s.pitch);
-              const tone = (v: number, limVal: number) =>
-                v >= limVal ? "danger" : v >= limVal * 0.65 ? "warn" : "safe";
-              return (
-                <div className="descent-strip" aria-label="Landing descent telemetry">
-                  <span className={"descent-pill " + tone(vrAbs, lim.maxVr)}>
-                    <small>V/S</small>
-                    <b>{vr >= 0 ? "+" : ""}{vr.toFixed(1)}</b>
-                  </span>
-                  <span className={"descent-pill " + tone(vtAbs, lim.maxVt)}>
-                    <small>H/S</small>
-                    <b>{vtAbs.toFixed(1)}</b>
-                  </span>
-                  <span className={"descent-pill " + tone(tiltAbs, lim.maxTilt)}>
-                    <small>TILT</small>
-                    <b>{Math.round(tiltAbs)}°</b>
-                  </span>
-                </div>
-              );
-            })()}
-
-          <div className="camera-row" ref={setToolbar}>
-          {active && <div className="rocket-camera" aria-label="Rocket camera" role="group">
-            <button aria-label="Zoom out" onClick={() => rocketCam.current?.step?.(-1)}><Minus /></button>
-            <button aria-label="Zoom in" onClick={() => rocketCam.current?.step?.(1)}><Plus /></button>
-            <button aria-label="Recenter rocket" onClick={() => rocketCam.current?.reset()}><LocateFixed /></button>
-          </div>}
-          </div>
-          {isRealContract ? (
-            <div className="contract-briefing">
-              <section className="contract-checklist" aria-label="Active contract">
-                <h2><button aria-expanded={!collapsed} aria-controls="flight-tasks" onClick={() => collapse(!collapsed)}>
-                  {contractInfo!.name}<ChevronDown size={12} /></button></h2>
-                <ul id="flight-tasks" hidden={collapsed}>
-                  {objectives.map(task => (
-                    <li key={task.name}>
-                      <span role="checkbox" aria-readonly="true" aria-checked={task.done} aria-label={task.name}>
-                        <i aria-hidden="true">{task.done && <Check size={10} strokeWidth={3} />}</i>
-                        {task.name}
-                      </span>
-                      {!task.done && task.remainingSeconds !== undefined &&
-                        <small>{clock(task.remainingSeconds).slice(3)}</small>}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-              <div className="contract-messages">{radioMessage}{flightNotice}</div>
+          <div className="hud-tools">
+            <div className="camera-row" ref={setToolbar}>
+              {active && <div className="rocket-camera" aria-label="Rocket camera" role="group">
+                <button aria-label="Zoom out" onClick={() => rocketCam.current?.step?.(-1)}><Minus /></button>
+                <button aria-label="Zoom in" onClick={() => rocketCam.current?.step?.(1)}><Plus /></button>
+                <button aria-label="Recenter rocket" onClick={() => rocketCam.current?.reset()}><LocateFixed /></button>
+              </div>}
             </div>
-          ) : radioMessage}
+            {isRealContract && (
+              <section className="contract-checklist" aria-label="Active contract">
+                <button type="button" className="mission-progress" aria-expanded={checklistOpen} aria-controls="flight-tasks"
+                  title={missionSummary} onClick={() => {
+                    setTelemetryOpen(false);
+                    setChecklist({ flight: s, pad, open: !checklistOpen });
+                  }}>
+                  <span key={objectivesDone} className="progress-count">{objectivesDone}/{objectives.length}</span>
+                  <span className="mission-next">{missionSummary}</span>
+                  <ChevronDown aria-hidden="true" />
+                </button>
+                <div id="flight-tasks" className="mission-tasks" hidden={!checklistOpen}>
+                  <h2>{contractInfo!.name}</h2>
+                  <ul>
+                    {objectives.map(task => (
+                      <li key={task.name}>
+                        <span role="checkbox" aria-readonly="true" aria-checked={task.done} aria-label={task.name}>
+                          <i aria-hidden="true">{task.done && <Check size={10} strokeWidth={3} />}</i>
+                          {task.name}
+                        </span>
+                        {!task.done && task.remainingSeconds !== undefined &&
+                          <small>{clock(task.remainingSeconds).slice(3)}</small>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </section>
+            )}
+          </div>
+          {isRealContract ? <div className="contract-messages">{radioMessage}{flightNotice}</div> : radioMessage}
           <div className="hud-bottom">
             <div className="thrust-dock">
               <label className="thrust" data-milo-focus={radio?.target === "throttle"}>

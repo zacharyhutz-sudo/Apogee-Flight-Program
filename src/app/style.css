@@ -760,16 +760,6 @@ dialog ol {
     display: flex;
     width: 100%;
   }
-  .telemetry.telemetry-flight {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .telemetry.telemetry-flight .meter:nth-child(4) {
-    border-left: 0;
-  }
-  .telemetry.telemetry-flight .meter:nth-child(n + 4) {
-    border-top: 1px solid var(--line);
-  }
   .meter {
     flex: 1;
     padding: 4px 6px;
@@ -1003,40 +993,4 @@ dialog ol {
     width: 48px;
   }
 }
-.descent-strip {
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: var(--radius-md);
-  background: #101924d9;
-  border: 1px solid var(--edge-dark);
-  pointer-events: none;
-}
-.descent-pill {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-.descent-pill small {
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--ink-muted);
-  letter-spacing: 0.06em;
-}
-.descent-pill b {
-  font-size: 12px;
-  font-weight: 700;
-}
-.descent-pill.safe b {
-  color: var(--teal);
-}
-.descent-pill.warn b {
-  color: var(--amber-bright);
-}
-.descent-pill.danger b {
-  color: var(--coral);
-}
+

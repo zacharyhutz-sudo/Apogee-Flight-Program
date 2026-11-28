@@ -199,30 +199,103 @@ dialog[data-tone="warning"] > button { width: 100%; }
 .lunar-toast { background: #18353a; color: #a8e9df; border-left-color: var(--teal); }
 .vab-warnings, .lunar-alert { background: #40292b; color: #ffcec2; border-left-color: var(--coral); }
 
-/* Leave the scene and both steering zones interactive underneath flight readouts. */
-.contract-briefing {
+/* HUD surfaces stay small so there is room to steer and drag the map. */
+.flight-telemetry {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  width: min(100%, 440px);
+  margin-top: 5px;
+}
+.flight-telemetry .telemetry {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "messages contract";
-  align-items: start;
-  gap: 6px;
-  margin-top: 6px;
-  pointer-events: none;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  background: #142333e8;
+  border-width: 1px;
+  box-shadow: none;
 }
-.contract-checklist {
-  grid-area: contract;
-  justify-self: end;
-  width: max-content;
-  max-width: 100%;
-  padding: 7px 10px 8px;
-  color: var(--ink);
-  background: #142333ed;
+.flight-telemetry .meter { padding: 4px clamp(3px, 1.2vw, 8px); }
+.flight-telemetry .meter strong { font-size: clamp(12px, 3.2vw, 15px); }
+.flight-telemetry .meter small { margin-left: 1px; font-size: 9px; }
+.flight-telemetry .meter.danger strong { color: var(--coral); }
+.flight-telemetry .meter.warn strong { color: var(--amber-bright); }
+.flight-telemetry .meter.safe strong { color: var(--teal); }
+.flight-telemetry .telemetry-more {
+  flex: 0 0 44px;
+  padding: 0;
+}
+.telemetry-details {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 160px;
   border: 1px solid var(--line-strong);
-  border-top: 2px solid var(--amber);
   border-radius: var(--radius-sm);
+  background: #142333;
+  box-shadow: 0 4px 12px #0008;
+  pointer-events: auto;
 }
-.contract-checklist h2 { margin: 0 0 4px; font: 700 14px/1.2 var(--font-ui); }
-.contract-checklist ul { display: grid; gap: 3px; list-style: none; padding: 0; margin: 0; }
+.telemetry-details .meter { position: relative; min-height: 36px; }
+.telemetry-details .meter:nth-child(n + 3) { border-top: 1px solid var(--line); }
+.telemetry-details .meter:nth-child(odd) { border-left: 0; }
+.telemetry-details[hidden], .mission-tasks[hidden] { display: none; }
+
+.hud-tools {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 5px;
+}
+.range-view .hud-tools .camera-row { order: 1; margin-left: auto; }
+.map-view .hud-tools { flex-direction: column; }
+.map-view .hud-tools .camera-row { width: 100%; }
+
+.contract-checklist {
+  min-width: 0;
+  max-width: min(100%, 340px);
+  color: var(--ink);
+}
+.contract-checklist .mission-progress {
+  min-width: 0;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 8px;
+  gap: 6px;
+  border: 1px solid var(--line-strong);
+  background: #142333ee;
+  box-shadow: none;
+  font: 700 12px/1 var(--font-ui);
+}
+.mission-progress .mission-next { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mission-progress .progress-count {
+  flex-shrink: 0;
+  color: var(--teal);
+  font: 700 11px/1 var(--font-mono);
+  animation: progress-light 600ms ease-out;
+}
+@keyframes progress-light { from { color: var(--amber-bright); } }
+@media (prefers-reduced-motion: reduce) { .mission-progress .progress-count { animation: none; } }
+.mission-progress svg { width: 14px; height: 14px; }
+.mission-progress[aria-expanded="true"] svg { transform: rotate(180deg); }
+.mission-tasks {
+  margin-top: 4px;
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: #142333ee;
+}
+.contract-checklist h2 { margin: 0 0 5px; font: 700 13px/1.2 var(--font-ui); }
+.contract-checklist ul { display: grid; gap: 4px; list-style: none; padding: 0; margin: 0; }
 .contract-checklist li, .contract-checklist [role="checkbox"] {
   display: flex; align-items: center; gap: 6px; font: 600 12px/1.2 var(--font-ui);
 }
@@ -232,17 +305,10 @@ dialog[data-tone="warning"] > button { width: 100%; }
 }
 .contract-checklist [aria-checked="true"] i { background: var(--teal); color: #102526; border-color: var(--teal); }
 .contract-checklist small { margin-left: auto; color: var(--amber-bright); font: 500 10px var(--font-mono); }
-.contract-messages { grid-area: messages; min-width: 0; }
+.contract-messages:not(:empty) { margin-top: 5px; }
 .contract-messages .flight-milo { margin-top: 0; }
-.contract-messages .notice {
-  position: relative; inset: auto; transform: none; max-width: min(100%, 320px);
-}
+.contract-messages .notice { position: relative; inset: auto; transform: none; max-width: min(100%, 320px); }
 .contract-messages .flight-milo + .notice { margin-top: 4px; }
-@media (max-width: 620px) {
-  .contract-briefing { grid-template-columns: 1fr; grid-template-areas: "contract" "messages"; }
-  .contract-checklist { justify-self: start; padding: 5px 8px 6px; }
-  .contract-messages:empty { display: none; }
-}
 
 .game {touch-action:none}
 .orbital-layer {position:absolute; inset:0; animation:map-enter .16s ease-out; transition:opacity .16s ease-out}
@@ -256,22 +322,18 @@ dialog[data-tone="warning"] > button { width: 100%; }
   text-transform: uppercase;
 }
 .topline nav .view-switch svg { width: 16px; height: 16px; }
-.camera-row { position:relative; z-index:2; display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:5px; }
+.camera-row { position:relative; z-index:2; display:flex; align-items:center; justify-content:flex-end; gap:6px; }
 .camera-row .rocket-camera, .camera-row .map-tools { position:static; display:flex; gap:2px; flex:none; }
 .camera-row button { display:grid; place-items:center; width:44px; height:44px; padding:0; }
 .map-readouts { min-width:0; margin-right:auto; display:grid; gap:3px; }
 .camera-row .map-selection, .camera-row .tracking-slot { position:static; min-width:0; max-width:100%; text-align:left; }
 .camera-row .map-selection { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--ink); }
 .camera-row .tracking-slot { border:0; background:none; padding:0; }
-@media (orientation:landscape) and (max-height:510px) {
-  .camera-row { float:right; margin-left:8px; }
-  .map-readouts { max-width:100px; }
-  .contract-briefing { overflow:hidden; }
+@media (orientation: landscape) and (max-height: 510px) {
+  .map-view .hud-tools { flex-direction: row; }
+  .map-view .hud-tools .camera-row { order: 1; width: auto; margin-left: auto; }
+  .map-readouts { max-width: 100px; }
 }
-.map-view .contract-briefing {position:relative;z-index:1}
-.contract-checklist h2 button {border:0;background:none;box-shadow:none;padding:0;display:flex;align-items:center;justify-content:space-between;gap:9px;color:inherit;font:inherit;min-height:30px}
-.contract-checklist [aria-expanded=true] svg {transform:rotate(180deg)}
-.contract-checklist ul[hidden]{display:none}
 dialog.mission-complete {width:100%;height:100dvh;max-width:none;max-height:none;inset:0;margin:0;padding:16px;box-sizing:border-box;overflow:auto;border:0;background:#0a1521e0;color:var(--ink)}
 dialog.mission-complete[open]{display:grid}
 .mission-complete section {width:min(100%,380px);box-sizing:border-box;margin:auto;padding:clamp(16px,4vh,32px);background:var(--card-face);box-shadow:var(--housing);border:2px solid var(--steel-rim);border-top:4px solid var(--amber);border-radius:8px;text-align:center}
