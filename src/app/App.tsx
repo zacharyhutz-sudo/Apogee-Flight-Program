@@ -99,6 +99,7 @@ export default function App() {
 
   const host = useRef<HTMLElement>(null);
   const rocketCam = useRef<Camera | null>(null);
+  const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
   const mapCam = useRef<Camera | null>(null);
   const [mapEntry, setMapEntry] = useState<number | null>(null);
   const [mapKey, remountMap] = useState(0);
@@ -501,7 +502,7 @@ export default function App() {
         </div>
         {(!active || mapVisited) && <div className={"orbital-layer" + (active ? " leaving" : "")}
           hidden={active && !fading} aria-hidden={active} inert={active}>
-          <OrbitalMap key={mapKey} s={s} entry={mapEntry} camera={mapCam} trackingLevel={trackingLevel}
+          <OrbitalMap key={mapKey} toolbar={active ? null : toolbar} s={s} entry={mapEntry} camera={mapCam} trackingLevel={trackingLevel}
             onOpenFlight={() => { rocketCam.current?.setZoom?.(0.32); toggleView(false); }} />
         </div>}
         <div className="shade" aria-hidden="true" />
@@ -686,11 +687,13 @@ export default function App() {
               );
             })()}
 
+          <div className="camera-row" ref={setToolbar}>
           {active && <div className="rocket-camera" aria-label="Rocket camera" role="group">
             <button aria-label="Zoom out" onClick={() => rocketCam.current?.step?.(-1)}><Minus /></button>
             <button aria-label="Zoom in" onClick={() => rocketCam.current?.step?.(1)}><Plus /></button>
             <button aria-label="Recenter rocket" onClick={() => rocketCam.current?.reset()}><LocateFixed /></button>
           </div>}
+          </div>
           {isRealContract ? (
             <div className="contract-briefing">
               <section className="contract-checklist" aria-label="Active contract">

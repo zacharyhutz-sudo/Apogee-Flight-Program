@@ -20,6 +20,18 @@ export function useZoomInput(host: RefObject<HTMLElement | null>, enabled: boole
     const points = new Map<number,Point>();
     let span = 0;
     let pinching = false;
+    function clearGesture() {
+      for (const id of points.keys()) {
+        if (el!.hasPointerCapture(id)) el!.releasePointerCapture(id);
+      }
+      points.clear();
+      pinching = false;
+      span = 0;
+    }
+    function lostCapture(e: PointerEvent) {
+      // A transfer from a steering button to the viewport also bubbles here.
+      if (e.target === el && points.has(e.pointerId)) clearGesture();
+    }
     function distance() {
       const [a,b] = [...points.values()];
       return Math.hypot(a[0]-b[0],a[1]-b[1]);
@@ -31,7 +43,13 @@ export function useZoomInput(host: RefObject<HTMLElement | null>, enabled: boole
       callbacks.current.stopSteer();
       pinching = true;
       span = distance();
-      for (const id of points.keys()) el!.setPointerCapture(id);
+      try {
+        for (const id of points.keys()) el!.setPointerCapture(id);
+      } catch {
+        // The browser can cancel a contact between down and capture.
+        clearGesture();
+        return;
+      }
       e.stopPropagation();
       e.preventDefault();
     }
@@ -61,12 +79,19 @@ export function useZoomInput(host: RefObject<HTMLElement | null>, enabled: boole
       callbacks.current.zoom(Math.exp(-Math.max(-320,Math.min(320,e.deltaY*unit))*0.0025),
         e.clientX-rect.left,e.clientY-rect.top);
     }
+    el.addEventListener("lostpointercapture",lostCapture);
+    window.addEventListener("blur",clearGesture);
+    document.addEventListener("visibilitychange",clearGesture);
     el.addEventListener("pointerdown",down,true);
     window.addEventListener("pointermove",move,true);
     window.addEventListener("pointerup",up,true);
     window.addEventListener("pointercancel",up,true);
     el.addEventListener("wheel",wheel,{capture:true,passive:false});
     return () => {
+      el.removeEventListener("lostpointercapture",lostCapture);
+      window.removeEventListener("blur",clearGesture);
+      document.removeEventListener("visibilitychange",clearGesture);
+      clearGesture();
       el.removeEventListener("pointerdown",down,true);
       window.removeEventListener("pointermove",move,true);
       window.removeEventListener("pointerup",up,true);

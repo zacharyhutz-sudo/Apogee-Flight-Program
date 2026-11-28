@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import { visibleDisc } from "./visibleDisc";
 import { boundary, mapScale, type Camera } from "../flightCamera";
 import { useLayoutEffect, useRef, type RefObject, useState, type PointerEvent } from "react";
 import {
@@ -19,10 +21,11 @@ type MapFocus = "body" | "ship" | "moon";
 export function OrbitalMap({
   s,
   trackingLevel = 1,
-  onOpenFlight, entry, camera,
+  onOpenFlight, entry, camera, toolbar,
 }: {
   s: Flight;
   trackingLevel?: number;
+  toolbar: HTMLElement | null;
   onOpenFlight: () => void;
   entry: number | null;
   camera: RefObject<Camera | null>;
@@ -64,6 +67,7 @@ export function OrbitalMap({
     const rawNext = curZ * factor;
     const limit = mapScale(size.w,size.h,bp.R,boundary * 1.3);
     const following = focusRef.current === "ship" && Math.hypot(...panRef.current) < 24;
+    if (!Number.isFinite(rawNext) || rawNext <= 0) return;
     if (rawNext >= limit && factor > 1 && following) {
       openFlightRef.current();
       return;
@@ -112,6 +116,16 @@ export function OrbitalMap({
   const anchorY = size.h * (0.49 + (s.status === "pad" ? 0.13 : 0.05)*blend);
   const oy = anchorY + pan[1] + focusY * scale;
   const point = (x: number, y: number) => [ox + y * scale, oy - x * scale];
+  const renderLimit = 3 * Math.max(size.w,size.h);
+  const pivotX = size.w/2 + pan[0], pivotY = anchorY + pan[1];
+  const radians = angle*Math.PI/180;
+  function largeDisc(x: number,y: number,r: number,fill: string) {
+    const dx = x-pivotX, dy = y-pivotY;
+    const path = visibleDisc(pivotX+dx*Math.cos(radians)-dy*Math.sin(radians),
+      pivotY+dx*Math.sin(radians)+dy*Math.cos(radians), r,size.w,size.h);
+    return path ? <path transform={`rotate(${-angle} ${pivotX} ${pivotY})`} d={path} fill={fill}/> : null;
+  }
+  const detailedBody = (bp.R+bp.AIR)*scale <= renderLimit;
   const pts: string[] = [];
   let previousVisible = false;
 
@@ -227,18 +241,21 @@ export function OrbitalMap({
               strokeWidth=".45"
             />
           </pattern>
-          <clipPath id="earth">
+          {detailedBody && <clipPath id="earth">
             <circle cx={ox} cy={oy} r={D * zoom} />
-          </clipPath>
+          </clipPath>}
         </defs>
         <rect
-          x="-3000"
-          y="-2000"
-          width="6000"
-          height="4000"
+          width={size.w}
+          height={size.h}
           fill="url(#grid)"
         />
         <g transform={`rotate(${angle} ${size.w/2+pan[0]} ${anchorY+pan[1]})`}>
+        {!detailedBody && <>
+          {!isMoon && largeDisc(ox,oy,(bp.R+bp.AIR)*scale,"#406777")}
+          {largeDisc(ox,oy,bp.R*scale,isMoon ? "#646d77" : "#203e50")}
+        </>}
+        {detailedBody && <>
         {!isMoon && (
           <circle
             cx={ox}
@@ -274,6 +291,7 @@ export function OrbitalMap({
             />
           ))}
         </g>
+        </>}
         {zoom < 3 && focus === "body" && (
           <text x={ox} y={oy + 4} textAnchor="middle" className="earth-label">
             {isMoon ? "MOON" : "EARTH"}
@@ -281,6 +299,7 @@ export function OrbitalMap({
         )}
         {isMoon && (() => {
           const [ex,ey] = point(-moonPos.x,-moonPos.y);
+          if (R*scale > renderLimit) return largeDisc(ex,ey,R*scale,"#335e6a");
           return <g><circle cx={ex} cy={ey} r={Math.max(4,R*scale)} fill="#335e6a" />
             <text x={ex+R*scale+5} y={ey}>EARTH</text></g>;
         })()}
@@ -288,30 +307,30 @@ export function OrbitalMap({
           const [mx, my] = point(moonPos.x, moonPos.y);
           return (
             <g>
-              <circle
+              {MOON_ORBIT_R*scale <= renderLimit && <circle
                 cx={ox}
                 cy={oy}
                 r={MOON_ORBIT_R * scale}
                 fill="none"
                 stroke="#8ea3b044"
                 strokeDasharray="4 4"
-              />
-              <circle
+              />}
+              {MOON_SOI*scale <= renderLimit ? <circle
                 cx={mx}
                 cy={my}
                 r={MOON_SOI * scale}
                 fill="#a79cf514"
                 stroke="#a79cf588"
                 strokeDasharray="3 3"
-              />
-              <circle
+              /> : largeDisc(mx,my,MOON_SOI*scale,"#a79cf514")}
+              {MOON_R*scale <= renderLimit ? <circle
                 cx={mx}
                 cy={my}
                 r={Math.max(3.5, MOON_R * scale)}
                 fill="#bfc6ce"
                 stroke="#f6f1e3"
                 strokeWidth="0.9"
-              />
+              /> : largeDisc(mx,my,MOON_R*scale,"#bfc6ce")}
               <text x={mx + Math.max(6, MOON_R * scale + 4)} y={my + 3}>
                 MOON
               </text>
@@ -362,17 +381,22 @@ export function OrbitalMap({
         </g>
       </svg>
 
+      {toolbar && createPortal(<>
+      <div className="map-readouts">
+      <span className="map-selection">{focusLabel} · {zoom.toFixed(1)}×</span>
       <div
         className={"tracking-slot" + (hasManeuverSlot ? " unlocked" : "")}
+        title={hasManeuverSlot ? "Sphere of influence tracking active" : "Tracking Station level 2 required"}
         aria-label="Tracking Station status"
       >
         {hasManeuverSlot ? <Radar size={12} /> : <Lock size={12} />}
         <span>
-          {hasManeuverSlot ? "SOI Tracking Active" : "Tracking Lv 2"}
+          {hasManeuverSlot ? "SOI tracking" : "Tracking Lv 2"}
         </span>
       </div>
 
-      <div className="map-tools">
+      </div>
+      <div className="map-tools" role="group" aria-label="Map camera">
         <button
           className="map-zoom-btn"
           aria-label="Zoom in"
@@ -426,9 +450,7 @@ export function OrbitalMap({
           </button>
         )}
       </div>
-      <span className="map-selection">
-        {focusLabel} · {zoom.toFixed(1)}×
-      </span>
+      </>, toolbar)}
     </div>
   );
 }

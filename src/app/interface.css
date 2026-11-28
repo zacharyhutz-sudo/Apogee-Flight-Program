@@ -249,11 +249,18 @@ dialog[data-tone="warning"] > button { width: 100%; }
 .orbital-layer.leaving {opacity:0; pointer-events:none}
 @keyframes map-enter {from {opacity:0}}
 @media(prefers-reduced-motion:reduce){.orbital-layer{animation:none;transition:none}}
-.rocket-camera {position:absolute; z-index:2; right:0; top:45%; display:grid; gap:2px}
-.rocket-camera button,.map-tools button {display:grid;place-items:center;width:44px;height:44px;padding:0}
-.map-view .map-tools {top:auto;bottom:calc(var(--b) + 88px)}
-.map-view .map-selection {top:auto;bottom:calc(var(--b) + 136px)}
-.map-view .tracking-slot {top:auto;bottom:calc(var(--b) + 92px)}
+.camera-row { position:relative; z-index:2; display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:5px; }
+.camera-row .rocket-camera, .camera-row .map-tools { position:static; display:flex; gap:2px; flex:none; }
+.camera-row button { display:grid; place-items:center; width:44px; height:44px; padding:0; }
+.map-readouts { min-width:0; margin-right:auto; display:grid; gap:3px; }
+.camera-row .map-selection, .camera-row .tracking-slot { position:static; min-width:0; max-width:100%; text-align:left; }
+.camera-row .map-selection { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--ink); }
+.camera-row .tracking-slot { border:0; background:none; padding:0; }
+@media (orientation:landscape) and (max-height:510px) {
+  .camera-row { float:right; margin-left:8px; }
+  .map-readouts { max-width:100px; }
+  .contract-briefing { overflow:hidden; }
+}
 .map-view .contract-briefing {position:relative;z-index:1}
 .contract-checklist h2 button {border:0;background:none;box-shadow:none;padding:0;display:flex;align-items:center;justify-content:space-between;gap:9px;color:inherit;font:inherit;min-height:30px}
 .contract-checklist [aria-expanded=true] svg {transform:rotate(180deg)}
@@ -268,4 +275,4 @@ dialog.mission-complete[open]{display:grid}
 .mission-complete dd {margin:0;color:var(--teal);font:700 20px var(--font-mono)}
 .mission-complete button {width:100%;min-height:44px;margin:4px 0}
 .mission-complete small {display:block;color:#c9d9df}
-@media(max-height:510px){.rocket-camera{display:flex;top:50%}.map-view .tracking-slot{display:none}}
+
