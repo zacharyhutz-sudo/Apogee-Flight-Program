@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 
-export type Camera = { zoom(factor: number, x?: number, y?: number): void; step?(dir: -1 | 1): void; setZoom?(value: number): void; reset(): void };
+export type Camera = { zoom(factor: number, x?: number, y?: number): void; step?(dir: -1 | 1): void; setZoom?(value: number): void; cancelDrag?(): void; reset(): void };
 export const boundary = 0.24;
 export function mapScale(w: number, h: number, radius: number, rocketZoom: number) {
   return Math.min(w,h) / 215 * rocketZoom * radius / Math.min(w * 0.32,h * 0.29);
@@ -8,9 +8,9 @@ export function mapScale(w: number, h: number, radius: number, rocketZoom: numbe
 
 // Track touches on the persistent viewport so a pinch survives a renderer change.
 export function useZoomInput(host: RefObject<HTMLElement | null>, enabled: boolean,
-  zoom: Camera["zoom"], stopSteer: () => void) {
-  const callbacks = useRef({zoom, stopSteer});
-  callbacks.current = {zoom, stopSteer};
+  zoom: Camera["zoom"], onPinchStart: () => void) {
+  const callbacks = useRef({zoom, onPinchStart});
+  callbacks.current = {zoom, onPinchStart};
   useEffect(() => {
     const el = host.current;
     if (!enabled || !el) return;
@@ -40,7 +40,7 @@ export function useZoomInput(host: RefObject<HTMLElement | null>, enabled: boole
       if (e.pointerType !== "touch" || excluded(e.target)) return;
       points.set(e.pointerId,[e.clientX,e.clientY]);
       if (points.size < 2) return;
-      callbacks.current.stopSteer();
+      callbacks.current.onPinchStart();
       pinching = true;
       span = distance();
       try {

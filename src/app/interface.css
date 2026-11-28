@@ -249,6 +249,13 @@ dialog[data-tone="warning"] > button { width: 100%; }
 .orbital-layer.leaving {opacity:0; pointer-events:none}
 @keyframes map-enter {from {opacity:0}}
 @media(prefers-reduced-motion:reduce){.orbital-layer{animation:none;transition:none}}
+.topline nav .view-switch {
+  flex-direction: column;
+  gap: 2px;
+  font: 700 9px/1 var(--font-ui);
+  text-transform: uppercase;
+}
+.topline nav .view-switch svg { width: 16px; height: 16px; }
 .camera-row { position:relative; z-index:2; display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-top:5px; }
 .camera-row .rocket-camera, .camera-row .map-tools { position:static; display:flex; gap:2px; flex:none; }
 .camera-row button { display:grid; place-items:center; width:44px; height:44px; padding:0; }

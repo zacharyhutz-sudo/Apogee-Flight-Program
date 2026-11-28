@@ -115,7 +115,10 @@ export default function App() {
   }, [inFlight, active]);
   useZoomInput(host, inFlight && !dialog && !s.completion,
     (factor,x,y) => (m.mission.view === "map" ? mapCam : rocketCam).current?.zoom(factor,x,y),
-    () => stopSteer());
+    () => {
+      mapCam.current?.cancelDrag?.();
+      stopSteer();
+    });
   useEffect(() => { if (s.completion) stopSteer(); }, [s.completion]);
 
   const pad = s.status === "pad",
@@ -164,14 +167,17 @@ export default function App() {
   }
 
   function toggleView(map: boolean, matched?: number) {
-    if (s.completion) return;
+    const nextView = map ? "map" : "flight";
+    if (s.completion || m.mission.view === nextView) return;
+    stopSteer();
+    mapCam.current?.cancelDrag?.();
     fade(!matchMedia("(prefers-reduced-motion: reduce)").matches);
     if (map && (matched !== undefined || mapEntry !== null || !mapVisited)) {
       setMapEntry(matched ?? null);
       remountMap(n => n+1);
     }
     m.change(() => {
-      m.mission.view = map ? "map" : "flight";
+      m.mission.view = nextView;
     });
   }
 
@@ -197,7 +203,7 @@ export default function App() {
   }
 
   function startSteer(dir: -1 | 1, e: React.PointerEvent<HTMLButtonElement>) {
-    if (!canSteer) return;
+    if (!canSteer || e.button !== 0) return;
     e.preventDefault();
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -507,7 +513,7 @@ export default function App() {
         </div>}
         <div className="shade" aria-hidden="true" />
         <div className="hud">
-          {active && flying && (
+          {flying && (
             <>
               <button
                 type="button"
@@ -519,6 +525,7 @@ export default function App() {
                 aria-label="Hold to pitch left"
                 disabled={!canSteer}
                 onPointerDown={(e) => startSteer(-1, e)}
+                onClick={(e) => { if (e.detail === 0) pitch(s.pitch - 2); }}
                 onPointerUp={stopSteer}
                 onPointerCancel={stopSteer}
                 onLostPointerCapture={() => stopSteer()}
@@ -537,6 +544,7 @@ export default function App() {
                 aria-label="Hold to pitch right"
                 disabled={!canSteer}
                 onPointerDown={(e) => startSteer(1, e)}
+                onClick={(e) => { if (e.detail === 0) pitch(s.pitch + 2); }}
                 onPointerUp={stopSteer}
                 onPointerCancel={stopSteer}
                 onLostPointerCapture={() => stopSteer()}
@@ -595,12 +603,13 @@ export default function App() {
             </div>
             <nav aria-label="Flight views and tools">
               <button
-                className={!active ? "selected" : ""}
+                className={"view-switch" + (!active ? " selected" : "")}
                 aria-label={active ? "Orbital map" : "Flight view"}
-                title={active ? "Orbital map" : "Flight view"}
+                title={active ? "Open orbital map" : "Return to rocket view"}
                 onClick={() => toggleView(active)}
               >
                 {active ? <Orbit /> : <Rocket />}
+                <span aria-hidden="true">{active ? "Map" : "Rocket"}</span>
               </button>
               {flying && (
                 <button
@@ -623,14 +632,14 @@ export default function App() {
           </header>
 
           {(!pad || !active) && (
-            <div className={"telemetry" + (active && !pad ? " telemetry-flight" : "")}>
+            <div className={"telemetry" + (!pad ? " telemetry-flight" : "")}>
               {m.alt < 1000 ? instrument("ALT", String(Math.round(m.alt)), "m") : instrument("ALT", distance(m.alt), "km")}
               {instrument(
                 "VEL",
                 Math.round(speed(s)).toLocaleString("en-US"),
                 "m/s",
               )}
-              {active &&
+              {!pad &&
                 instrument(
                   s.chuteDeployed ? "CHUTE" : "PITCH",
                   s.chuteDeployed ? "LOCK" : `${Math.round(s.pitch)}°`,

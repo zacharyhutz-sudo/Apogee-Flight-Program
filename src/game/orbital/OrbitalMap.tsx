@@ -37,8 +37,7 @@ export function OrbitalMap({
 
   const D = Math.min(size.w * 0.32, size.h * 0.29);
   const svg = useRef<SVGSVGElement>(null);
-  const fingers = useRef(new Map<number, [number, number]>());
-  const moved = useRef(false);
+  const drag = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null);
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
   const focusRef = useRef(focus);
@@ -88,6 +87,7 @@ export function OrbitalMap({
 
   useLayoutEffect(() => {
     camera.current = { zoom: (factor,x = size.w/2,y = size.h*0.49) => zoomAround(factor,x,y),
+      cancelDrag() { drag.current = null; },
       reset() { setFocus("body"); P([0,0]); Z(1); } };
     return () => { camera.current = null; };
   });
@@ -155,19 +155,40 @@ export function OrbitalMap({
   }
 
   const [cx, cy] = point(s.x, s.y);
-  const handle = (e: PointerEvent<SVGSVGElement>) => {
-    if (!fingers.current.has(e.pointerId)) return;
-    const old = fingers.current.get(e.pointerId)!;
-    const units = 1 / (svg.current?.getScreenCTM()?.a || 1);
-    const dx = (e.clientX - old[0]) * units;
-    const dy = (e.clientY - old[1]) * units;
-    if (Math.abs(dx) + Math.abs(dy) > 1) moved.current = true;
-    fingers.current.set(e.pointerId, [e.clientX, e.clientY]);
-    if (fingers.current.size === 1) P(cur => [cur[0]+dx,cur[1]+dy]);
-  };
+  function startDrag(e: PointerEvent<SVGSVGElement>) {
+    if (e.button !== 0) return;
+    drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
 
-  function release(e: PointerEvent<SVGSVGElement>) {
-    fingers.current.delete(e.pointerId);
+  function moveDrag(e: PointerEvent<SVGSVGElement>) {
+    const pointer = drag.current;
+    if (pointer?.id !== e.pointerId) return;
+    const dx = e.clientX - pointer.x;
+    const dy = e.clientY - pointer.y;
+    if (!pointer.moved && Math.hypot(dx, dy) < 3) return;
+    pointer.moved = true;
+    pointer.x = e.clientX;
+    pointer.y = e.clientY;
+    const units = 1 / (e.currentTarget.getScreenCTM()?.a || 1);
+    P(cur => [cur[0] + dx * units, cur[1] + dy * units]);
+  }
+
+  function cancelDrag(e: PointerEvent<SVGSVGElement>) {
+    if (drag.current?.id === e.pointerId) drag.current = null;
+  }
+
+  function endDrag(e: PointerEvent<SVGSVGElement>) {
+    const pointer = drag.current;
+    if (pointer?.id !== e.pointerId) return;
+    cancelDrag(e);
+    const matrix = e.currentTarget.getScreenCTM();
+    if (pointer.moved || !matrix) return;
+    const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(matrix.inverse());
+    if (Math.hypot(pt.x - cx, pt.y - cy) < 22) {
+      setFocus("ship");
+      P([0, 0]);
+    }
   }
 
   const marker = (name: string, x: number, y: number) => {
@@ -201,26 +222,11 @@ export function OrbitalMap({
         ref={svg}
         viewBox={`0 0 ${size.w} ${size.h}`}
         aria-label="Live orbital map"
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          moved.current = false;
-          fingers.current.set(e.pointerId, [e.clientX, e.clientY]);
-        }}
-        onPointerMove={handle}
-        onPointerUp={(e) => {
-          if (!moved.current) {
-            const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(
-              svg.current!.getScreenCTM()!.inverse(),
-            );
-            if (Math.hypot(pt.x - cx, pt.y - cy) < 22) {
-              setFocus("ship");
-              P([0, 0]);
-            }
-          }
-          release(e);
-        }}
-        onPointerCancel={release}
-        onLostPointerCapture={release}
+        onPointerDown={startDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={cancelDrag}
+        onLostPointerCapture={e => { if (e.target === e.currentTarget) cancelDrag(e); }}
       >
         <defs>
           <radialGradient id="world" cx=".35" cy=".25" r=".9">
@@ -250,7 +256,7 @@ export function OrbitalMap({
           height={size.h}
           fill="url(#grid)"
         />
-        <g transform={`rotate(${angle} ${size.w/2+pan[0]} ${anchorY+pan[1]})`}>
+        <g pointerEvents="none" transform={`rotate(${angle} ${size.w/2+pan[0]} ${anchorY+pan[1]})`}>
         {!detailedBody && <>
           {!isMoon && largeDisc(ox,oy,(bp.R+bp.AIR)*scale,"#406777")}
           {largeDisc(ox,oy,bp.R*scale,isMoon ? "#646d77" : "#203e50")}

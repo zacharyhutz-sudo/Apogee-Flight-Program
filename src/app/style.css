@@ -292,9 +292,8 @@ nav button,
 }
 /* In Map View, shrink steer zones to compact edge buttons so map panning stays free */
 .map-view .steer-zone {
-  top: 50%;
+  top: calc(57% - 22px);
   bottom: auto;
-  transform: translateY(-50%);
   width: 44px;
   height: 44px;
   padding: 0;
@@ -530,9 +529,11 @@ button.primary:enabled:active {
   background: radial-gradient(ellipse at center, #142230, #0b121b);
 }
 .orbital > svg {
+  cursor: grab;
   touch-action: none;
   user-select: none;
 }
+.orbital > svg:active { cursor: grabbing; }
 .orbital svg text {
   fill: #c2ebe0;
   font: 700 11px var(--font-mono);
@@ -810,9 +811,12 @@ dialog ol {
     width: 24%;
   }
   .map-view .steer-zone {
-    top: 50%;
-    bottom: auto;
+    top: auto;
+    bottom: 0;
+    z-index: 3;
   }
+  .map-view .steer-left { left: 64px; }
+  .map-view .steer-right { left: 112px; right: auto; }
 }
 
 /* Cloud Save panel */
