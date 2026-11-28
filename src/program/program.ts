@@ -2195,6 +2195,10 @@ export function settle(p: Program, f: Flight): string {
   p.research = Math.max(0, p.research + booked.research);
   p.rewarded = true;
   const gainedC = p.credits - prevCredits;
+  f.completion = {
+    name: job === "rotating" ? p.activeRotating?.name ?? "Rotating contract" : CONTRACTS[job].name,
+    credits: gainedC, research: booked.research,
+  };
   const capNote = gainedC < totalCredits ? " (capped)" : "";
   if (job === "rotating") {
     const offer = p.activeRotating;

@@ -363,6 +363,11 @@ export function validate(raw: unknown): Snapshot {
     if (!record(pObj.contractCooldowns)) pObj.contractCooldowns = {};
   }
   if (!validProgram(program, f)) return invalid();
+  if (f.launchOrigin !== "moon" && f.launchOrigin !== "earth") delete f.launchOrigin;
+  const result = f.completion;
+  if (!program.rewarded || !program.paid || !result || typeof result.name !== "string" ||
+      !Number.isFinite(result.credits) || result.credits < 0 ||
+      !Number.isFinite(result.research) || result.research < 0) delete f.completion;
 
   return {
     version: 7,

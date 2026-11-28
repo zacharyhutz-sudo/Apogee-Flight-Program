@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { boundary, mapScale, type Camera } from "../flightCamera";
+import { useLayoutEffect, useRef, type RefObject, useState, type PointerEvent } from "react";
 import {
-  MOON_ORBIT_R,
+  R, MOON_ORBIT_R,
   MOON_R,
   MOON_SOI,
   bodyParams,
@@ -18,21 +19,22 @@ type MapFocus = "body" | "ship" | "moon";
 export function OrbitalMap({
   s,
   trackingLevel = 1,
-  onOpenFlight,
+  onOpenFlight, entry, camera,
 }: {
   s: Flight;
   trackingLevel?: number;
-  onOpenFlight?: () => void;
+  onOpenFlight: () => void;
+  entry: number | null;
+  camera: RefObject<Camera | null>;
 }) {
-  const [zoom, Z] = useState(1);
+  const [zoom, Z] = useState(() => entry ? mapScale(window.innerWidth,window.innerHeight,bodyParams(s.body).R,entry) : 1);
   const [pan, P] = useState<[number, number]>([0, 0]);
-  const [focus, setFocus] = useState<MapFocus>("body");
-  const [size, setSize] = useState({ w: 520, h: 286 });
+  const [focus, setFocus] = useState<MapFocus>(entry ? "ship" : "body");
+  const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
 
   const D = Math.min(size.w * 0.32, size.h * 0.29);
   const svg = useRef<SVGSVGElement>(null);
   const fingers = useRef(new Map<number, [number, number]>());
-  const lastSpan = useRef(0);
   const moved = useRef(false);
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
@@ -48,7 +50,10 @@ export function OrbitalMap({
   const moonPos = moonPosition(s.t);
 
   // Auto-frame cleanly whenever SOI changes between Earth and Moon
-  useEffect(() => {
+  const lastBody = useRef(isMoon);
+  useLayoutEffect(() => {
+    if (lastBody.current === isMoon) return;
+    lastBody.current = isMoon;
     setFocus("body");
     P([0, 0]);
     Z(isMoon ? 0.85 : 1);
@@ -57,11 +62,13 @@ export function OrbitalMap({
   function zoomAround(factor: number, anchorX: number, anchorY: number) {
     const curZ = zoomRef.current;
     const rawNext = curZ * factor;
-    if (rawNext > 64 && focusRef.current === "ship" && openFlightRef.current) {
+    const limit = mapScale(size.w,size.h,bp.R,boundary * 1.3);
+    const following = focusRef.current === "ship" && Math.hypot(...panRef.current) < 24;
+    if (rawNext >= limit && factor > 1 && following) {
       openFlightRef.current();
       return;
     }
-    const nextZ = clamp(rawNext, 0.14, 64);
+    const nextZ = clamp(rawNext, 0.015, limit * 1.25);
     const ratio = nextZ / curZ;
     if (ratio === 1) return;
     const [px, py] = panRef.current;
@@ -70,29 +77,26 @@ export function OrbitalMap({
     // Keep the point under (anchorX, anchorY) stationary during zoom
     const nextPx = anchorX - cx0 - (anchorX - cx0 - px) * ratio;
     const nextPy = anchorY - cy0 - (anchorY - cy0 - py) * ratio;
+    zoomRef.current = nextZ;
     Z(nextZ);
-    P([nextPx, nextPy]);
+    if (!following) { panRef.current = [nextPx,nextPy]; P(panRef.current); }
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    camera.current = { zoom: (factor,x = size.w/2,y = size.h*0.49) => zoomAround(factor,x,y),
+      reset() { setFocus("body"); P([0,0]); Z(1); } };
+    return () => { camera.current = null; };
+  });
+  useLayoutEffect(() => {
     const el = svg.current!;
-    const observer = new ResizeObserver(() =>
-      setSize({ w: el.clientWidth, h: el.clientHeight }),
-    );
-    observer.observe(el);
-    function wheel(e: WheelEvent) {
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const ax = e.clientX - rect.left;
-      const ay = e.clientY - rect.top;
-      zoomAround(Math.exp(-e.deltaY * 0.002), ax, ay);
-    }
-    el.addEventListener("wheel", wheel, { passive: false });
-    return () => {
-      observer.disconnect();
-      el.removeEventListener("wheel", wheel);
+    const measure = () => {
+      if (el.clientWidth && el.clientHeight) setSize({ w:el.clientWidth, h:el.clientHeight });
     };
-  }, [size.w, size.h]);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const o = orbit(s);
   const scale = (D * zoom) / bp.R;
@@ -103,7 +107,10 @@ export function OrbitalMap({
     focus === "ship" ? s.x : focus === "moon" && !isMoon ? moonPos.x : 0;
 
   const ox = size.w / 2 + pan[0] - focusX * scale;
-  const oy = size.h * 0.49 + pan[1] + focusY * scale;
+  const blend = focus === "ship" ? clamp(Math.log(zoom / mapScale(size.w,size.h,bp.R,boundary/12)) / Math.log(12),0,1) : 0;
+  const angle = -Math.atan2(s.y,s.x) * blend * 180 / Math.PI;
+  const anchorY = size.h * (0.49 + (s.status === "pad" ? 0.13 : 0.05)*blend);
+  const oy = anchorY + pan[1] + focusY * scale;
   const point = (x: number, y: number) => [ox + y * scale, oy - x * scale];
   const pts: string[] = [];
   let previousVisible = false;
@@ -142,25 +149,11 @@ export function OrbitalMap({
     const dy = (e.clientY - old[1]) * units;
     if (Math.abs(dx) + Math.abs(dy) > 1) moved.current = true;
     fingers.current.set(e.pointerId, [e.clientX, e.clientY]);
-    if (fingers.current.size === 2) {
-      const [a, b] = [...fingers.current.values()];
-      const span = Math.hypot(a[0] - b[0], a[1] - b[1]);
-      const previous = lastSpan.current;
-      if (previous > 0 && span > 0) {
-        const rect = svg.current!.getBoundingClientRect();
-        const midX = (a[0] + b[0]) / 2 - rect.left;
-        const midY = (a[1] + b[1]) / 2 - rect.top;
-        zoomAround(span / previous, midX, midY);
-      }
-      lastSpan.current = span;
-    } else {
-      P((cur) => [cur[0] + dx, cur[1] + dy]);
-    }
+    if (fingers.current.size === 1) P(cur => [cur[0]+dx,cur[1]+dy]);
   };
 
   function release(e: PointerEvent<SVGSVGElement>) {
     fingers.current.delete(e.pointerId);
-    lastSpan.current = 0;
   }
 
   const marker = (name: string, x: number, y: number) => {
@@ -213,6 +206,7 @@ export function OrbitalMap({
           release(e);
         }}
         onPointerCancel={release}
+        onLostPointerCapture={release}
       >
         <defs>
           <radialGradient id="world" cx=".35" cy=".25" r=".9">
@@ -244,6 +238,7 @@ export function OrbitalMap({
           height="4000"
           fill="url(#grid)"
         />
+        <g transform={`rotate(${angle} ${size.w/2+pan[0]} ${anchorY+pan[1]})`}>
         {!isMoon && (
           <circle
             cx={ox}
@@ -284,6 +279,11 @@ export function OrbitalMap({
             {isMoon ? "MOON" : "EARTH"}
           </text>
         )}
+        {isMoon && (() => {
+          const [ex,ey] = point(-moonPos.x,-moonPos.y);
+          return <g><circle cx={ex} cy={ey} r={Math.max(4,R*scale)} fill="#335e6a" />
+            <text x={ex+R*scale+5} y={ey}>EARTH</text></g>;
+        })()}
         {!isMoon && (() => {
           const [mx, my] = point(moonPos.x, moonPos.y);
           return (
@@ -319,6 +319,7 @@ export function OrbitalMap({
           );
         })()}
         <path
+          opacity={1 - blend * 0.8}
           d={pts.join(" ")}
           fill="none"
           stroke="#8fdacf"
@@ -357,6 +358,7 @@ export function OrbitalMap({
             fill="#ffc287"
             transform={`rotate(${((headingVector(s).angle * 180) / Math.PI).toFixed(2)})`}
           />
+        </g>
         </g>
       </svg>
 

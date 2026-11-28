@@ -1,5 +1,7 @@
 import { flightPrompt } from "./miloFlight";
 import { MiloGuide } from "./MiloGuide";
+import { MissionComplete } from "./MissionComplete";
+import { useZoomInput, type Camera } from "../game/flightCamera";
 import { Dialog } from "./Dialog";
 import { CloudSyncPanel } from "./CloudSyncPanel";
 import { LaunchSite } from "./LaunchSite";
@@ -9,7 +11,7 @@ import { SoundingReport } from "./SoundingReport";
 import { CONTRACTS, activeContractInfo, contractTasks, level, type ContractTask } from "../program/program";
 import { useEffect, useRef, useState } from "react";
 import {
-  ChevronLeft,
+  Minus, Plus, LocateFixed, ChevronDown, ChevronLeft,
   ChevronRight,
   Menu,
   FastForward,
@@ -95,6 +97,26 @@ export default function App() {
   const upload = useRef<HTMLInputElement>(null),
     backup = useRef<ReturnType<typeof validate> | null>(null);
 
+  const host = useRef<HTMLElement>(null);
+  const rocketCam = useRef<Camera | null>(null);
+  const mapCam = useRef<Camera | null>(null);
+  const [mapEntry, setMapEntry] = useState<number | null>(null);
+  const [mapKey, remountMap] = useState(0);
+  const [collapsed, collapse] = useState(false);
+  const [mapVisited, visitMap] = useState(false);
+  const [fading, fade] = useState(false);
+  const inFlight = active || m.mission.view === "map";
+  useEffect(() => {
+    if (!inFlight) { visitMap(false); setMapEntry(null); collapse(false); }
+    if (!active && inFlight) visitMap(true);
+    const id = setTimeout(() => fade(false), 170);
+    return () => clearTimeout(id);
+  }, [inFlight, active]);
+  useZoomInput(host, inFlight && !dialog && !s.completion,
+    (factor,x,y) => (m.mission.view === "map" ? mapCam : rocketCam).current?.zoom(factor,x,y),
+    () => stopSteer());
+  useEffect(() => { if (s.completion) stopSteer(); }, [s.completion]);
+
   const pad = s.status === "pad",
     flying = s.status === "flying",
     ended = !pad && !flying,
@@ -140,7 +162,13 @@ export default function App() {
     D(name);
   }
 
-  function toggleView(map: boolean) {
+  function toggleView(map: boolean, matched?: number) {
+    if (s.completion) return;
+    fade(!matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (map && (matched !== undefined || mapEntry !== null || !mapVisited)) {
+      setMapEntry(matched ?? null);
+      remountMap(n => n+1);
+    }
     m.change(() => {
       m.mission.view = map ? "map" : "flight";
     });
@@ -267,7 +295,7 @@ export default function App() {
   useEffect(() => {
     function key(e: KeyboardEvent) {
       if (
-        dialog ||
+        dialog || m.vessel.current.completion ||
         m.mission.view === "site" ||
         m.mission.view === "workshop" ||
         m.mission.view === "lunar" ||
@@ -386,7 +414,7 @@ export default function App() {
           ? "Stage"
           : primaryLabel();
 
-  const radio = m.loaded && !dialog ? flightPrompt(m.mission, m.paused) : null;
+  const radio = m.loaded && !dialog && !s.completion ? flightPrompt(m.mission, m.paused) : null;
   const radioMessage = radio && (
     <div className="flight-milo">
       <MiloGuide
@@ -464,19 +492,21 @@ export default function App() {
 
   return (
     <>
-      <main
+      <main ref={host}
         className={"game " + (active ? "range-view" : "map-view")}
         aria-label="Pioneer 01 flight simulator"
       >
-        <div className="scene-wrap" hidden={!active}>
-          <FlightScene vessel={m.vessel} onOpenMap={() => toggleView(true)} />
+        <div className="scene-wrap" hidden={!active && !fading} aria-hidden={!active}>
+          <FlightScene vessel={m.vessel} camera={rocketCam} onOpenMap={z => toggleView(true,z)} />
         </div>
-        {!active && (
-          <OrbitalMap s={s} trackingLevel={trackingLevel} onOpenFlight={() => toggleView(false)} />
-        )}
+        {(!active || mapVisited) && <div className={"orbital-layer" + (active ? " leaving" : "")}
+          hidden={active && !fading} aria-hidden={active} inert={active}>
+          <OrbitalMap key={mapKey} s={s} entry={mapEntry} camera={mapCam} trackingLevel={trackingLevel}
+            onOpenFlight={() => { rocketCam.current?.setZoom?.(0.32); toggleView(false); }} />
+        </div>}
         <div className="shade" aria-hidden="true" />
         <div className="hud">
-          {flying && (
+          {active && flying && (
             <>
               <button
                 type="button"
@@ -656,11 +686,17 @@ export default function App() {
               );
             })()}
 
-          {active && isRealContract ? (
+          {active && <div className="rocket-camera" aria-label="Rocket camera" role="group">
+            <button aria-label="Zoom out" onClick={() => rocketCam.current?.step?.(-1)}><Minus /></button>
+            <button aria-label="Zoom in" onClick={() => rocketCam.current?.step?.(1)}><Plus /></button>
+            <button aria-label="Recenter rocket" onClick={() => rocketCam.current?.reset()}><LocateFixed /></button>
+          </div>}
+          {isRealContract ? (
             <div className="contract-briefing">
               <section className="contract-checklist" aria-label="Active contract">
-                <h2>{contractInfo!.name}</h2>
-                <ul>
+                <h2><button aria-expanded={!collapsed} aria-controls="flight-tasks" onClick={() => collapse(!collapsed)}>
+                  {contractInfo!.name}<ChevronDown size={12} /></button></h2>
+                <ul id="flight-tasks" hidden={collapsed}>
                   {objectives.map(task => (
                     <li key={task.name}>
                       <span role="checkbox" aria-readonly="true" aria-checked={task.done} aria-label={task.name}>
@@ -823,10 +859,11 @@ export default function App() {
           </div>
         </div>
 
-        {!(active && isRealContract) && flightNotice}
+        {!isRealContract && flightNotice}
       </main>
 
-      {dialog && (
+      {s.completion && <MissionComplete flight={s} choose={base => { D(""); m.finishCompletion(base); }} />}
+      {dialog && !s.completion && (
         <Dialog
           tone={["reset", "import", "stage"].includes(dialog) ? "warning" : undefined}
           title={

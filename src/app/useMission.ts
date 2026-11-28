@@ -101,7 +101,7 @@ export function useMission() {
     mission.current = data;
     vessel.current = data.flight;
     rate.current = 1;
-    paused.current = data.flight.status === "flying";
+    paused.current = Boolean(data.flight.completion) || data.flight.status === "flying";
     refresh();
   }
 
@@ -261,6 +261,7 @@ export function useMission() {
     change((s) => {
       s.status = "flying";
       paused.current = false;
+      s.launchOrigin = s.body ?? "earth";
     }, costNote);
   }
 
@@ -478,7 +479,23 @@ export function useMission() {
     }
   }
 
+  function finishCompletion(toBase: boolean) {
+    const s = vessel.current;
+    if (!s.completion) return;
+    delete s.completion;
+    rate.current = 1;
+    paused.current = toBase && s.status === "flying";
+    if (toBase) {
+      mission.current.view = s.launchOrigin === "moon" ? "lunar" : "site";
+      setPendingContract(null);
+    }
+    setNotice("");
+    save();
+    refresh();
+  }
+
   function togglePause() {
+    if (vessel.current.completion) return;
     if (vessel.current.status !== "flying") return;
     paused.current = !paused.current;
     rate.current = 1;
@@ -621,6 +638,7 @@ export function useMission() {
     const data = mission.current;
     const f = prepare(data.program, "practice");
     f.body = "moon";
+    f.launchOrigin = "moon";
     f.x = MOON_R;
     f.y = 0;
     f.moonVisited = true;
@@ -730,11 +748,14 @@ export function useMission() {
         const prevFuel = s.fuel[s.stage],
           wasOrbit = s.orbitEarned,
           wasAlt = s.maxAlt;
+        let reward = "";
         acc += dt;
         while (acc + 1e-9 >= STEP && s.status === "flying") {
           if (rate.current > 1 && canChuteWarp(s)) {
             for (let k = 0; k < rate.current && s.status === "flying" && canChuteWarp(s); k++) {
               step(s);
+              reward = settle(program, s);
+              if (reward) break;
             }
             if (!canChuteWarp(s)) rate.current = 1;
           } else if (rate.current > 1) {
@@ -763,6 +784,13 @@ export function useMission() {
               if (left > 1e-8) step(s, left);
             }
           } else step(s);
+          reward ||= settle(program, s);
+          if (reward) {
+            paused.current = true;
+            rate.current = 1;
+            acc = 0;
+            break;
+          }
           acc -= STEP;
         }
         dirty.current = true;
@@ -776,11 +804,11 @@ export function useMission() {
           log(program.warpAlert);
           setNotice(program.warpAlert);
         }
-        const reward = settle(program, s);
+
         let event = Boolean(reward);
         if (reward) {
           log(reward);
-          setNotice(reward);
+          setNotice("");
         }
         if (prevFuel > 0 && s.fuel[s.stage] === 0) {
           log(
@@ -809,7 +837,7 @@ export function useMission() {
           const pilotMsg = resolvePilotFlightOutcome(program, s);
           if (pilotMsg) {
             log(pilotMsg);
-            setNotice(reward ? `${reward} · ${pilotMsg}` : pilotMsg);
+            if (!reward) setNotice(pilotMsg);
           }
           rate.current = 1;
           event = true;
@@ -941,7 +969,7 @@ export function useMission() {
     collectLunarFacility,
     upgradeLunarFacility,
     launchFromMoon,
-    visitSite,
+    visitSite, finishCompletion,
     togglePause,
     warp,
     reset,

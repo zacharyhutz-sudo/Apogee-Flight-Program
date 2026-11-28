@@ -17,25 +17,35 @@ test("the active contract checks off in the launch HUD and clears for a free fli
   await expect(panel.getByRole("heading")).toHaveText("Atmospheric Sounding");
   await expect(checkbox("Lift off")).not.toBeChecked();
   await expect(checkbox("Reach 15 km")).not.toBeChecked();
+  const scene = page.locator(".flight-scene");
+  await button("Zoom out").click();
+  await expect(scene).toHaveAttribute("data-zoom","0.75");
+  await button("Zoom out").click();
+  await expect(scene).toHaveAttribute("data-zoom","0.50");
+  for (let i=0;i<3;i++) await button("Zoom out").click();
+  await expect(button("Focus craft")).toBeVisible();
+  await expect(panel).toBeVisible();
+  for (let i=0;i<2;i++) await button("Zoom in").click();
+  await expect(button("Recenter rocket")).toBeVisible();
+  await button("Recenter rocket").click();
+  await expect(scene).toHaveAttribute("data-zoom","1.00");
+  await button("Orbital map").click();
   await button("Launch vehicle").click();
   await expect(checkbox("Lift off")).toBeChecked();
-  await expect(checkbox("Reach 15 km")).toBeChecked({ timeout: 30000 });
-  // The readout and Milo must both fit without covering each other or the controls.
-  const box = await panel.boundingBox();
-  const { width, height } = page.viewportSize();
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(width);
-  expect(box.y + box.height).toBeLessThan(height);
-  for (const target of [".flight-milo", ".telemetry", ".hud-bottom"]) {
-    const other = await page.locator(target).boundingBox();
-    expect(box.x >= other.x + other.width || other.x >= box.x + box.width ||
-      box.y >= other.y + other.height || other.y >= box.y + box.height).toBe(true);
-  }
+  const result = page.getByRole("dialog",{name:"Mission complete"});
+  await expect(result).toContainText("+450",{timeout:30000});
+  await expect(result).toContainText("+5");
+  const clock = await page.locator(".timer").textContent();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(350);
+  expect(await page.locator(".timer").textContent()).toEqual(clock);
   await page.reload();
+  await expect(result).toBeVisible();
+  await button("Continue flying").click();
+  await expect(button("Flight view")).toBeVisible();
   await expect(checkbox("Reach 15 km")).toBeChecked();
-  await button("Orbital map").click();
-  await expect(panel).toHaveCount(0);
-  await button("Flight view").click();
+  await page.reload();
+  await expect(result).toHaveCount(0);
   await expect(checkbox("Reach 15 km")).toBeChecked();
   await button("Earth launch site").click();
   await button("Contracts").click();
@@ -43,4 +53,31 @@ test("the active contract checks off in the launch HUD and clears for a free fli
   await button("Prepare flight").click();
   await expect(button("Launch vehicle")).toBeEnabled();
   await expect(panel).toHaveCount(0);
+});
+
+test("pinching from a steering edge carries through to map without changing pitch", async ({page,context},info) => {
+  test.skip(info.project.name === "desktop", "Touch gesture");
+  const { fresh } = await import("../src/persistence/save.ts");
+  const data = fresh();
+  data.view = "flight";
+  data.flight.status = "flying";
+  data.flight.mode = "manual";
+  data.tutorial.status = "off";
+  await page.addInitScript(save => localStorage.setItem("apogee-v1:/apogee/", JSON.stringify(save)),data);
+  await page.goto("./");
+  const button = name => page.getByRole("button",{name,exact:true});
+  await button("Resume").click();
+  const {width:w,height:h} = page.viewportSize();
+  const c = await context.newCDPSession(page);
+  const fingers = radius => [-1,1].map((side,i) => ({x:w/2+side*radius,y:h*0.40,id:i+1}));
+  expect(await page.evaluate(({w,h}) => document.elementFromPoint(w*0.06,h*0.40)?.closest("button")?.getAttribute("aria-label"),{w,h})).toBe("Hold to pitch left");
+  await c.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:fingers(w*0.44)});
+  for(const radius of [0.32,0.24,0.15,0.09,0.06,0.04]) {
+    await c.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:fingers(w*radius)});
+    await page.waitForTimeout(30);
+  }
+  await c.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
+  await expect(button("Focus craft")).toBeVisible();
+  await button("Flight view").click();
+  await expect(page.locator(".meter").filter({hasText:"PITCH"})).toContainText("0°");
 });

@@ -75,12 +75,11 @@ test("v0.3 dual-economy flow: launch deducts resources, orbit completes contract
   await button("Separate stage").click();
   await page.evaluate(() => window.advanceFlight(175));
   await expect(
-    page.getByText(/First Stable Orbit complete/).first(),
+    page.getByRole("dialog", { name:"Mission complete" }).getByText("First Stable Orbit", { exact:true }),
   ).toBeVisible();
 
   // Return to Earth launch site and verify payout (600 - 500 + 2800 = 2,900 C, 35 RD)
-  await button("Earth launch site").click();
-  await button("Dismiss message").click();
+  await button("Return to base").click();
   await expect(resources).toContainText("2,900");
   await expect(resources).toContainText("35");
 
@@ -91,10 +90,9 @@ test("v0.3 dual-economy flow: launch deducts resources, orbit completes contract
   await button("Launch vehicle").click();
   await page.evaluate(() => window.advanceFlight(120));
   await expect(
-    page.getByText(/Atmospheric Sounding complete/).first(),
+    page.getByRole("dialog", { name:"Mission complete" }).getByText("Atmospheric Sounding", { exact:true }),
   ).toBeVisible();
-  await button("Earth launch site").click();
-  await button("Dismiss message").click();
+  await button("Return to base").click();
   await expect(resources).toContainText("40");
 
   // Upgrade Mission Control to Lv 2 (2,200 C + 40 RD)

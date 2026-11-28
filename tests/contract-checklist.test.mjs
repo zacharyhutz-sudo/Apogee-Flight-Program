@@ -71,3 +71,36 @@ test("reading a precision checklist never starts its timer and leaving the band 
   f.t += 1300;
   assert.equal(contractConditionMet(p, f), true);
 });
+
+test("settlement saves the credited amount and the launch origin, and only pays once", async () => {
+  const { fresh, validate } = await import("../src/persistence/save.ts");
+  const { settle, payLaunch, getStorageCaps } = await import("../src/program/program.ts");
+  const snapshot = fresh();
+  const p = snapshot.program;
+  const flight = snapshot.flight = prepare(p,"sounding");
+  assert.equal(payLaunch(p),"");
+  p.credits = getStorageCaps(p).credits - 2;
+  Object.assign(flight,{status:"flying",maxAlt:15000});
+  assert.ok(settle(p,flight));
+  assert.equal(flight.completion.credits,2);
+  assert.equal(flight.completion.research,p.award.research);
+  const restored = validate(snapshot);
+  assert.deepEqual(restored.flight.completion,flight.completion);
+  assert.equal(settle(restored.program,restored.flight),"");
+  delete restored.flight.completion;
+  assert.equal(validate(restored).flight.completion,undefined);
+  for (const job of ["recovery","leo","lunar_colony"]) {
+    const p = startProgram();
+    const f = prepare(p,job);
+    p.paid = true;
+    p.award = {credits:10,research:1,milestoneBonus:0};
+    if (job === "leo") {
+      Object.assign(f,{status:"flying",orbitEarned:true,t:1300});
+      setOrbit(f,59000,61000);
+      p.leoPassStartSec = 0;
+    } else Object.assign(f,{status:"landed",maxAlt:20000,body:job === "lunar_colony" ? "moon" : "earth"});
+    assert.ok(settle(p,f),job);
+    assert.equal(f.launchOrigin,"earth");
+    assert.equal(settle(p,f),"");
+  }
+});

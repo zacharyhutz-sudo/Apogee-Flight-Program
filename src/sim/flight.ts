@@ -93,6 +93,8 @@ export interface Debris {
 }
 
 export interface Flight {
+  launchOrigin?: Body;
+  completion?: { name: string; credits: number; research: number };
   x: number;
   y: number;
   vx: number;
@@ -194,6 +196,7 @@ export function initial(
     chuteDeployed: false,
     chuteRipped: false,
     body: "earth",
+    launchOrigin: "earth",
     moonVisited: false,
   };
   if (customStages) f.customStages = customStages;

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
+import { boundary, type Camera } from "../flightCamera";
 import Phaser from "phaser";
 import {
   AIR,
@@ -32,7 +33,7 @@ interface PlumeAnchor {
   scale: number;
 }
 
-const MIN_FLIGHT_ZOOM = 0.06;
+
 const MAX_FLIGHT_ZOOM = 2.4;
 
 function resolveParts(list: FlightVisualPart[] | undefined, minStage: number) {
@@ -365,10 +366,11 @@ function drawCustomStack(
 
 export function FlightScene({
   vessel,
-  onOpenMap,
+  camera, onOpenMap,
 }: {
   vessel: MutableRefObject<Flight>;
-  onOpenMap?: () => void;
+  camera: MutableRefObject<Camera | null>;
+  onOpenMap: (ratio: number) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const openMapRef = useRef(onOpenMap);
@@ -376,76 +378,30 @@ export function FlightScene({
 
   useEffect(() => {
     const parent = host.current!;
-    const minLogZoom = Math.log(MIN_FLIGHT_ZOOM);
-    const maxLogZoom = Math.log(MAX_FLIGHT_ZOOM);
     let logZoom = 0;
     let targetLogZoom = 0;
-    let lastManualZoomAt = 0;
-    let mapOutAccum = 0;
+    let manual = false;
     let lastFrameMs = performance.now();
-
-    const pointers = new Map<number, { x: number; y: number }>();
-    let lastSpan = 0;
-    let lastTapAt = 0;
-
-    function adjustLogZoom(deltaLog: number) {
-      const now = performance.now();
-      lastManualZoomAt = now;
-      const next = targetLogZoom + deltaLog;
-      if (next < minLogZoom) {
-        targetLogZoom = minLogZoom;
-        if (vessel.current.status === "flying" && openMapRef.current) {
-          mapOutAccum += minLogZoom - next;
-          if (mapOutAccum > 0.38) {
-            mapOutAccum = 0;
-            openMapRef.current();
-          }
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    camera.current = {
+      zoom(factor) {
+        manual = true;
+        const next = Math.exp(targetLogZoom) * factor;
+        targetLogZoom = Math.log(clamp(next,boundary,MAX_FLIGHT_ZOOM));
+        if (next < boundary) {
+          logZoom = targetLogZoom;
+          openMapRef.current(next);
         }
-      } else {
-        mapOutAccum = 0;
-        targetLogZoom = clamp(next, minLogZoom, maxLogZoom);
-      }
-    }
-
-    function onWheel(e: WheelEvent) {
-      e.preventDefault();
-      adjustLogZoom(-e.deltaY * 0.0018);
-    }
-
-    function onPointerDown(e: PointerEvent) {
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      lastSpan = 0;
-      if (pointers.size === 1) {
-        const now = performance.now();
-        if (now - lastTapAt < 280) {
-          targetLogZoom = 0;
-          lastManualZoomAt = now;
-          mapOutAccum = 0;
-          lastTapAt = 0;
-        } else {
-          lastTapAt = now;
-        }
-      }
-    }
-
-    function onPointerMove(e: PointerEvent) {
-      if (!pointers.has(e.pointerId)) return;
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pointers.size === 2) {
-        const [a, b] = [...pointers.values()];
-        const span = Math.hypot(a.x - b.x, a.y - b.y);
-        if (lastSpan > 0 && span > 0) {
-          adjustLogZoom(Math.log(span / lastSpan));
-        }
-        lastSpan = span;
-      }
-    }
-
-    function onPointerUp(e: PointerEvent) {
-      pointers.delete(e.pointerId);
-      lastSpan = 0;
-      mapOutAccum = 0;
-    }
+      },
+      setZoom(value) { manual = true; targetLogZoom = logZoom = Math.log(value); },
+      step(dir) {
+        const stops = [0.16,0.25,0.35,0.5,0.75,1,1.5,2,2.4];
+        const cur = Math.exp(targetLogZoom);
+        const next = dir > 0 ? stops.find(n => n > cur + 0.001) : stops.reverse().find(n => n < cur - 0.001);
+        if (next) this.zoom(next/cur);
+      },
+      reset() { targetLogZoom = 0; manual = false; },
+    };
 
     const stars = Array.from({ length: 90 }, (_, i) => ({
       u: ((i * 73 + 19) % 1000) / 1000,
@@ -519,7 +475,7 @@ export function FlightScene({
           s.status === "flying" &&
           alt < 600 &&
           vr < -0.5 &&
-          nowMs - lastManualZoomAt > 3500
+          !manual
         ) {
           const desired = Math.log(clamp(1.15 - alt / 950, 0.55, 1.15));
           targetLogZoom += (desired - targetLogZoom) * (1 - Math.exp(-2.2 * frameDt));
@@ -527,7 +483,9 @@ export function FlightScene({
 
         // Smooth log-space exponential zoom damping
         logZoom += (targetLogZoom - logZoom) * (1 - Math.exp(-14 * frameDt));
+        if (reduced.matches) logZoom = targetLogZoom;
         const zoom = Math.exp(logZoom);
+        parent.dataset.zoom = zoom.toFixed(2);
 
         // Local-up horizon-locked camera (SFS style): local radial outward is ALWAYS screen-up (-y)
         const upAngle = Math.atan2(s.y, s.x);
@@ -954,22 +912,12 @@ export function FlightScene({
     obs.observe(parent);
     resize();
 
-    parent.addEventListener("wheel", onWheel, { passive: false });
-    parent.addEventListener("pointerdown", onPointerDown);
-    parent.addEventListener("pointermove", onPointerMove);
-    parent.addEventListener("pointerup", onPointerUp);
-    parent.addEventListener("pointercancel", onPointerUp);
-
     return () => {
       obs.disconnect();
-      parent.removeEventListener("wheel", onWheel);
-      parent.removeEventListener("pointerdown", onPointerDown);
-      parent.removeEventListener("pointermove", onPointerMove);
-      parent.removeEventListener("pointerup", onPointerUp);
-      parent.removeEventListener("pointercancel", onPointerUp);
+      camera.current = null;
       game?.destroy(true);
     };
-  }, [vessel]);
+  }, [vessel, camera]);
 
   return (
     <div

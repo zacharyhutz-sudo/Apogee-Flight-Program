@@ -53,8 +53,8 @@ test("Milo guides a new program through a paid flight, reload and a single found
   await page.reload();
   await expect(guide(page)).toContainText("Resume");
   await button(page, "Resume").click();
-  await expect(guide(page)).toContainText("+450 credits and +5 RD", {timeout: 30000});
-  await button(page, "Earth launch site").click();
+  await expect(page.getByRole("dialog", {name:"Mission complete"})).toContainText("+450", {timeout: 30000});
+  await button(page, "Return to base").click();
   await button(page, "Build").click();
   await button(page, "Build 2nd Solar Foundry").click();
   await expect(guide(page)).toContainText("open plot");
